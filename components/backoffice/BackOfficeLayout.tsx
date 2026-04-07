@@ -420,6 +420,7 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
 
   // ── Render ─────────────────────────────────────────────────
   return (
+    <div className="flex h-screen overflow-hidden font-sans" style={{ background: "oklch(0.98 0.01 250)", color: "oklch(0.1 0.005 0)" }}>
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "#f8fafc", color: "#1e293b" }}>
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "oklch(0.98 0.01 250)", color: "oklch(0.15 0.005 250)" }}>
 
