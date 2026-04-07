@@ -863,7 +863,7 @@ export default function BODashboard({ user }: Props) {
                     <div className="flex items-center gap-3 px-5 py-4 border-b border-border" style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
                       <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{pv.name[0]}</div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-800 truncate">{pv.name}</p>
+                        <p className="text-sm font-bold truncate" style={{ color: "#1e293b" }}>{pv.name}</p>
                         <p className="text-xs" style={{ color: "#64748b" }}>
                           {pv.secteur ? `Secteur: ${pv.secteur}` : "Prevendeur"} · {s.nbCmdsJ} cmd(s) · {KG(s.tonnageJ)} · {s.clientsJ} client(s)
                         </p>
@@ -871,15 +871,15 @@ export default function BODashboard({ user }: Props) {
                       <div className="flex gap-3 shrink-0">
                         <div className="text-center px-2">
                           <p className="text-xs" style={{ color: "#64748b" }}>Jour CA</p>
-                          <p className="text-sm font-bold text-sky-600">{DH(s.caJ)}</p>
+                          <p className="text-sm font-bold" style={{ color: "#0284c7" }}>{DH(s.caJ)}</p>
                         </div>
                         <div className="text-center px-2 border-l" style={{ borderColor: "#bbf7d0" }}>
                           <p className="text-xs" style={{ color: "#64748b" }}>Mois CA</p>
-                          <p className="text-sm font-bold text-emerald-600">{DH(s.caM)}</p>
+                          <p className="text-sm font-bold" style={{ color: "#16a34a" }}>{DH(s.caM)}</p>
                         </div>
                         <div className="text-center px-2 border-l" style={{ borderColor: "#bbf7d0" }}>
                           <p className="text-xs" style={{ color: "#64748b" }}>Tonnage J</p>
-                          <p className="text-sm font-bold text-amber-600">{KG(s.tonnageJ)}</p>
+                          <p className="text-sm font-bold" style={{ color: "#d97706" }}>{KG(s.tonnageJ)}</p>
                         </div>
                       </div>
                     </div>
