@@ -420,7 +420,7 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
 
   // ── Render ─────────────────────────────────────────────────
   return (
-    <div className="flex h-screen overflow-hidden font-sans" style={{ background: "oklch(0.07 0.015 255)", color: "oklch(0.95 0.005 250)" }}>
+    <div className="flex h-screen overflow-hidden font-sans" style={{ background: "oklch(0.98 0.01 250)", color: "oklch(0.1 0.005 0)" }}>
 
       {/* Desktop sidebar — collapsible */}
       <div className={`hidden lg:flex flex-col shrink-0 transition-all duration-300 ${sidebarCollapsed ? "w-16" : "w-60"}`}>
