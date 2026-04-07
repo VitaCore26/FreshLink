@@ -421,6 +421,7 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "#f8fafc", color: "#1e293b" }}>
+    <div className="flex h-screen overflow-hidden font-sans" style={{ background: "oklch(0.98 0.01 250)", color: "oklch(0.15 0.005 250)" }}>
 
       {/* Desktop sidebar — collapsible */}
       <div className={`hidden lg:flex flex-col shrink-0 transition-all duration-300 ${sidebarCollapsed ? "w-16" : "w-60"}`}>
@@ -836,6 +837,8 @@ function SidebarContent({
           onClick={onOpenProfil}
           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenProfil() } }}
           className={`w-full flex items-center gap-2.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer ${sidebarCollapsed ? "justify-center p-2" : "px-2 py-2"}`}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onOpenProfil() }}
+          className={`w-full flex items-center gap-2.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer text-left ${sidebarCollapsed ? "justify-center p-2" : "px-2 py-2"}`}
           onKeyDown={handleProfileKeyDown}
           className={`w-full flex items-center gap-2.5 rounded-xl hover:bg-slate-100 transition-colors text-left cursor-pointer ${sidebarCollapsed ? "justify-center p-2" : "px-2 py-2"}`}
         >
