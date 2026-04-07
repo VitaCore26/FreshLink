@@ -314,33 +314,33 @@ export default function BODashboard({ user }: Props) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.55 0.18 250)", boxShadow: "0 0 16px oklch(0.55 0.18 250 / 0.35)" }}>
+            style={{ background: "#22c55e", boxShadow: "0 0 16px rgba(34,197,94,0.35)" }}>
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
           <div>
-            <h2 className="text-xl font-black" style={{ color: "oklch(0.95 0.005 250)" }}>
-              Tableau de bord <span className="font-normal text-base" style={{ color: "oklch(0.48 0.010 255)" }}>/ لوحة القيادة</span>
+            <h2 className="text-xl font-black" style={{ color: "#0f172a" }}>
+              Tableau de bord <span className="font-normal text-base" style={{ color: "#64748b" }}>/ لوحة القيادة</span>
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" />
-              <p className="text-xs" style={{ color: "oklch(0.48 0.010 255)" }}>{today} — {user.name}</p>
+              <p className="text-xs" style={{ color: "#64748b" }}>{today} — {user.name}</p>
             </div>
           </div>
         </div>
         {isAdmin && (
-          <div className="flex gap-1 p-1 rounded-xl flex-wrap" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(0.20 0.016 255)" }}>
+          <div className="flex gap-1 p-1 rounded-xl flex-wrap" style={{ background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setDashTab(t.id)}
                 className="relative px-4 py-2 rounded-lg text-sm font-bold transition-all"
                 style={dashTab === t.id
-                  ? { background: "oklch(0.55 0.18 250)", color: "#fff", boxShadow: "0 2px 8px oklch(0.55 0.18 250 / 0.3)" }
-                  : { color: "oklch(0.50 0.010 255)" }}>
+                  ? { background: "#22c55e", color: "#fff", boxShadow: "0 2px 8px rgba(34,197,94,0.3)" }
+                  : { color: "#64748b" }}>
                 {t.label}
                 {t.alert && t.alert > 0 ? (
                   <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-white text-[10px] font-black flex items-center justify-center"
-                    style={{ background: "oklch(0.54 0.22 27)" }}>
+                    style={{ background: "#ef4444" }}>
                     {t.alert > 9 ? "9+" : t.alert}
                   </span>
                 ) : null}
@@ -352,46 +352,46 @@ export default function BODashboard({ user }: Props) {
 
       {/* ============================== CREDIT ALERTS BANNER ============================== */}
       {isAdmin && creditAlerts.length > 0 && (
-        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: "oklch(0.13 0.030 27)", border: "1px solid oklch(0.30 0.14 27)" }}>
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: "#fff7ed", border: "1px solid #fdba74" }}>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "oklch(0.20 0.06 27)" }}>
-                <svg className="w-4 h-4" style={{ color: "oklch(0.72 0.20 27)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "#fed7aa" }}>
+                <svg className="w-4 h-4" style={{ color: "#9a3412" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-bold" style={{ color: "oklch(0.85 0.14 27)" }}>
+                <p className="text-sm font-bold" style={{ color: "#9a3412" }}>
                   {creditAlerts.length} alerte(s) credit — {DH(totalEnRetard + totalHorsPlafond)} en situation critique
                 </p>
-                <p className="text-xs" style={{ color: "oklch(0.65 0.12 27)" }}>Clients hors plafond ou en retard de paiement</p>
+                <p className="text-xs" style={{ color: "#c2410c" }}>Clients hors plafond ou en retard de paiement</p>
               </div>
             </div>
             <button onClick={() => setDashTab("credit")}
               className="px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90"
-              style={{ background: "oklch(0.52 0.22 27)" }}>
+              style={{ background: "#f97316" }}>
               Voir Credit
             </button>
           </div>
           {/* Quick preview of top 3 alerts */}
           <div className="flex flex-col gap-1.5">
             {creditAlerts.slice(0, 3).map(c => (
-              <div key={c.client.id} className="flex items-center justify-between rounded-xl px-3 py-2 gap-2" style={{ background: "oklch(0.10 0.012 145)", border: "1px solid oklch(0.25 0.08 27)" }}>
+              <div key={c.client.id} className="flex items-center justify-between rounded-xl px-3 py-2 gap-2" style={{ background: "#ffedd5", border: "1px solid #fdba74" }}>
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   {c.isOverPlafond && (
-                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.18 0.06 27)", color: "oklch(0.72 0.20 27)", border: "1px solid oklch(0.28 0.10 27)" }}>Hors plafond</span>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24" }}>Hors plafond</span>
                   )}
                   {c.isOverdue && !c.isOverPlafond && (
-                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.18 0.06 72)", color: "oklch(0.80 0.18 72)", border: "1px solid oklch(0.30 0.10 72)" }}>En retard</span>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "#fef9c3", color: "#854d0e", border: "1px solid #facc15" }}>En retard</span>
                   )}
-                  <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{c.client.nom}</span>
+                  <span className="text-sm font-semibold truncate" style={{ color: "#1e293b" }}>{c.client.nom}</span>
                 </div>
-                <span className="text-sm font-black shrink-0" style={{ color: "oklch(0.72 0.20 27)" }}>{DH(c.solde)}</span>
+                <span className="text-sm font-black shrink-0" style={{ color: "#9a3412" }}>{DH(c.solde)}</span>
               </div>
             ))}
           </div>
           {creditAlerts.length > 3 && (
-            <p className="text-xs text-center" style={{ color: "oklch(0.65 0.12 27)" }}>+ {creditAlerts.length - 3} autre(s) client(s) — voir onglet Credit</p>
+            <p className="text-xs text-center" style={{ color: "#c2410c" }}>+ {creditAlerts.length - 3} autre(s) client(s) — voir onglet Credit</p>
           )}
         </div>
       )}
@@ -407,32 +407,32 @@ export default function BODashboard({ user }: Props) {
                 value: DH(caToday), sub: `${cmdsToday.length} commande(s)`,
                 delta1: <Delta current={caToday} previous={caYday} label="vs J-1" />,
                 delta2: <Delta current={caToday} previous={caLastWkDay} label="vs sem. passee" />,
-                icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", iconBg: "oklch(0.18 0.040 148)", iconClr: "oklch(0.65 0.18 148)", valClr: "oklch(0.72 0.18 148)",
+                icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", iconBg: "#dcfce7", iconClr: "#16a34a", valClr: "#16a34a",
               },
               {
                 label: "CA semaine", labelAr: "رقم الأعمال الأسبوع",
                 value: DH(caWeek), sub: `${cmdsWeek.length} commandes`,
                 delta1: <Delta current={caWeek} previous={caLastWeek} label="vs S-1" />,
                 delta2: null,
-                icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", iconBg: "oklch(0.18 0.040 72)", iconClr: "oklch(0.72 0.18 72)", valClr: "oklch(0.80 0.18 72)",
+                icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", iconBg: "#fef3c7", iconClr: "#d97706", valClr: "#d97706",
               },
               {
                 label: "CA mois", labelAr: "رقم الأعمال الشهر",
                 value: DH(caMonth), sub: `${cmdsMonth.length} commandes`,
                 delta1: null, delta2: null,
-                icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", iconBg: "oklch(0.18 0.035 210)", iconClr: "oklch(0.65 0.18 210)", valClr: "oklch(0.72 0.18 210)",
+                icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", iconBg: "#dbeafe", iconClr: "#0284c7", valClr: "#0284c7",
               },
             ].map(k => (
-              <div key={k.label} className="kpi-card rounded-2xl p-4 flex items-start gap-3" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
+              <div key={k.label} className="kpi-card rounded-2xl p-4 flex items-start gap-3" style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: k.iconBg }}>
                   <svg className="w-5 h-5" style={{ color: k.iconClr }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={k.icon} />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>{k.label} / {k.labelAr}</p>
+                  <p className="text-xs" style={{ color: "#64748b" }}>{k.label} / {k.labelAr}</p>
                   <p className="text-2xl font-black" style={{ color: k.valClr }}>{k.value}</p>
-                  <p className="text-xs" style={{ color: "oklch(0.50 0.010 145)" }}>{k.sub}</p>
+                  <p className="text-xs" style={{ color: "#94a3b8" }}>{k.sub}</p>
                   {(k.delta1 || k.delta2) && (
                     <div className="flex gap-1 mt-1.5 flex-wrap">{k.delta1}{k.delta2}</div>
                   )}
@@ -447,24 +447,24 @@ export default function BODashboard({ user }: Props) {
               {
                 label: "Tonnage jour",
                 v: KG(tonnageToday),
-                clr: "oklch(0.80 0.18 72)",
+                clr: "#d97706",
                 sub: <Delta current={tonnageToday} previous={tonnageYday} label="vs J-1" />,
                 sub2: <Delta current={tonnageToday} previous={tonnageLastWkDay} label="vs S-1" />,
               },
               {
                 label: "Visites jour",
                 v: String(visitesToday),
-                clr: "oklch(0.70 0.18 210)",
+                clr: "#0284c7",
                 sub: <Delta current={visitesToday} previous={visitesYday} label="vs J-1" />,
                 sub2: <Delta current={visitesToday} previous={visitesLastWk} label="vs S-1" />,
               },
-              { label: "Retours (kg/j)",  v: KG(totalRetourKgToday), clr: "oklch(0.65 0.22 27)", sub: null, sub2: null },
-              { label: "Taux retour",     v: `${tauxRetour}%`, clr: tauxRetour > 10 ? "oklch(0.65 0.22 27)" : tauxRetour > 5 ? "oklch(0.80 0.18 72)" : "oklch(0.72 0.18 148)", sub: null, sub2: null },
-              { label: "Cmds en attente", v: String(cmdsEnAttente), clr: "oklch(0.75 0.18 55)", sub: null, sub2: null },
-              { label: "Stock faible",    v: String(stockFaible), clr: stockFaible > 0 ? "oklch(0.65 0.22 27)" : "oklch(0.65 0.18 148)", sub: null, sub2: null },
+              { label: "Retours (kg/j)",  v: KG(totalRetourKgToday), clr: "#dc2626", sub: null, sub2: null },
+              { label: "Taux retour",     v: `${tauxRetour}%`, clr: tauxRetour > 10 ? "#dc2626" : tauxRetour > 5 ? "#d97706" : "#16a34a", sub: null, sub2: null },
+              { label: "Cmds en attente", v: String(cmdsEnAttente), clr: "#ca8a04", sub: null, sub2: null },
+              { label: "Stock faible",    v: String(stockFaible), clr: stockFaible > 0 ? "#dc2626" : "#16a34a", sub: null, sub2: null },
             ].map(k => (
-              <div key={k.label} className="rounded-xl p-3" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-                <p className="text-[11px] mb-1 truncate" style={{ color: "oklch(0.52 0.010 145)" }}>{k.label}</p>
+              <div key={k.label} className="rounded-xl p-3" style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
+                <p className="text-[11px] mb-1 truncate" style={{ color: "#64748b" }}>{k.label}</p>
                 <p className="text-xl font-black" style={{ color: k.clr }}>{k.v}</p>
                 {(k.sub || k.sub2) && <div className="flex gap-1 mt-1 flex-wrap">{k.sub}{k.sub2}</div>}
               </div>
@@ -473,56 +473,56 @@ export default function BODashboard({ user }: Props) {
 
           {/* Alert stock */}
           {stockFaible > 0 && (
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl" style={{ background: "oklch(0.13 0.030 27)", border: "1px solid oklch(0.28 0.10 27)" }}>
-              <svg className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "oklch(0.72 0.20 27)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl" style={{ background: "#fff7ed", border: "1px solid #fbbf24" }}>
+              <svg className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#9a3412" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
-                <p className="text-sm font-bold" style={{ color: "oklch(0.82 0.14 27)" }}>Alerte stock faible / تنبيه مخزون</p>
-                <p className="text-xs" style={{ color: "oklch(0.65 0.12 27)" }}>{stockFaible} article(s) sous 50 kg — Passez des commandes fournisseur.</p>
+                <p className="text-sm font-bold" style={{ color: "#92400e" }}>Alerte stock faible / تنبيه مخزون</p>
+                <p className="text-xs" style={{ color: "#c2410c" }}>{stockFaible} article(s) sous 50 kg — Passez des commandes fournisseur.</p>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top 10 clients CA */}
-            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
-                <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Top 10 clients / أفضل الزبائن</h3>
-                <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>CA total</span>
+            <div className="rounded-2xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
+              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <h3 className="text-sm font-bold" style={{ color: "#1e293b" }}>Top 10 clients / أفضل الزبائن</h3>
+                <span className="text-xs" style={{ color: "#64748b" }}>CA total</span>
               </div>
               {top10Clients.length === 0
-                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "oklch(0.52 0.010 145)" }}>Aucune commande</p>
+                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "#64748b" }}>Aucune commande</p>
                 : <div>
                   {top10Clients.map(([id, c], i) => (
-                    <div key={id} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid oklch(0.16 0.010 145)" }}>
+                    <div key={id} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ background: "oklch(0.18 0.040 148)", color: "oklch(0.65 0.18 148)" }}>{i + 1}</span>
+                        style={{ background: "#dcfce7", color: "#16a34a" }}>{i + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{c.nom}</p>
-                        <p className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>{c.cmds} cmd(s) · {KG(c.tonnage)}</p>
+                        <p className="text-sm font-semibold truncate" style={{ color: "#1e293b" }}>{c.nom}</p>
+                        <p className="text-xs" style={{ color: "#64748b" }}>{c.cmds} cmd(s) · {KG(c.tonnage)}</p>
                       </div>
-                      <span className="font-bold text-sm shrink-0" style={{ color: "oklch(0.72 0.18 148)" }}>{DH(c.ca)}</span>
+                      <span className="font-bold text-sm shrink-0" style={{ color: "#16a34a" }}>{DH(c.ca)}</span>
                     </div>
                   ))}
                 </div>}
             </div>
 
             {/* Top articles vendus */}
-            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
-                <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Top articles vendus / الأكثر مبيعاً</h3>
-                <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>Toute periode</span>
+            <div className="rounded-2xl overflow-hidden" style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
+              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <h3 className="text-sm font-bold" style={{ color: "#1e293b" }}>Top articles vendus / الأكثر مبيعاً</h3>
+                <span className="text-xs" style={{ color: "#64748b" }}>Toute periode</span>
               </div>
               {artChartData.length === 0
-                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "oklch(0.52 0.010 145)" }}>Aucune commande</p>
+                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "#64748b" }}>Aucune commande</p>
                 : <div>
                   {artChartData.slice(0, 8).map((a, i) => (
-                    <div key={a.name} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid oklch(0.16 0.010 145)" }}>
+                    <div key={a.name} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ background: "oklch(0.18 0.040 72)", color: "oklch(0.75 0.18 72)" }}>{i + 1}</span>
-                      <p className="flex-1 text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{a.name}</p>
-                      <span className="font-bold text-sm shrink-0" style={{ color: "oklch(0.80 0.18 72)" }}>{KG(a.kg)}</span>
+                        style={{ background: "#fef3c7", color: "#d97706" }}>{i + 1}</span>
+                      <p className="flex-1 text-sm font-semibold truncate" style={{ color: "#1e293b" }}>{a.name}</p>
+                      <span className="font-bold text-sm shrink-0" style={{ color: "#d97706" }}>{KG(a.kg)}</span>
                     </div>
                   ))}
                 </div>}
@@ -536,7 +536,7 @@ export default function BODashboard({ user }: Props) {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead style={{ background: "oklch(0.965 0.005 240)" }}>
+                <thead style={{ background: "#f8fafc" }}>
                   <tr>
                     {["ID", "Date", "Commercial", "Client", "Secteur", "Tonnage", "Total", "Statut"].map(h => (
                       <th key={h} className="text-left px-3 py-2.5 font-semibold text-xs text-muted-foreground uppercase tracking-wide">{h}</th>
@@ -585,19 +585,19 @@ export default function BODashboard({ user }: Props) {
 
           {/* Shared chart style tokens */}
           {(() => {
-            const GRID  = "oklch(0.22 0.012 145)"
-            const TICK  = { fontSize: 11, fill: "oklch(0.52 0.010 145)" }
-            const TICK_SM = { fontSize: 10, fill: "oklch(0.50 0.010 145)" }
-            const TT_STYLE = { background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.22 0.012 145)", borderRadius: "0.75rem", fontSize: 12, color: "oklch(0.88 0.006 100)" }
-            const CARD_STYLE = { background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }
+            const GRID  = "#e2e8f0"
+            const TICK  = { fontSize: 11, fill: "#64748b" }
+            const TICK_SM = { fontSize: 10, fill: "#64748b" }
+            const TT_STYLE = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "0.75rem", fontSize: 12, color: "#1e293b" }
+            const CARD_STYLE = { background: "#ffffff", border: "1px solid #e2e8f0" }
 
             return (
               <>
                 {/* CA + Tonnage evolution 14j */}
                 <div className="rounded-2xl p-5" style={CARD_STYLE}>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Evolution CA &amp; Tonnage — 14 derniers jours</h3>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "oklch(0.18 0.020 148)", color: "oklch(0.65 0.18 148)" }}>14j</span>
+                    <h3 className="text-sm font-bold" style={{ color: "#1e293b" }}>Evolution CA &amp; Tonnage — 14 derniers jours</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#dcfce7", color: "#16a34a" }}>14j</span>
                   </div>
                   <ResponsiveContainer width="100%" height={260}>
                     <LineChart data={last14Days} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
@@ -606,7 +606,7 @@ export default function BODashboard({ user }: Props) {
                       <YAxis yAxisId="ca" orientation="left" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                       <YAxis yAxisId="ton" orientation="right" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${v}`} />
                       <Tooltip contentStyle={TT_STYLE} formatter={(v: number, name: string) => name === "ca" ? DH(v) : KG(v)} />
-                      <Legend wrapperStyle={{ fontSize: 12, color: "oklch(0.62 0.008 145)" }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
                       <Line yAxisId="ca" type="monotone" dataKey="ca" stroke="#10b981" strokeWidth={2.5} dot={false} name="CA (DH)" />
                       <Line yAxisId="ton" type="monotone" dataKey="tonnage" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 3" name="Tonnage (kg)" />
                     </LineChart>
@@ -616,7 +616,7 @@ export default function BODashboard({ user }: Props) {
                 {/* CA par prevendeur */}
                 {pvChartData.length > 0 && (
                   <div className="rounded-2xl p-5" style={CARD_STYLE}>
-                    <h3 className="text-sm font-bold mb-4" style={{ color: "oklch(0.88 0.006 100)" }}>CA &amp; Tonnage par prevendeur — aujourd&apos;hui</h3>
+                    <h3 className="text-sm font-bold mb-4" style={{ color: "#1e293b" }}>CA &amp; Tonnage par prevendeur — aujourd&apos;hui</h3>
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart data={pvChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="4 3" stroke={GRID} />
@@ -624,7 +624,7 @@ export default function BODashboard({ user }: Props) {
                         <YAxis yAxisId="ca" orientation="left" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                         <YAxis yAxisId="ton" orientation="right" tick={TICK} axisLine={false} tickLine={false} />
                         <Tooltip contentStyle={TT_STYLE} formatter={(v: number, name: string) => name === "ca" ? DH(v) : KG(v)} />
-                        <Legend wrapperStyle={{ fontSize: 12, color: "oklch(0.62 0.008 145)" }} />
+                        <Legend wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
                         <Bar yAxisId="ca" dataKey="ca" fill="#10b981" name="CA (DH)" radius={[6, 6, 0, 0]} />
                         <Bar yAxisId="ton" dataKey="tonnage" fill="#f59e0b" name="Tonnage (kg)" radius={[6, 6, 0, 0]} />
                       </BarChart>
@@ -635,7 +635,7 @@ export default function BODashboard({ user }: Props) {
                 {/* Top articles kg — horizontal bars */}
                 {artChartData.length > 0 && (
                   <div className="rounded-2xl p-5" style={CARD_STYLE}>
-                    <h3 className="text-sm font-bold mb-4" style={{ color: "oklch(0.88 0.006 100)" }}>Top 10 articles — Tonnage vendu (kg)</h3>
+                    <h3 className="text-sm font-bold mb-4" style={{ color: "#1e293b" }}>Top 10 articles — Tonnage vendu (kg)</h3>
                     <ResponsiveContainer width="100%" height={240}>
                       <BarChart data={artChartData} layout="vertical" margin={{ top: 4, right: 56, left: 70, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="4 3" stroke={GRID} horizontal={false} />
@@ -654,7 +654,7 @@ export default function BODashboard({ user }: Props) {
                 {secteurChartData.length > 0 && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="rounded-2xl p-5" style={CARD_STYLE}>
-                      <h3 className="text-sm font-bold mb-4" style={{ color: "oklch(0.88 0.006 100)" }}>CA par secteur</h3>
+                      <h3 className="text-sm font-bold mb-4" style={{ color: "#1e293b" }}>CA par secteur</h3>
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={secteurChartData} layout="vertical" margin={{ top: 4, right: 56, left: 70, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="4 3" stroke={GRID} horizontal={false} />
@@ -668,7 +668,7 @@ export default function BODashboard({ user }: Props) {
                       </ResponsiveContainer>
                     </div>
                     <div className="rounded-2xl p-5" style={CARD_STYLE}>
-                      <h3 className="text-sm font-bold mb-4" style={{ color: "oklch(0.88 0.006 100)" }}>Top 10 clients — Part CA</h3>
+                      <h3 className="text-sm font-bold mb-4" style={{ color: "#1e293b" }}>Top 10 clients — Part CA</h3>
                       <ResponsiveContainer width="100%" height={220}>
                         <PieChart>
                           <Pie data={top10Clients.map(([, c]) => ({ name: c.nom, value: Math.round(c.ca) }))}
@@ -821,7 +821,7 @@ export default function BODashboard({ user }: Props) {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={topArticlesRetour.map(([, a]) => ({ name: a.nom, kg: Math.round(a.kg) }))}
                   layout="vertical" margin={{ top: 4, right: 48, left: 80, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.01 240)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}kg`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
                   <Tooltip formatter={(v: number) => KG(v)} />
@@ -860,26 +860,26 @@ export default function BODashboard({ user }: Props) {
                 const s = getPrevendeurStats(pv)
                 return (
                   <div key={pv.id} className="bg-card rounded-xl border border-border overflow-hidden">
-                    <div className="flex items-center gap-3 px-5 py-4 border-b border-border" style={{ background: "oklch(0.14 0.03 260)" }}>
+                    <div className="flex items-center gap-3 px-5 py-4 border-b border-border" style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
                       <div className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{pv.name[0]}</div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-white truncate">{pv.name}</p>
-                        <p className="text-xs" style={{ color: "oklch(0.60 0.03 245)" }}>
+                        <p className="text-sm font-bold text-slate-800 truncate">{pv.name}</p>
+                        <p className="text-xs" style={{ color: "#64748b" }}>
                           {pv.secteur ? `Secteur: ${pv.secteur}` : "Prevendeur"} · {s.nbCmdsJ} cmd(s) · {KG(s.tonnageJ)} · {s.clientsJ} client(s)
                         </p>
                       </div>
                       <div className="flex gap-3 shrink-0">
                         <div className="text-center px-2">
-                          <p className="text-xs" style={{ color: "oklch(0.48 0.04 245)" }}>Jour CA</p>
-                          <p className="text-sm font-bold text-sky-400">{DH(s.caJ)}</p>
+                          <p className="text-xs" style={{ color: "#64748b" }}>Jour CA</p>
+                          <p className="text-sm font-bold text-sky-600">{DH(s.caJ)}</p>
                         </div>
-                        <div className="text-center px-2 border-l" style={{ borderColor: "oklch(0.22 0.03 260)" }}>
-                          <p className="text-xs" style={{ color: "oklch(0.48 0.04 245)" }}>Mois CA</p>
-                          <p className="text-sm font-bold text-emerald-400">{DH(s.caM)}</p>
+                        <div className="text-center px-2 border-l" style={{ borderColor: "#bbf7d0" }}>
+                          <p className="text-xs" style={{ color: "#64748b" }}>Mois CA</p>
+                          <p className="text-sm font-bold text-emerald-600">{DH(s.caM)}</p>
                         </div>
-                        <div className="text-center px-2 border-l" style={{ borderColor: "oklch(0.22 0.03 260)" }}>
-                          <p className="text-xs" style={{ color: "oklch(0.48 0.04 245)" }}>Tonnage J</p>
-                          <p className="text-sm font-bold text-amber-400">{KG(s.tonnageJ)}</p>
+                        <div className="text-center px-2 border-l" style={{ borderColor: "#bbf7d0" }}>
+                          <p className="text-xs" style={{ color: "#64748b" }}>Tonnage J</p>
+                          <p className="text-sm font-bold text-amber-600">{KG(s.tonnageJ)}</p>
                         </div>
                       </div>
                     </div>
