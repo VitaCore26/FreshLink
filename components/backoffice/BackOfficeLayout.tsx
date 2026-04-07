@@ -669,6 +669,11 @@ function SidebarContent({
   profilPhoto, navSearch, setNavSearch, filteredGroups, searchQ,
   GROUP_ICON_COLOR, navigate, onLogout, onOpenProfil
 }: SidebarContentProps) {
+  const handleProfileKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === " ") e.preventDefault()
+    if (e.key === "Enter" || e.key === " ") onOpenProfil()
+  }
+
   return (
     <aside className="flex flex-col h-full bg-white border-r border-slate-200">
 
@@ -831,6 +836,8 @@ function SidebarContent({
           onClick={onOpenProfil}
           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onOpenProfil() }}
           className={`w-full flex items-center gap-2.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer text-left ${sidebarCollapsed ? "justify-center p-2" : "px-2 py-2"}`}
+          onKeyDown={handleProfileKeyDown}
+          className={`w-full flex items-center gap-2.5 rounded-xl hover:bg-slate-100 transition-colors text-left cursor-pointer ${sidebarCollapsed ? "justify-center p-2" : "px-2 py-2"}`}
         >
           {profilPhoto ? (
             <img src={profilPhoto} alt={user.name}
