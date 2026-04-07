@@ -26,6 +26,7 @@
     "autoprefixer": "^10.4.0",
     "@supabase/supabase-js": "latest",
     "lucide-react": "^0.400.0",
+    "recharts": "^2.12.0"
     "leaflet": "^1.9.4",
     "react-leaflet": "^4.2.1"
     "tailwindcss": "^4.0.0"
