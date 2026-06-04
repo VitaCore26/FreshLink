@@ -7,20 +7,22 @@ import { sendEmail } from "@/lib/email"
 
 interface Props { onLogin: (user: User, forceView?: "mobile" | "backoffice") => void }
 
+const DEMO_PWD = process.env.NEXT_PUBLIC_DEMO_PWD ?? "1234"
+
 const DEMO_ACCOUNTS: {
   label: string; identifier: string; password: string; role: UserRole; note?: string; group: string
 }[] = [
-  { group: "Direction",   label: "Resp. Commercial",     identifier: "responsable@freshlink.ma",  password: "1234",     role: "resp_commercial", note: "Commercial + comptes externes" },
-  { group: "Finance",     label: "Cash Man",              identifier: "cashman@freshlink.ma",      password: "cash2024", role: "cash_man",        note: "Caisse + encaissements" },
-  { group: "Finance",     label: "Financier",             identifier: "financier@freshlink.ma",    password: "fin2024",  role: "financier",       note: "Finance + recap complet" },
-  { group: "Commercial",  label: "Pre-vendeur",           identifier: "prevendeur@freshlink.ma",   password: "1234",     role: "prevendeur",      note: "Prise commandes terrain" },
-  { group: "Logistique",  label: "Resp. Logistique",     identifier: "logistique@freshlink.ma",   password: "1234",     role: "resp_logistique", note: "Stock + reception + dispatch" },
-  { group: "Logistique",  label: "Dispatcheur",           identifier: "dispatch@freshlink.ma",     password: "1234",     role: "dispatcheur",     note: "Affectation livreurs" },
-  { group: "Logistique",  label: "Magasinier",            identifier: "magasin@freshlink.ma",      password: "1234",     role: "magasinier",      note: "Gestion stock entrepot" },
-  { group: "Logistique",  label: "Acheteur",              identifier: "acheteur@freshlink.ma",     password: "1234",     role: "acheteur",        note: "Bons achat + SKU" },
-  { group: "Logistique",  label: "Ctrl Achat",            identifier: "ctrl.achat@freshlink.ma",   password: "ctrl1234", role: "ctrl_achat",      note: "Controle chargement" },
-  { group: "Logistique",  label: "Ctrl Prep",             identifier: "ctrl.prep@freshlink.ma",    password: "ctrl1234", role: "ctrl_prep",       note: "Controle preparation" },
-  { group: "Logistique",  label: "Livreur",               identifier: "livreur@freshlink.ma",      password: "1234",     role: "livreur",         note: "Livraison + BL + retours" },
+  { group: "Direction",   label: "Resp. Commercial",  identifier: "responsable@freshlink.ma", password: DEMO_PWD, role: "resp_commercial", note: "Commercial + comptes externes" },
+  { group: "Finance",     label: "Cash Man",          identifier: "cashman@freshlink.ma",     password: DEMO_PWD, role: "cash_man",        note: "Caisse + encaissements" },
+  { group: "Finance",     label: "Financier",         identifier: "financier@freshlink.ma",   password: DEMO_PWD, role: "financier",       note: "Finance + recap complet" },
+  { group: "Commercial",  label: "Pre-vendeur",       identifier: "prevendeur@freshlink.ma",  password: DEMO_PWD, role: "prevendeur",      note: "Prise commandes terrain" },
+  { group: "Logistique",  label: "Resp. Logistique",  identifier: "logistique@freshlink.ma",  password: DEMO_PWD, role: "resp_logistique", note: "Stock + reception + dispatch" },
+  { group: "Logistique",  label: "Dispatcheur",       identifier: "dispatch@freshlink.ma",    password: DEMO_PWD, role: "dispatcheur",     note: "Affectation livreurs" },
+  { group: "Logistique",  label: "Magasinier",        identifier: "magasin@freshlink.ma",     password: DEMO_PWD, role: "magasinier",      note: "Gestion stock entrepot" },
+  { group: "Logistique",  label: "Acheteur",          identifier: "acheteur@freshlink.ma",    password: DEMO_PWD, role: "acheteur",        note: "Bons achat + SKU" },
+  { group: "Logistique",  label: "Ctrl Achat",        identifier: "ctrl.achat@freshlink.ma",  password: DEMO_PWD, role: "ctrl_achat",      note: "Controle chargement" },
+  { group: "Logistique",  label: "Ctrl Prep",         identifier: "ctrl.prep@freshlink.ma",   password: DEMO_PWD, role: "ctrl_prep",       note: "Controle preparation" },
+  { group: "Logistique",  label: "Livreur",           identifier: "livreur@freshlink.ma",     password: DEMO_PWD, role: "livreur",         note: "Livraison + BL + retours" },
 ]
 
 const DEMO_GROUPS = ["Direction", "Finance", "Commercial", "Logistique"] as const
@@ -42,7 +44,7 @@ const FEATURES = [
 const N_LEVELS = [
   { level: "N1", names: "Mustapha · Si-Mohammed", color: "#10b981", bg: "#f0fdf4", border: "#bbf7d0" },
   { level: "N2", names: "Jawad · Zizi · Azmi · Hicham · Ashel", color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
-  { level: "N3", names: "Admin Alert +212663898707", color: "#f59e0b", bg: "#fffbeb", border: "#fde68a" },
+  { level: "N3", names: "Admin Support", color: "#f59e0b", bg: "#fffbeb", border: "#fde68a" },
 ]
 
 export default function LoginPage({ onLogin }: Props) {
@@ -61,24 +63,54 @@ export default function LoginPage({ onLogin }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true); setError("")
+    setLoading(true)
+    setError("")
     await new Promise(r => setTimeout(r, 300))
-    if (clientMode) {
-      if (!identifier.trim()) { setError("Veuillez entrer votre nom"); setLoading(false); return }
-      const clientUser = store.loginClient(identifier.trim())
-      if (clientUser) { onLogin(clientUser) }
-      else { setError("Nom non trouve. Contactez votre commercial."); setLoading(false) }
-      return
+
+    try {
+      if (clientMode) {
+        if (!identifier.trim()) {
+          setError("Veuillez entrer votre nom")
+          setLoading(false)
+          return
+        }
+        const clientUser = store.loginClient(identifier.trim())
+        if (clientUser) {
+          onLogin(clientUser)
+        } else {
+          setError("Nom non trouvé. Contactez votre commercial.")
+          setLoading(false)
+        }
+        return
+      }
+
+      if (!identifier.trim() || !password.trim()) {
+        setError("Remplissez tous les champs")
+        setLoading(false)
+        return
+      }
+
+      // Essayer Supabase Auth d'abord
+      const { signInWithEmailFallback } = await import("@/lib/auth/supabaseAuth")
+      const user = await signInWithEmailFallback(identifier.trim(), password)
+
+      if (user) {
+        const iface = getUserInterface(user)
+        if (iface === "both") {
+          setPendingUser(user)
+          setLoading(false)
+        } else {
+          onLogin(user)
+        }
+      } else {
+        setError("Identifiant ou mot de passe incorrect")
+        setLoading(false)
+      }
+    } catch (err) {
+      console.error("[LoginPage] Erreur login:", err)
+      setError(err instanceof Error ? err.message : "Erreur de connexion")
+      setLoading(false)
     }
-    if (!identifier.trim() || !password.trim()) { setError("Remplissez tous les champs"); setLoading(false); return }
-    const user = store.login(identifier.trim(), password)
-    if (user) {
-      const iface = getUserInterface(user)
-      if (iface === "both") {
-        const forcedView = store.loginGetForcedView(identifier.trim(), password)
-        if (forcedView) { onLogin(user, forcedView) } else { setPendingUser(user); setLoading(false) }
-      } else { onLogin(user) }
-    } else { setError("Identifiant ou mot de passe incorrect"); setLoading(false) }
   }
 
   const handleForgotPassword = async () => {

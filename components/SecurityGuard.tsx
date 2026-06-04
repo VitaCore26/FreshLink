@@ -31,6 +31,17 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
   const [detail, setDetail]   = useState("")
   const [permStep, setPermStep] = useState<PermStep>("idle")
 
+  // ── Bypass mode — si SECURITY_GUARD_BYPASS=1 dans localStorage, skip tout ──
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const bypass = localStorage.getItem("SECURITY_GUARD_BYPASS")
+      if (bypass === "1") {
+        setPhase("ok")
+        return
+      }
+    }
+  }, [])
+
   // ── GPS fake detection ──────────────────────────────────────────────────────
   const detectFakeGPS = useCallback(() => {
     return new Promise<"ok" | "fake" | "unavailable">((resolve) => {
@@ -197,11 +208,23 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
               <p>2. Desactivez le mode developpeur Android si actif.</p>
               <p>3. Redemarrez l&apos;application apres correction.</p>
             </div>
-            <button onClick={() => window.location.reload()}
-              className="w-full py-3 rounded-xl font-bold text-sm"
-              style={{ background: "oklch(0.54 0.22 27)", color: "#fff" }}>
-              Reessayer
-            </button>
+            <div className="w-full flex flex-col gap-2">
+              <button onClick={() => window.location.reload()}
+                className="w-full py-3 rounded-xl font-bold text-sm"
+                style={{ background: "oklch(0.54 0.22 27)", color: "#fff" }}>
+                Reessayer
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.setItem("SECURITY_GUARD_BYPASS", "1")
+                  window.location.reload()
+                }}
+                className="w-full py-2 rounded-xl text-xs font-medium opacity-50 hover:opacity-75"
+                style={{ background: "oklch(0.12 0.01 280)", color: "oklch(0.50 0.12 280)" }}
+              >
+                ⚠️ Continuer sans GPS
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -282,6 +305,18 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
                   </button>
                 </div>
               )}
+
+              {/* Emergency bypass — development/troubleshooting only */}
+              <button
+                onClick={() => {
+                  localStorage.setItem("SECURITY_GUARD_BYPASS", "1")
+                  window.location.reload()
+                }}
+                className="w-full py-2 rounded-xl text-xs font-medium opacity-50 hover:opacity-75"
+                style={{ background: "oklch(0.12 0.01 280)", color: "oklch(0.50 0.12 280)" }}
+              >
+                ⚠️ Continuer sans permission
+              </button>
             </div>
           </div>
         </div>

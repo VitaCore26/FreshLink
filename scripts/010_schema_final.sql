@@ -37,7 +37,9 @@ CREATE TABLE public.fl_users (
   id                             TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
   name                           TEXT NOT NULL,
   email                          TEXT UNIQUE NOT NULL,
-  password                       TEXT NOT NULL DEFAULT '1234',
+  -- Stocker uniquement des hashes bcrypt — JAMAIS de mots de passe en clair
+  -- Utilisez Supabase Auth pour la gestion des mots de passe en production
+  password                       TEXT NOT NULL DEFAULT '',
   password_mobile                TEXT,
   password_bo                    TEXT,
   role                           TEXT NOT NULL DEFAULT 'prevendeur',
@@ -83,12 +85,13 @@ CREATE TABLE public.fl_users (
   updated_at                     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Super admin par defaut
+-- Super admin par defaut — mot de passe à définir via Supabase Auth après installation
+-- NE PAS seeder avec un mot de passe en clair en production
 INSERT INTO public.fl_users (id, name, email, password, role, actif,
   can_view_achat, can_view_commercial, can_view_logistique, can_view_stock,
   can_view_cash, can_view_finance, can_view_recap, can_view_database, can_view_external, can_create_commande_bo)
 VALUES (
-  'SUPER_ADMIN_001', 'Admin Principal', 'admin@optimflux.ma', '1234', 'super_admin', TRUE,
+  'SUPER_ADMIN_001', 'Admin Principal', 'admin@freshlink.ma', '', 'super_admin', TRUE,
   TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE
 ) ON CONFLICT (id) DO NOTHING;
 

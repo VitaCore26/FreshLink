@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { store, type User, getUserInterface } from "@/lib/store"
+import { useAuth } from "@/hooks/useAuth"
+import { signInWithEmailFallback } from "@/lib/auth/supabaseAuth"
 import dynamic from "next/dynamic"
 
 // All heavy components loaded dynamically — never crash the initial bundle
@@ -24,46 +26,50 @@ function Spinner() {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Utiliser le hook useAuth pour gérer la session Supabase
+  const { user, loading, error: authError, signOut } = useAuth()
+
   const [view, setView] = useState<"mobile" | "backoffice">("backoffice")
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(authError || null)
+  const [pendingUser, setPendingUser] = useState<User | null>(null)
 
   useEffect(() => {
-    try {
-      const session = store.getSession()
-      setUser(session)
-      if (session) {
-        const iface = getUserInterface(session)
-        setView(iface === "mobile" ? "mobile" : "backoffice")
-      }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
+    setError(authError)
+  }, [authError])
+
+  useEffect(() => {
+    if (user) {
+      const iface = getUserInterface(user)
+      setView(iface === "mobile" ? "mobile" : "backoffice")
     }
-  }, [])
+  }, [user])
 
   const handleLogin = (loggedUser: User, forceView?: "mobile" | "backoffice") => {
     try {
+      // Garder la session locale aussi (pour offline cache)
       store.setSession(loggedUser)
-      setUser(loggedUser)
+
       if (forceView) {
         setView(forceView)
       } else {
         const iface = getUserInterface(loggedUser)
         setView(iface === "mobile" ? "mobile" : "backoffice")
       }
+
+      // Note: user sera automatiquement mis à jour par useAuth (via Supabase)
     } catch (e: unknown) {
-      console.error("Login error:", e)
+      console.error("[App] Login error:", e)
+      setError(e instanceof Error ? e.message : "Erreur de connexion")
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     try {
       store.logout()
-    } catch (_) {}
-    setUser(null)
+      await signOut()
+    } catch (e) {
+      console.error("[App] Logout error:", e)
+    }
   }
 
   // Error state
@@ -73,12 +79,26 @@ export default function App() {
         <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 space-y-4 shadow-lg">
           <p className="text-lg font-bold text-foreground">Erreur de demarrage</p>
           <p className="text-sm font-mono text-red-600 bg-red-50 rounded-xl p-3 break-all">{error}</p>
-          <button
-            onClick={() => { try { localStorage.clear() } catch(_){} window.location.reload() }}
-            className="w-full py-3 rounded-xl font-bold text-white text-sm"
-            style={{ background: "var(--primary)" }}>
-            Reinitialiser et recharger
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={() => {
+                try {
+                  localStorage.clear()
+                  sessionStorage.clear()
+                  indexedDB.databases?.().then(dbs => dbs.forEach(db => indexedDB.deleteDatabase(db.name)))
+                } catch(_){}
+                window.location.href = "/"
+              }}
+              className="w-full py-3 rounded-xl font-bold text-white text-sm"
+              style={{ background: "var(--primary)" }}>
+              🔄 Réinitialiser complètement
+            </button>
+            <button
+              onClick={() => window.location.href = "/"}
+              className="w-full py-3 rounded-xl font-bold text-gray-700 text-sm bg-gray-200">
+              ↻ Recharger simplement
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -90,6 +110,54 @@ export default function App() {
   // Not logged in
   if (!user) {
     return <LoginPage onLogin={handleLogin} />
+  }
+
+  // Interface picker pour utilisateurs "both"
+  if (pendingUser) {
+    const iface = getUserInterface(pendingUser)
+    if (iface === "both") {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans">
+          <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-lg p-8 flex flex-col gap-6">
+            <div className="flex flex-col items-center gap-3">
+              <div className="text-center">
+                <p className="text-base font-bold text-slate-800">Bonjour, {pendingUser.name}</p>
+                <p className="text-sm text-slate-500 mt-0.5">Choisissez votre interface</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  handleLogin(pendingUser, "backoffice")
+                  setPendingUser(null)
+                }}
+                className="w-full px-4 py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 transition-colors"
+              >
+                Back Office — Bureau
+              </button>
+              <button
+                onClick={() => {
+                  handleLogin(pendingUser, "mobile")
+                  setPendingUser(null)
+                }}
+                className="w-full px-4 py-3.5 rounded-xl bg-green-600 text-white font-semibold text-sm hover:bg-green-700 transition-colors"
+              >
+                Application Mobile — Terrain
+              </button>
+              <button
+                onClick={() => setPendingUser(null)}
+                className="text-sm text-slate-400 hover:text-slate-600 transition-colors text-center py-1"
+              >
+                Retour
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+    // Si pas "both", assumer que "both" veut dire on choisit pour lui
+    handleLogin(pendingUser, "backoffice")
+    setPendingUser(null)
   }
 
   // Portal routes

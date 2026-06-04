@@ -49,8 +49,7 @@ export const viewport: Viewport = {
   themeColor: '#ffffff',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // userScalable intentionnellement non bloqué — requis par WCAG 1.4.4
 }
 
 export default function RootLayout({
