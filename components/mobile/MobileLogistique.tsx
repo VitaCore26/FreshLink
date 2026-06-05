@@ -6,6 +6,7 @@ import {
   type Commande, type Trip, type User, type BonLivraison, type MotifRetour, type Client, type Reception, type Article, type Fournisseur, DELAI_RECOUVREMENT_LABELS
 } from "@/lib/store"
 import { printBL } from "@/lib/print"
+import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
 interface Props { user: User }
 
@@ -228,8 +229,8 @@ export default function MobileLogistique({ user }: Props) {
     // Livreur sees ONLY their own trip — matched by name or by user.id
     const myTrip = allTrips.find(t => (t.livreurNom === user.name || t.livreurId === user.id) && t.statut === "en_cours")
       ?? allTrips.find(t => (t.livreurNom === user.name || t.livreurId === user.id) && t.statut === "planifié")
-    // For logistique roles (resp_logistique, magasinier, dispatcheur) show all
-    const isLogistiqueAdmin = ["resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
+    // For logistique roles (logistique, resp_logistique, magasinier, dispatcheur) show all
+    const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
     const trip = isLogistiqueAdmin
       ? (allTrips.find(t => t.statut === "en_cours") ?? allTrips.find(t => t.statut === "planifié") ?? myTrip)
       : myTrip
@@ -251,8 +252,14 @@ export default function MobileLogistique({ user }: Props) {
   const loadMap = async () => {
     if (typeof window === "undefined" || leafletMapRef.current) return
     try {
+      if (!document.getElementById("leaflet-cdn-css")) {
+        const link = document.createElement("link")
+        link.id = "leaflet-cdn-css"
+        link.rel = "stylesheet"
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        document.head.appendChild(link)
+      }
       const L = (await import("leaflet")).default
-      await import("leaflet/dist/leaflet.css")
       if (!mapRef.current) return
       // Default: Casablanca, Maroc — 33.5731, -7.5898
       const map = L.map(mapRef.current).setView([33.5731, -7.5898], 11)
@@ -301,6 +308,29 @@ export default function MobileLogistique({ user }: Props) {
     const montantTotal = commande.lignes.reduce((s, l) => s + l.quantite * (l.prixVente ?? l.prixUnitaire ?? 0), 0)
     const montantTTC = Math.round(montantTotal * (1 + tva / 100))
 
+    // ── Auto-fill livreur from active Trip, and client from store ─────────────
+    const livreurNomFinal = activeTrip
+      ? activeTrip.livreurNom ?? user.name
+      : user.name
+    const clientRecord = store.getClients().find(cl => cl.id === commande.clientId)
+
+    // ── Find linked BonPreparation for this commande ─────────────────────────
+    const bonsPrep = store.getBonsPreparation()
+    const linkedPrep = bonsPrep.find(bp =>
+      bp.statut === "valide" &&
+      (bp.clientIds.includes(commande.clientId) ||
+       (bp.tripId && activeTrip && bp.tripId === activeTrip.id))
+    )
+
+    // ── Generate numero compatible with BOBonLivraison ───────────────────────
+    const existingBLs = store.getBonsLivraison()
+    const y = new Date().getFullYear()
+    const blsThisYear = existingBLs.filter(b => {
+      const num = (b as unknown as { numero?: string }).numero ?? b.id
+      return num.includes(`BL-${y}`)
+    })
+    const newNumero = `BL-${y}-${String(blsThisYear.length + 1).padStart(4, "0")}`
+
     const existingBL = store.getBonsLivraison().find(b => b.commandeId === commandeId)
     if (existingBL) {
       store.updateBonLivraison(existingBL.id, {
@@ -308,6 +338,7 @@ export default function MobileLogistique({ user }: Props) {
         motifRetour: motif,
         statut: statut === "livre" ? "encaissé" : existingBL.statut,
         heureLivraisonReelle: heureReelle,
+        livreurNom: livreurNomFinal,
       })
     } else {
       store.addBonLivraison({
@@ -318,7 +349,7 @@ export default function MobileLogistique({ user }: Props) {
         clientNom: commande.clientNom,
         secteur: commande.secteur,
         zone: commande.zone,
-        livreurNom: user.name,
+        livreurNom: livreurNomFinal,
         prevendeurNom: commande.commercialNom,
         lignes: commande.lignes.map(l => ({
           articleNom: l.articleNom,
@@ -336,7 +367,25 @@ export default function MobileLogistique({ user }: Props) {
         statutLivraison: statut,
         motifRetour: motif,
         heureLivraisonReelle: heureReelle,
-      })
+        // Auto-filled from commande + client record
+        ...(clientRecord ? {
+          clientAdresse: clientRecord.adresse,
+          clientIce: clientRecord.ice,
+          clientModalitePaiement: clientRecord.modalitePaiement,
+          clientCreditSolde: clientRecord.creditSolde,
+          clientCreditAutorise: clientRecord.creditAutorise,
+          clientDelaiRecouvrement: clientRecord.delaiRecouvrement,
+        } : {}),
+        // Link to preparation + trip
+        ...(linkedPrep ? { prepId: linkedPrep.id } : {}),
+        // BOBonLivraison-compatible fields
+        numero: newNumero,
+        clientId: commande.clientId,
+        transporteur: "non_affecte",
+        qcObligatoire: false,
+        createdBy: user.id,
+        updatedAt: new Date().toISOString(),
+      } as BonLivraison)
     }
 
     // Update commande statut
@@ -385,8 +434,8 @@ export default function MobileLogistique({ user }: Props) {
   }
 
   // ── Derived data ──────────────────────────────────────────────────────────
-  // Only logistique admins can validate commandes — livreurs cannot
-  const isLogistiqueAdmin = ["resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
+  // logistique role + resp_logistique + magasinier + dispatcheur + admin/super_admin can validate
+  const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
   const pendingCommandes = isLogistiqueAdmin ? commandes.filter(c => c.statut === "en_attente" || c.statut === "valide") : []
   const tripCommandes = activeTrip
     ? commandes.filter(c => activeTrip.commandeIds.includes(c.id))
@@ -429,7 +478,7 @@ export default function MobileLogistique({ user }: Props) {
           { id: "map",        label: "Carte GPS",  icon: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7", roles: null },
           { id: "reception",  label: "Reception",  icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", roles: ["magasinier", "resp_logistique", "admin", "super_admin"] },
         ] as const)
-          .filter(t => !t.roles || t.roles.includes(user.role))
+          .filter(t => !t.roles || (t.roles as readonly string[]).includes(user.role))
           .map(t => (
           <button
             key={t.id}
@@ -446,9 +495,29 @@ export default function MobileLogistique({ user }: Props) {
         {/* ── VALIDATION TAB ───────────────────────────────────────── */}
         {activeTab === "validation" && (
           <>
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-foreground font-sans">Validation Commandes</h2>
-              <span className="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold">{pendingCommandes.length} en attente</span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h2 className="font-bold text-foreground font-sans">Validation Commandes</h2>
+                <p className="text-xs text-muted-foreground font-sans">Logistique — validation & impression BL</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Print all validated BLs */}
+                {(() => {
+                  const blsToPrint = store.getBonsLivraison().filter(bl =>
+                    pendingCommandes.some(c => c.id === bl.commandeId)
+                  )
+                  if (blsToPrint.length === 0) return null
+                  return (
+                    <button
+                      onClick={() => blsToPrint.forEach(bl => printBL(bl))}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-border text-muted-foreground hover:bg-muted transition-colors">
+                      <Icon d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" className="w-3.5 h-3.5" />
+                      Imprimer BL ({blsToPrint.length})
+                    </button>
+                  )
+                })()}
+                <span className="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold">{pendingCommandes.length} en attente</span>
+              </div>
             </div>
 
             {pendingCommandes.length === 0 ? (
@@ -513,14 +582,42 @@ export default function MobileLogistique({ user }: Props) {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => validateCommande(c.id)}
-                        className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
-                        style={{ background: "oklch(0.45 0.18 200)" }}
-                      >
-                        <Icon d="M5 13l4 4L19 7" className="w-4 h-4" />
-                        Valider la commande
-                      </button>
+                      <div className="flex gap-2">
+                        {c.statut === "en_attente" && (
+                          <button
+                            onClick={() => validateCommande(c.id)}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                            style={{ background: "oklch(0.45 0.18 200)" }}
+                          >
+                            <Icon d="M5 13l4 4L19 7" className="w-4 h-4" />
+                            Valider
+                          </button>
+                        )}
+                        {/* Print BL if a BL exists for this commande */}
+                        {(() => {
+                          const bl = store.getBonsLivraison().find(b => b.commandeId === c.id)
+                          if (!bl) return null
+                          return (
+                            <button
+                              onClick={() => printBL(bl)}
+                              className="flex items-center gap-1.5 py-2.5 px-4 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:bg-muted transition-colors"
+                            >
+                              <Icon d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" className="w-4 h-4" />
+                              Imprimer BL
+                            </button>
+                          )
+                        })()}
+                        {c.statut !== "en_attente" && !store.getBonsLivraison().find(b => b.commandeId === c.id) && (
+                          <button
+                            onClick={() => validateCommande(c.id)}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                            style={{ background: "oklch(0.45 0.18 200)" }}
+                          >
+                            <Icon d="M5 13l4 4L19 7" className="w-4 h-4" />
+                            Re-valider
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
@@ -1102,11 +1199,12 @@ function MagasinierReceptionTab({ user }: { user: User }) {
             {lignes.map((l, i) => (
               <div key={i} className="bg-slate-50 rounded-xl border border-slate-200 p-3 flex flex-col gap-2.5">
                 {source === "manuel" ? (
-                  <select value={l.articleId} onChange={e => updateLigne(i, { articleId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-                    <option value="">-- Article *</option>
-                    {articles.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.unite})</option>)}
-                  </select>
+                  <ArticleCombobox
+                    articles={articles}
+                    value={l.articleId}
+                    onChange={(artId, _art) => updateLigne(i, { articleId: artId })}
+                    placeholder="-- Article *"
+                  />
                 ) : (
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-bold text-slate-800">{l.articleNom}</p>

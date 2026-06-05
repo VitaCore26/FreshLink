@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { store, type Article, type LigneAchat, type User, type Fournisseur, type HistoriquePrixAchat, type Client } from "@/lib/store"
 import { sendEmail, buildAchatEmail } from "@/lib/email"
+import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import { CameraQualiteIA, ComparatifFournisseurs } from "@/components/mobile/AchatIAModules"
 
 interface Props { user: User }
@@ -51,39 +52,39 @@ interface BesoinSKU {
   articleNom: string
   unite: string
   stockDispo: number
-  qteCommandee: number   // somme commandes validees du jour / semaine
-  besoinNet: number      // qteCommandee - stockDispo (si positif = a acheter)
+  qteCommandee: number    // sum of validated orders for today
+  besoinNet: number       // qteCommandee - stockDispo: >0 = DA required, <=0 = RAS
   dernierPrixAchat: number
-  totalEstime: number    // besoinNet * dernierPrixAchat
+  totalEstime: number     // besoinNet * dernierPrixAchat (0 when covered)
+  lancerDA: boolean       // true when besoinNet > 0 → must create Purchase Order
 }
 
+// Computes DA table:
+//   besoinNet = qteCommandee - stockDispo
+//   besoinNet > 0  → LANCER DA (red, purchase required)
+//   besoinNet <= 0 → RAS (green, stock sufficient)
+// Shows ALL articles that have active orders today for complete visibility
 function calcBesoinSKU(articles: Article[]): BesoinSKU[] {
-  const commandes = store.getCommandes().filter(c =>
-    c.statut === "validée" || c.statut === "livrée" || c.statut === "en_cours"
-  )
-  const qteMap: Record<string, number> = {}
-  commandes.forEach(cmd => {
-    cmd.lignes.forEach(l => {
-      qteMap[l.articleId] = (qteMap[l.articleId] ?? 0) + l.quantite
-    })
-  })
-  return articles
-    .map(art => {
-      const qteCommandee = qteMap[art.id] ?? 0
-      const besoinNet = Math.max(0, qteCommandee - art.stockDisponible)
+  const besoinRaw = store.computeBesoinNet()
+  return besoinRaw
+    .map(b => {
+      const art = articles.find(a => a.id === b.articleId)
+      // Real besoin = commandes - stock (not clamped — negative = surplus)
+      const besoinNet = b.commandeQty - b.stockQty
+      const lancerDA = besoinNet > 0
       return {
-        articleId: art.id,
-        articleNom: art.nom,
-        unite: art.unite,
-        stockDispo: art.stockDisponible,
-        qteCommandee,
-        besoinNet,
-        dernierPrixAchat: art.prixAchat,
-        totalEstime: besoinNet * art.prixAchat,
+        articleId: b.articleId,
+        articleNom: b.articleNom,
+        unite: b.unite,
+        stockDispo: b.stockQty,
+        qteCommandee: b.commandeQty,
+        besoinNet,          // can be negative (surplus) or positive (DA needed)
+        lancerDA,
+        dernierPrixAchat: art?.prixAchat ?? 0,
+        totalEstime: lancerDA ? besoinNet * (art?.prixAchat ?? 0) : 0,
       }
     })
-    .filter(b => b.qteCommandee > 0) // only articles that have active orders
-    .sort((a, b) => b.besoinNet - a.besoinNet) // urgent first
+    .sort((a, b) => b.besoinNet - a.besoinNet) // most urgent first (highest deficit)
 }
 
 // ── Self-contained camera capture — isolates useRef from MobileAchat ─────────
@@ -182,7 +183,8 @@ export default function MobileAchat({ user }: Props) {
   const [sending, setSending] = useState(false)
   const [success, setSuccess] = useState(false)
   const [emailDest, setEmailDest] = useState("")
-  const [activeTab, setActiveTab] = useState<"bon" | "besoin" | "po_push" | "charges" | "camera" | "comparatif" | "avis">("bon")
+  // "besoin" is shown first — it displays the Demande d'Achat (DA) based on stock vs orders
+  const [activeTab, setActiveTab] = useState<"bon" | "besoin" | "po_push" | "charges" | "camera" | "comparatif" | "avis" | "mes_achats">("besoin")
   const [clients, setClients] = useState<Client[]>([])
   // PA history modal
   const [historyArtId, setHistoryArtId] = useState<string | null>(null)
@@ -307,6 +309,18 @@ export default function MobileAchat({ user }: Props) {
 
   const refreshPOs = () => setPendingPOs(store.getPendingPOsForAcheteur())
 
+  // ── Refus PO par l'acheteur ────────────────────────────────────────────────
+  // Si tous les acheteurs ont refusé, une DA est générée automatiquement
+  const [poRefusMotif, setPoRefusMotif] = useState<Record<string, string>>({})
+  const refuserPO = (poId: string) => {
+    const motif = poRefusMotif[poId] || "Indisponible marche"
+    const da = store.refuserPO(poId, user.id, user.name, motif)
+    refreshPOs()
+    if (da) {
+      alert(`Tous les acheteurs ont refuse ce PO. Une Demande d'Achat (DA-${da.id.slice(-6).toUpperCase()}) a ete generee automatiquement.`)
+    }
+  }
+
   useEffect(() => {
     const arts = store.getArticles()
     setArticles(arts)
@@ -391,7 +405,7 @@ export default function MobileAchat({ user }: Props) {
       const idx = allArticles.findIndex(a => a.id === l.articleId)
       if (idx < 0) return
       const pa = resolvePA(l)
-      const qty = resolveQty(allArticles[idx])
+      const qty = resolveQty(l, allArticles[idx])
       const histEntry: HistoriquePrixAchat = {
         date: store.today(),
         fournisseurId,
@@ -447,7 +461,7 @@ export default function MobileAchat({ user }: Props) {
 
   const historyArt = articles.find(a => a.id === historyArtId)
 
-  const urgents = besoinSKU.filter(b => b.besoinNet > 0)
+  const urgents = besoinSKU.filter(b => b.lancerDA)
   const totalBesoinEstime = urgents.reduce((s, b) => s + b.totalEstime, 0)
 
   return (
@@ -460,19 +474,19 @@ export default function MobileAchat({ user }: Props) {
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 rounded-xl bg-muted overflow-x-auto no-scrollbar">
         <button
-          onClick={() => setActiveTab("bon")}
-          className={`flex-1 min-w-max py-2 px-3 rounded-lg text-xs font-bold transition-all ${activeTab === "bon" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-          Bon d&apos;Achat
-        </button>
-        <button
           onClick={() => setActiveTab("besoin")}
           className={`flex-1 min-w-max py-2 px-3 rounded-lg text-xs font-bold transition-all relative ${activeTab === "besoin" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-          Besoin SKU
+          DA / Besoin
           {urgents.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
               {urgents.length}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab("bon")}
+          className={`flex-1 min-w-max py-2 px-3 rounded-lg text-xs font-bold transition-all ${activeTab === "bon" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          Bon d&apos;Achat
         </button>
         {/* PO Push tab with badge */}
         <button
@@ -512,6 +526,11 @@ export default function MobileAchat({ user }: Props) {
           onClick={() => setActiveTab("avis")}
           className={`flex-1 min-w-max py-2 px-3 rounded-lg text-xs font-bold transition-all ${activeTab === "avis" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
           Avis
+        </button>
+        <button
+          onClick={() => setActiveTab("mes_achats")}
+          className={`flex-1 min-w-max py-2 px-3 rounded-lg text-xs font-bold transition-all relative ${activeTab === "mes_achats" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          Mes Achats
         </button>
       </div>
 
@@ -605,18 +624,36 @@ export default function MobileAchat({ user }: Props) {
         </div>
       )}
 
-      {/* ═══ BESOIN PAR SKU ═══════════════════════════════════════════════════ */}
+      {/* ═══ DEMANDE D'ACHAT (DA) ════════════════════════════════════════════ */}
       {activeTab === "besoin" && (
         <div className="flex flex-col gap-3">
-          {/* KPI bar */}
+          {/* Section title */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Demande d&apos;Achat du Jour</h3>
+              <p className="text-xs text-muted-foreground">Commandes vs stock — articles a acheter en priorite</p>
+            </div>
+            <button onClick={() => setBesoinSKU(calcBesoinSKU(articles))}
+              className="p-2 rounded-xl bg-muted hover:bg-muted/80 transition-colors">
+              <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+
+          {/* KPI bar — DA = besoinNet>0, RAS = besoinNet<=0 */}
           <div className="flex gap-2">
-            <div className="flex-1 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 text-center">
-              <p className="text-[11px] text-red-700 font-medium">Articles a acheter</p>
-              <p className="text-xl font-black text-red-800">{urgents.length}</p>
+            <div className={`flex-1 rounded-xl px-3 py-2.5 text-center border ${urgents.length > 0 ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"}`}>
+              <p className={`text-[11px] font-semibold ${urgents.length > 0 ? "text-red-700" : "text-slate-500"}`}>Lancer DA</p>
+              <p className={`text-xl font-black ${urgents.length > 0 ? "text-red-800" : "text-slate-600"}`}>{urgents.length}</p>
+            </div>
+            <div className="flex-1 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 text-center">
+              <p className="text-[11px] text-emerald-700 font-semibold">RAS</p>
+              <p className="text-xl font-black text-emerald-800">{besoinSKU.filter(b => !b.lancerDA).length}</p>
             </div>
             <div className="flex-1 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-center">
-              <p className="text-[11px] text-amber-700 font-medium">Cout estime total</p>
-              <p className="text-lg font-black text-amber-800">{totalBesoinEstime.toLocaleString("fr-MA")} DH</p>
+              <p className="text-[11px] text-amber-700 font-medium">Cout estime</p>
+              <p className="text-sm font-black text-amber-800">{totalBesoinEstime.toLocaleString("fr-MA")} DH</p>
             </div>
           </div>
 
@@ -625,60 +662,71 @@ export default function MobileAchat({ user }: Props) {
               <svg className="w-10 h-10 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-sm font-semibold text-muted-foreground">Aucun besoin detecte</p>
-              <p className="text-xs text-muted-foreground">Le besoin est calcule a partir des commandes validees vs le stock disponible.</p>
+              <p className="text-sm font-semibold text-muted-foreground">Aucune commande du jour</p>
+              <p className="text-xs text-muted-foreground">Les commandes validees du jour apparaitront ici avec le calcul stock vs commandes.</p>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
               {besoinSKU.map(b => (
                 <div key={b.articleId}
-                  className={`rounded-2xl border p-4 flex flex-col gap-2 ${b.besoinNet > 0 ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50"}`}>
+                  className={`rounded-2xl border p-4 flex flex-col gap-2 ${b.lancerDA ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
+
+                  {/* Header */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <p className="font-bold text-sm text-foreground">{b.articleNom}</p>
-                      <p className="text-xs text-muted-foreground">SKU ID: <span className="font-mono">{b.articleId}</span></p>
                     </div>
-                    {b.besoinNet > 0 ? (
-                      <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500 text-white">
-                        A ACHETER
+                    {b.lancerDA ? (
+                      <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-black bg-red-500 text-white animate-pulse">
+                        LANCER DA
                       </span>
                     ) : (
-                      <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-green-500 text-white">
-                        COUVERT
+                      <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">
+                        RAS
                       </span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="bg-white/70 rounded-lg px-2 py-1.5 text-center">
-                      <p className="text-muted-foreground">Stock dispo</p>
-                      <p className="font-bold text-foreground">{b.stockDispo} {b.unite}</p>
+                  {/* Calcul: Qte commandee - Stock = Besoin */}
+                  <div className="grid grid-cols-3 gap-1.5 text-xs">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-2 py-2 text-center">
+                      <p className="text-blue-500 font-medium text-[10px] mb-0.5">Qte commandee</p>
+                      <p className="font-black text-blue-800 text-base leading-tight">{b.qteCommandee}</p>
+                      <p className="text-blue-400 text-[10px]">{b.unite}</p>
                     </div>
-                    <div className="bg-white/70 rounded-lg px-2 py-1.5 text-center">
-                      <p className="text-muted-foreground">Qte commandee</p>
-                      <p className="font-bold text-blue-700">{b.qteCommandee} {b.unite}</p>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-center relative">
+                      <p className="text-slate-400 font-medium text-[10px] mb-0.5">Stock dispo</p>
+                      <p className="font-black text-slate-700 text-base leading-tight">{b.stockDispo}</p>
+                      <p className="text-slate-400 text-[10px]">{b.unite}</p>
+                      {/* minus sign */}
+                      <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-black flex items-center justify-center z-10">−</span>
                     </div>
-                    <div className={`rounded-lg px-2 py-1.5 text-center ${b.besoinNet > 0 ? "bg-red-200/70" : "bg-green-200/70"}`}>
-                      <p className="text-muted-foreground">Besoin net</p>
-                      <p className={`font-black ${b.besoinNet > 0 ? "text-red-800" : "text-green-800"}`}>
-                        {b.besoinNet > 0 ? `+${b.besoinNet}` : "0"} {b.unite}
+                    <div className={`rounded-xl px-2 py-2 text-center relative ${b.lancerDA ? "bg-red-100 border border-red-300" : "bg-emerald-100 border border-emerald-300"}`}>
+                      <p className={`font-medium text-[10px] mb-0.5 ${b.lancerDA ? "text-red-500" : "text-emerald-600"}`}>
+                        {b.lancerDA ? "Deficit" : "Surplus"}
                       </p>
+                      <p className={`font-black text-base leading-tight ${b.lancerDA ? "text-red-800" : "text-emerald-800"}`}>
+                        {b.lancerDA ? `+${b.besoinNet}` : Math.abs(b.besoinNet)}
+                      </p>
+                      <p className={`text-[10px] ${b.lancerDA ? "text-red-400" : "text-emerald-400"}`}>{b.unite}</p>
+                      {/* equals sign */}
+                      <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-black flex items-center justify-center z-10">=</span>
                     </div>
                   </div>
 
-                  {b.besoinNet > 0 && (
-                    <div className="flex items-center justify-between text-xs bg-white/70 rounded-lg px-3 py-1.5">
-                      <span className="text-muted-foreground">Cout estime ({b.dernierPrixAchat} DH/{b.unite})</span>
-                      <span className="font-bold text-foreground">{b.totalEstime.toLocaleString("fr-MA")} DH</span>
+                  {/* Cout estime si DA */}
+                  {b.lancerDA && b.dernierPrixAchat > 0 && (
+                    <div className="flex items-center justify-between text-xs bg-red-100/70 border border-red-200 rounded-xl px-3 py-2">
+                      <span className="text-red-600 font-medium">Cout estime achat ({b.dernierPrixAchat} DH/{b.unite})</span>
+                      <span className="font-black text-red-800">{b.totalEstime.toLocaleString("fr-MA")} DH</span>
                     </div>
                   )}
 
-                  {/* Quick-add to bon button */}
-                  {b.besoinNet > 0 && (
+                  {/* Action: Lancer DA → pre-remplir bon achat */}
+                  {b.lancerDA && (
                     <button
                       onClick={() => {
                         setActiveTab("bon")
-                        // Pre-fill a ligne for this article
                         setLignes(prev => {
                           const exists = prev.some(l => l.articleId === b.articleId)
                           if (exists) return prev
@@ -701,12 +749,11 @@ export default function MobileAchat({ user }: Props) {
                           return newLignes
                         })
                       }}
-                      className="w-full py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90"
-                      style={{ background: "oklch(0.45 0.18 200)" }}>
+                      className="w-full py-2.5 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90 bg-red-600">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                      Ajouter au bon ({b.besoinNet} {b.unite})
+                      Lancer DA — Commander {b.besoinNet} {b.unite}
                     </button>
                   )}
                 </div>
@@ -1097,6 +1144,100 @@ export default function MobileAchat({ user }: Props) {
         <AvisModule user={user} />
       )}
 
+      {/* ═══ MES ACHATS — Historique des bons d'achat de cet acheteur ═══════ */}
+      {activeTab === "mes_achats" && (() => {
+        const myBons = store.getBonsAchat()
+          .filter(b => b.acheteurId === user.id || b.acheteurNom === user.name)
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .slice(0, 60)
+
+        // Group by date
+        const grouped: Record<string, typeof myBons> = {}
+        myBons.forEach(b => {
+          if (!grouped[b.date]) grouped[b.date] = []
+          grouped[b.date].push(b)
+        })
+
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Mes Bons d&apos;Achat</h3>
+                <p className="text-xs text-muted-foreground">{myBons.length} bon(s) enregistre(s)</p>
+              </div>
+              <button onClick={() => setArticles(store.getArticles())}
+                className="p-2 rounded-xl bg-muted hover:bg-muted/80 transition-colors">
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+
+            {myBons.length === 0 ? (
+              <div className="bg-card rounded-2xl border border-border p-10 flex flex-col items-center gap-2 text-center">
+                <svg className="w-10 h-10 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <p className="text-sm font-semibold text-muted-foreground">Aucun bon d&apos;achat enregistre</p>
+                <button onClick={() => setActiveTab("bon")} className="mt-1 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: "oklch(0.38 0.2 260)" }}>
+                  Passer un achat
+                </button>
+              </div>
+            ) : (
+              Object.entries(grouped)
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([date, bons]) => (
+                  <div key={date} className="flex flex-col gap-2">
+                    {/* Date separator */}
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${date === store.today() ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                        {date === store.today() ? "Aujourd\'hui" : date}
+                      </span>
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-[11px] text-muted-foreground">
+                        {bons.reduce((s, b) => s + b.lignes.reduce((ss, l) => ss + l.quantite * l.prixAchat, 0), 0).toLocaleString("fr-MA")} DH
+                      </span>
+                    </div>
+                    {bons.map(bon => {
+                      const total = bon.lignes.reduce((s, l) => s + l.quantite * l.prixAchat, 0)
+                      return (
+                        <div key={bon.id} className="bg-card rounded-xl border border-border p-4 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm text-foreground">{bon.fournisseurNom}</p>
+                              <p className="text-xs text-muted-foreground font-mono">{bon.id}</p>
+                              {bon.depotNom && (
+                                <p className="text-xs text-blue-700 font-medium">Depot: {bon.depotNom}</p>
+                              )}
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800 shrink-0">
+                              {bon.statut}
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {bon.lignes.map((l, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs">
+                                <span className="text-foreground">{l.articleNom}</span>
+                                <span className="font-semibold text-muted-foreground">
+                                  {l.quantite} × {l.prixAchat} DH = {(l.quantite * l.prixAchat).toLocaleString("fr-MA")} DH
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-border">
+                            <span className="text-xs text-muted-foreground">{bon.lignes.length} article(s)</span>
+                            <span className="text-sm font-extrabold text-primary">{total.toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))
+            )}
+          </div>
+        )
+      })()}
+
       {/* ══ PO DETAIL MODAL — Confirmer les détails d'un bon d'achat ════════ */}
       {poModalId && (() => {
         const po = pendingPOs.find(p => p.id === poModalId) ?? store.getPurchaseOrders().find(p => p.id === poModalId)
@@ -1361,11 +1502,12 @@ function ChargesParArticle({ articles, acheteurNom }: { articles: Article[]; ach
         <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
           <p className="text-sm font-bold text-slate-800">Saisir les charges liees a un achat</p>
 
-          <select value={form.articleId} onChange={e => setForm(p => ({ ...p, articleId: e.target.value }))}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-            <option value="">-- Article achete *</option>
-            {articles.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.unite})</option>)}
-          </select>
+          <ArticleCombobox
+            articles={articles}
+            value={form.articleId}
+            onChange={(artId, _art) => setForm(p => ({ ...p, articleId: artId }))}
+            placeholder="-- Article achete *"
+          />
 
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -1518,7 +1660,7 @@ function AvisModule({ user }: { user: User }) {
   const filtered = avis.filter(a => filterSource === "all" || a.source === filterSource)
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.nom.trim() || !form.message.trim()) return
     const newAvis: AvisEntry = {
       id: store.genId(),
@@ -1530,11 +1672,28 @@ function AvisModule({ user }: { user: User }) {
       auteurId: user.id,
       auteurNom: user.name,
     }
+    // ✅ Sauvegarde locale (optimistic UI — instantané)
     const updated = [newAvis, ...avis]
     saveAvis(updated)
     setAvis(updated)
     setForm({ source: "client", nom: "", message: "", note: 5 })
     setShowForm(false)
+    // 🔄 Push vers /api/ext/feedbacks → centralisé fl_feedbacks (BO temps réel)
+    try {
+      await fetch("/api/ext/feedbacks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auteurId:   user.id,
+          auteurNom:  user.name,
+          auteurRole: user.role,
+          note:       form.note,
+          categorie:  form.source,            // client / fournisseur / equipe
+          message:    `${form.nom.trim()} — ${form.message.trim()}`,
+          source:     "mobile",
+        }),
+      })
+    } catch { /* silencieux — l'avis local reste, sera resync à la prochaine connexion */ }
   }
 
   const SOURCE_CONFIG = {

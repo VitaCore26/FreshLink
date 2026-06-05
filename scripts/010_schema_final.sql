@@ -1,8 +1,12 @@
 -- ============================================================
--- OPTIMFLUX — SCHEMA FINAL v10
+-- EMPIRE FRESH — SCHEMA COMPLET v11 (UNIQUE — SEUL SCRIPT)
 -- Supabase: https://nphrncmuxbwahqnzdyxp.supabase.co
 -- Date: 2026 | Auteur: Jawad
--- Toutes les tables metier avec RLS desactivee (gestion auth maison)
+-- 30 tables metier + fl_config | RLS desactivee (auth maison)
+-- Couvre: Users, Clients, Fournisseurs, Articles, Commandes,
+--         Achats, PO, Receptions, Trips, BL, Retours, Salaries,
+--         RH, Finance, Caisse, Feedbacks, Trip Charges, Loyalty,
+--         Incentives, Config (key-value)
 -- ============================================================
 
 -- Extension UUID
@@ -37,9 +41,7 @@ CREATE TABLE public.fl_users (
   id                             TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
   name                           TEXT NOT NULL,
   email                          TEXT UNIQUE NOT NULL,
-  -- Stocker uniquement des hashes bcrypt — JAMAIS de mots de passe en clair
-  -- Utilisez Supabase Auth pour la gestion des mots de passe en production
-  password                       TEXT NOT NULL DEFAULT '',
+  password                       TEXT NOT NULL DEFAULT '1234',
   password_mobile                TEXT,
   password_bo                    TEXT,
   role                           TEXT NOT NULL DEFAULT 'prevendeur',
@@ -85,13 +87,12 @@ CREATE TABLE public.fl_users (
   updated_at                     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Super admin par defaut — mot de passe à définir via Supabase Auth après installation
--- NE PAS seeder avec un mot de passe en clair en production
+-- Super admin par defaut
 INSERT INTO public.fl_users (id, name, email, password, role, actif,
   can_view_achat, can_view_commercial, can_view_logistique, can_view_stock,
   can_view_cash, can_view_finance, can_view_recap, can_view_database, can_view_external, can_create_commande_bo)
 VALUES (
-  'SUPER_ADMIN_001', 'Admin Principal', 'admin@freshlink.ma', '', 'super_admin', TRUE,
+  'SUPER_ADMIN_001', 'Admin Principal', 'admin@optimflux.ma', '1234', 'super_admin', TRUE,
   TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE
 ) ON CONFLICT (id) DO NOTHING;
 
@@ -542,7 +543,254 @@ INSERT INTO public.fl_motifs_retour (id, label, label_ar, actif) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ══════════════════════════════════════════════════════════════
--- 22. UPDATED_AT TRIGGERS (auto-update timestamps)
+-- 22. SALARIES (Ressources Humaines)
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_salaries CASCADE;
+CREATE TABLE public.fl_salaries (
+  id                    TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  civilite              TEXT NOT NULL DEFAULT 'M.',
+  nom                   TEXT NOT NULL,
+  prenom                TEXT NOT NULL DEFAULT '',
+  poste                 TEXT NOT NULL DEFAULT '',
+  departement           TEXT,
+  telephone             TEXT,
+  email                 TEXT,
+  adresse               TEXT,
+  ville                 TEXT,
+  cin                   TEXT,
+  cnss                  TEXT,
+  num_compte_bancaire   TEXT,
+  banque                TEXT,
+  date_embauche         TEXT NOT NULL DEFAULT '',
+  date_fin_cdd          TEXT,
+  type_contrat          TEXT NOT NULL DEFAULT 'cdi',     -- 'cdi' | 'cdd' | 'interim' | 'saisonnier'
+  salaire_brut          NUMERIC NOT NULL DEFAULT 0,
+  salaire_net           NUMERIC,
+  avances               NUMERIC DEFAULT 0,
+  mode_paiement         TEXT DEFAULT 'virement',
+  nationalite           TEXT,
+  date_naissance        TEXT,
+  lieu_naissance        TEXT,
+  diplome               TEXT,
+  experience_ans        INTEGER,
+  statut_familial       TEXT,
+  nb_enfants            INTEGER DEFAULT 0,
+  statut                TEXT NOT NULL DEFAULT 'actif',   -- 'actif' | 'conge' | 'periode_essai' | 'inactif'
+  notes                 TEXT,
+  dossier_complet       BOOLEAN DEFAULT FALSE,
+  created_by            TEXT NOT NULL DEFAULT '',
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  updated_by            TEXT,
+  updated_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 23. RH NOTIFICATIONS
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_rh_notifications CASCADE;
+CREATE TABLE public.fl_rh_notifications (
+  id           TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  type         TEXT NOT NULL DEFAULT 'nouveau_salarie',
+  titre        TEXT NOT NULL DEFAULT '',
+  message      TEXT NOT NULL DEFAULT '',
+  salarie_id   TEXT,
+  salarie_nom  TEXT,
+  user_id      TEXT,
+  created_by   TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  lu           BOOLEAN DEFAULT FALSE,
+  traite       BOOLEAN DEFAULT FALSE
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 24. PAIEMENTS SALAIRES
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_paiements_salaires CASCADE;
+CREATE TABLE public.fl_paiements_salaires (
+  id           TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  salarie_id   TEXT NOT NULL DEFAULT '',
+  salarie_nom  TEXT NOT NULL DEFAULT '',
+  mois         TEXT NOT NULL DEFAULT '',             -- 'YYYY-MM'
+  salaire_brut NUMERIC NOT NULL DEFAULT 0,
+  avance       NUMERIC DEFAULT 0,
+  salaire_net  NUMERIC NOT NULL DEFAULT 0,
+  date_paiement TEXT NOT NULL DEFAULT '',
+  created_by   TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 25. FINANCE — CHARGES & CAISSE
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_charges CASCADE;
+CREATE TABLE public.fl_charges (
+  id          TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  date        DATE NOT NULL DEFAULT CURRENT_DATE,
+  libelle     TEXT NOT NULL DEFAULT '',
+  categorie   TEXT NOT NULL DEFAULT 'autre',
+  montant     NUMERIC NOT NULL DEFAULT 0,
+  recurrente  BOOLEAN DEFAULT FALSE,
+  created_by  TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+DROP TABLE IF EXISTS public.fl_caisse_entries CASCADE;
+CREATE TABLE public.fl_caisse_entries (
+  id         TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  date       DATE NOT NULL DEFAULT CURRENT_DATE,
+  libelle    TEXT NOT NULL DEFAULT '',
+  type       TEXT NOT NULL DEFAULT 'entree',        -- 'entree' | 'sortie'
+  categorie  TEXT NOT NULL DEFAULT 'autre',
+  montant    NUMERIC NOT NULL DEFAULT 0,
+  reference  TEXT,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DROP TABLE IF EXISTS public.fl_actionnaires CASCADE;
+CREATE TABLE public.fl_actionnaires (
+  id                   TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  nom                  TEXT NOT NULL,
+  prenom               TEXT NOT NULL DEFAULT '',
+  telephone            TEXT,
+  cotisation           NUMERIC NOT NULL DEFAULT 0,
+  date_entree          TEXT NOT NULL DEFAULT '',
+  periode_distribution TEXT NOT NULL DEFAULT 'mensuel',
+  actif                BOOLEAN DEFAULT TRUE,
+  created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 26. FEEDBACK / AVIS
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_feedbacks CASCADE;
+CREATE TABLE public.fl_feedbacks (
+  id      TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  source  TEXT NOT NULL DEFAULT 'client',           -- 'client' | 'fournisseur' | 'equipe'
+  auteur  TEXT NOT NULL DEFAULT '',
+  sujet   TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  note    INTEGER DEFAULT 5,                         -- 1-5 stars
+  date    DATE NOT NULL DEFAULT CURRENT_DATE,
+  statut  TEXT NOT NULL DEFAULT 'nouveau',           -- 'nouveau' | 'lu' | 'traite'
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 27. TRIP CHARGES (charges logistique par tournee)
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_trip_charges CASCADE;
+CREATE TABLE public.fl_trip_charges (
+  id               TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  numero           TEXT,
+  date             DATE NOT NULL DEFAULT CURRENT_DATE,
+  livreur          TEXT NOT NULL DEFAULT '',
+  immatricule      TEXT NOT NULL DEFAULT '',
+  secteur          TEXT NOT NULL DEFAULT '',
+  nb_caisses_fact  INTEGER DEFAULT 0,
+  nb_clients       INTEGER DEFAULT 0,
+  km_depart        NUMERIC,
+  km_retour        NUMERIC,
+  charges          JSONB DEFAULT '[]',
+  controle_retour  JSONB,
+  validated        BOOLEAN DEFAULT FALSE,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 28. LOYALTY — PROGRAMME DE FIDELITE
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_loyalty_transactions CASCADE;
+CREATE TABLE public.fl_loyalty_transactions (
+  id                    TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  client_id             TEXT NOT NULL DEFAULT '',
+  client_nom            TEXT NOT NULL DEFAULT '',
+  commande_id           TEXT,
+  type                  TEXT NOT NULL DEFAULT 'gain',      -- 'gain' | 'rachat' | 'expiration' | 'annule'
+  points                NUMERIC NOT NULL DEFAULT 0,
+  motif                 TEXT NOT NULL DEFAULT '',
+  redemption_type       TEXT,
+  redemption_valeur     NUMERIC,
+  redemption_article_id TEXT,
+  statut                TEXT NOT NULL DEFAULT 'valide',    -- 'valide' | 'en_attente' | 'annule'
+  created_by            TEXT NOT NULL DEFAULT '',
+  created_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+DROP TABLE IF EXISTS public.fl_discount_rules CASCADE;
+CREATE TABLE public.fl_discount_rules (
+  id                   TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  nom                  TEXT NOT NULL DEFAULT '',
+  actif                BOOLEAN DEFAULT TRUE,
+  scope                TEXT NOT NULL DEFAULT 'global',
+  client_id            TEXT,
+  client_nom           TEXT,
+  article_id           TEXT,
+  article_nom          TEXT,
+  famille              TEXT,
+  segment              TEXT,
+  type                 TEXT NOT NULL DEFAULT 'pourcentage',
+  valeur               NUMERIC NOT NULL DEFAULT 0,
+  article_offert_id    TEXT,
+  article_offert_nom   TEXT,
+  article_offert_qte   NUMERIC,
+  date_debut           DATE,
+  date_fin             DATE,
+  commande_min_dh      NUMERIC,
+  app_only             BOOLEAN DEFAULT FALSE,
+  code_promo           TEXT,
+  message_whatsapp     TEXT,
+  created_by           TEXT NOT NULL DEFAULT '',
+  created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 29. PERFORMANCE INCENTIVES (Primes livreurs)
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_driver_bonuses CASCADE;
+CREATE TABLE public.fl_driver_bonuses (
+  id             TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::TEXT,
+  livreur_id     TEXT NOT NULL DEFAULT '',
+  livreur_nom    TEXT NOT NULL DEFAULT '',
+  driver_type    TEXT NOT NULL DEFAULT 'interne',
+  date           DATE NOT NULL DEFAULT CURRENT_DATE,
+  trip_id        TEXT,
+  periode        TEXT,
+  zero_retard    BOOLEAN DEFAULT FALSE,
+  zero_retour    BOOLEAN DEFAULT FALSE,
+  zero_qualite   BOOLEAN DEFAULT FALSE,
+  montant_bonus  NUMERIC NOT NULL DEFAULT 0,
+  statut         TEXT NOT NULL DEFAULT 'calcule',  -- 'calcule' | 'valide' | 'paye'
+  notes          TEXT,
+  created_by     TEXT NOT NULL DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 30. CONFIG (key-value pour settings globaux)
+-- ══════════════════════════════════════════════════════════════
+DROP TABLE IF EXISTS public.fl_config CASCADE;
+CREATE TABLE public.fl_config (
+  id         TEXT PRIMARY KEY,                          -- ex: 'company', 'workflow', 'loyalty', 'process'
+  value      JSONB NOT NULL DEFAULT '{}',
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO public.fl_config (id, value) VALUES
+  ('company', '{"nom":"Empire Fresh","adresse":"Zone Industrielle, Casablanca","ville":"Casablanca, Maroc","telephone":"+212 5XX-XXXXXX","email":"contact@empirefresh.ma","ice":"000000000000000","rc":"XXXXXX","couleurEntete":"#1a4f2a"}'::jsonb),
+  ('loyalty_config', '{"actif":true,"pointsParDH":0.1,"bonusZeroRetour":50,"bonusAppOrder":20,"pointsParRemiseDH":10,"minimumPointsRachat":100,"pointsArticleCadeau":500}'::jsonb),
+  ('driver_bonus_config', '{"actif":true,"bonusZeroRetard":20,"bonusZeroRetour":30,"bonusZeroQualite":25,"bonusParfait":100}'::jsonb),
+  ('cutoff_notifications', '[{"id":"co1","time":"08:00","message":"Rappel: Finalisez vos achats avant 10h.","active":true},{"id":"co2","time":"12:00","message":"Coupure midi: Aucune nouvelle commande après 13h.","active":true}]'::jsonb)
+ON CONFLICT (id) DO NOTHING;
+
+-- Client loyalty columns (added to fl_clients)
+ALTER TABLE public.fl_clients ADD COLUMN IF NOT EXISTS segment TEXT DEFAULT 'standard';
+ALTER TABLE public.fl_clients ADD COLUMN IF NOT EXISTS loyalty_points NUMERIC DEFAULT 0;
+ALTER TABLE public.fl_clients ADD COLUMN IF NOT EXISTS loyalty_opt_in BOOLEAN DEFAULT FALSE;
+
+-- ══════════════════════════════════════════════════════════════
+-- 31. UPDATED_AT TRIGGERS (auto-update timestamps)
 -- ══════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -554,7 +802,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'fl_depots','fl_users','fl_fournisseurs','fl_articles','fl_livreurs',
     'fl_commandes','fl_bons_achat','fl_purchase_orders','fl_receptions',
-    'fl_trips','fl_bons_livraison','fl_retours'
+    'fl_trips','fl_bons_livraison','fl_retours','fl_salaries'
   ] LOOP
     EXECUTE format('
       DROP TRIGGER IF EXISTS trg_%s_updated_at ON public.%s;
@@ -588,8 +836,19 @@ CREATE INDEX IF NOT EXISTS idx_users_role              ON public.fl_users(role);
 CREATE INDEX IF NOT EXISTS idx_users_depot             ON public.fl_users(depot_id);
 CREATE INDEX IF NOT EXISTS idx_visites_prevendeur      ON public.fl_visites(prevendeur_id);
 CREATE INDEX IF NOT EXISTS idx_visites_date            ON public.fl_visites(date);
+CREATE INDEX IF NOT EXISTS idx_salaries_statut         ON public.fl_salaries(statut);
+CREATE INDEX IF NOT EXISTS idx_paiements_mois          ON public.fl_paiements_salaires(mois);
+CREATE INDEX IF NOT EXISTS idx_caisse_date             ON public.fl_caisse_entries(date);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_statut        ON public.fl_feedbacks(statut);
+CREATE INDEX IF NOT EXISTS idx_loyalty_client          ON public.fl_loyalty_transactions(client_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_type            ON public.fl_loyalty_transactions(type);
+CREATE INDEX IF NOT EXISTS idx_driver_bonuses_livreur  ON public.fl_driver_bonuses(livreur_id);
+CREATE INDEX IF NOT EXISTS idx_driver_bonuses_date     ON public.fl_driver_bonuses(date);
+CREATE INDEX IF NOT EXISTS idx_trip_charges_date       ON public.fl_trip_charges(date);
 
 -- ══════════════════════════════════════════════════════════════
--- FIN DU SCRIPT
+-- FIN DU SCRIPT — v11 (SCHEMA COMPLET)
 -- Supabase: nphrncmuxbwahqnzdyxp
+-- Tables: 30 + fl_config
+-- Date: 2026 | Auteur: Jawad
 -- ══════════════════════════════════════════════════════════════

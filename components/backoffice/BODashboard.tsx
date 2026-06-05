@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { store, type User, type Client, DELAI_RECOUVREMENT_LABELS } from "@/lib/store"
+import { store, type User, type Client, DELAI_RECOUVREMENT_LABELS, type Visite } from "@/lib/store"
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
 } from "recharts"
@@ -77,7 +77,10 @@ export default function BODashboard({ user }: Props) {
   const [visites, setVisites] = useState(store.getVisites ? store.getVisites() : [])
   const [dashTab, setDashTab] = useState<DashTab>("global")
 
-  useEffect(() => {
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(() => new Date())
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  const refreshData = () => {
     setCommandes(store.getCommandes())
     setArticles(store.getArticles())
     setClients(store.getClients())
@@ -86,6 +89,30 @@ export default function BODashboard({ user }: Props) {
     setRetours(store.getRetours())
     setBls(store.getBonsLivraison())
     setVisites(store.getVisites ? store.getVisites() : [])
+    setLastRefreshed(new Date())
+  }
+
+  useEffect(() => { refreshData() }, [])
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const id = setInterval(() => {
+      refreshData()
+      setRefreshTick(t => t + 1)
+    }, 30000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Re-render when Supabase pushes fresh data to localStorage
+  useEffect(() => {
+    const WATCHED = new Set(["fl_commandes","fl_clients","fl_articles","fl_users","fl_retours","fl_bons_livraison","fl_visites","fl_bons_achat"])
+    const handler = (e: Event) => {
+      if (WATCHED.has((e as CustomEvent).detail as string)) refreshData()
+    }
+    window.addEventListener("fl_store_updated", handler)
+    return () => window.removeEventListener("fl_store_updated", handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const today = store.today()
@@ -121,6 +148,20 @@ export default function BODashboard({ user }: Props) {
   const visitesToday  = visites.filter((v: { date: string }) => v.date === today).length
   const visitesYday   = visites.filter((v: { date: string }) => v.date === yesterday).length
   const visitesLastWk = visites.filter((v: { date: string }) => v.date === lastWeekSameDay).length
+
+  // ── Tournees du Jour ──────────────────────────────────────────────────────
+  const visitesTodayList = visites.filter((v: { date: string }) => v.date === today) as Visite[]
+  const visitesTodayCommandes = visitesTodayList.filter(v => v.resultat === "commande").length
+  const tauxConversionJ = visitesTodayList.length > 0
+    ? Math.round((visitesTodayCommandes / visitesTodayList.length) * 100)
+    : 0
+  const pvTourneesMap: Record<string, { nom: string; visites: number; commandes: number }> = {}
+  visitesTodayList.forEach(v => {
+    if (!pvTourneesMap[v.prevendeurId]) pvTourneesMap[v.prevendeurId] = { nom: v.prevendeurNom, visites: 0, commandes: 0 }
+    pvTourneesMap[v.prevendeurId].visites++
+    if (v.resultat === "commande") pvTourneesMap[v.prevendeurId].commandes++
+  })
+  const pvTourneesArr = Object.values(pvTourneesMap).sort((a, b) => b.visites - a.visites)
 
   // --- Retours ---
   const retoursToday  = retours.filter(r => r.date === today)
@@ -320,12 +361,31 @@ export default function BODashboard({ user }: Props) {
             </svg>
           </div>
           <div>
-            <h2 className="text-xl font-black" style={{ color: "oklch(0.95 0.005 250)" }}>
-              Tableau de bord <span className="font-normal text-base" style={{ color: "oklch(0.48 0.010 255)" }}>/ لوحة القيادة</span>
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black" style={{ color: "oklch(0.95 0.005 250)" }}>
+                Tableau de bord <span className="font-normal text-base" style={{ color: "oklch(0.48 0.010 255)" }}>/ لوحة القيادة</span>
+              </h2>
+              {/* LIVE badge */}
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider"
+                style={{ background: "oklch(0.18 0.06 148)", color: "oklch(0.72 0.18 148)", border: "1px solid oklch(0.28 0.10 148)" }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                LIVE
+              </span>
+            </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" />
-              <p className="text-xs" style={{ color: "oklch(0.48 0.010 255)" }}>{today} — {user.name}</p>
+              <p className="text-xs" style={{ color: "oklch(0.48 0.010 255)" }}>
+                {today} — {user.name} — màj {lastRefreshed.toLocaleTimeString("fr-MA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </p>
+              <button
+                onClick={() => refreshData()}
+                title="Actualiser maintenant"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors hover:opacity-80"
+                style={{ background: "oklch(0.18 0.030 255)", color: "oklch(0.60 0.12 255)", border: "1px solid oklch(0.25 0.020 255)" }}>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Actualiser
+              </button>
             </div>
           </div>
         </div>
@@ -484,6 +544,68 @@ export default function BODashboard({ user }: Props) {
             </div>
           )}
 
+          {/* ── Tournees du Jour ───────────────────────────────── */}
+          {visitesTodayList.length > 0 && (
+            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
+              <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 shrink-0" style={{ color: "oklch(0.65 0.18 210)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                  <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Tournées du Jour / جولات اليوم</h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-black px-2 py-0.5 rounded-lg" style={{ background: "oklch(0.16 0.04 148)", color: "oklch(0.72 0.18 148)" }}>
+                    {tauxConversionJ}% conversion
+                  </span>
+                  <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>
+                    {visitesTodayList.length} visite(s) · {visitesTodayCommandes} commande(s)
+                  </span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ background: "oklch(0.10 0.008 145)", borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
+                      <th className="text-left px-4 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Prévendeur</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Visites</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Commandes</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Sans cmd</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Taux</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pvTourneesArr.map((pv, i) => {
+                      const taux = pv.visites > 0 ? Math.round((pv.commandes / pv.visites) * 100) : 0
+                      return (
+                        <tr key={pv.nom + i} style={{ borderBottom: i < pvTourneesArr.length - 1 ? "1px solid oklch(0.16 0.010 145)" : "none" }}>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: "oklch(0.48 0.18 250)" }}>
+                                {pv.nom[0]?.toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium" style={{ color: "oklch(0.88 0.006 100)" }}>{pv.nom}</span>
+                            </div>
+                          </td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>{pv.visites}</td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.72 0.18 148)" }}>{pv.commandes}</td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.65 0.22 27)" }}>{pv.visites - pv.commandes}</td>
+                          <td className="text-center px-3 py-2.5">
+                            <span className="text-xs font-black" style={{
+                              color: taux >= 70 ? "oklch(0.72 0.18 148)" : taux >= 40 ? "oklch(0.80 0.18 72)" : "oklch(0.65 0.22 27)"
+                            }}>
+                              {taux}%
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top 10 clients CA */}
             <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
@@ -605,7 +727,7 @@ export default function BODashboard({ user }: Props) {
                       <XAxis dataKey="date" tick={TICK} axisLine={{ stroke: GRID }} tickLine={false} />
                       <YAxis yAxisId="ca" orientation="left" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                       <YAxis yAxisId="ton" orientation="right" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${v}`} />
-                      <Tooltip contentStyle={TT_STYLE} formatter={(v: number, name: string) => name === "ca" ? DH(v) : KG(v)} />
+                      <Tooltip contentStyle={TT_STYLE} formatter={(v: unknown, name: unknown) => (name as string) === "ca" ? DH(v as number) : KG(v as number)} />
                       <Legend wrapperStyle={{ fontSize: 12, color: "oklch(0.62 0.008 145)" }} />
                       <Line yAxisId="ca" type="monotone" dataKey="ca" stroke="#10b981" strokeWidth={2.5} dot={false} name="CA (DH)" />
                       <Line yAxisId="ton" type="monotone" dataKey="tonnage" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 3" name="Tonnage (kg)" />
@@ -623,7 +745,7 @@ export default function BODashboard({ user }: Props) {
                         <XAxis dataKey="name" tick={TICK} axisLine={{ stroke: GRID }} tickLine={false} />
                         <YAxis yAxisId="ca" orientation="left" tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                         <YAxis yAxisId="ton" orientation="right" tick={TICK} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={TT_STYLE} formatter={(v: number, name: string) => name === "ca" ? DH(v) : KG(v)} />
+                        <Tooltip contentStyle={TT_STYLE} formatter={(v: unknown, name: unknown) => (name as string) === "ca" ? DH(v as number) : KG(v as number)} />
                         <Legend wrapperStyle={{ fontSize: 12, color: "oklch(0.62 0.008 145)" }} />
                         <Bar yAxisId="ca" dataKey="ca" fill="#10b981" name="CA (DH)" radius={[6, 6, 0, 0]} />
                         <Bar yAxisId="ton" dataKey="tonnage" fill="#f59e0b" name="Tonnage (kg)" radius={[6, 6, 0, 0]} />
@@ -641,7 +763,7 @@ export default function BODashboard({ user }: Props) {
                         <CartesianGrid strokeDasharray="4 3" stroke={GRID} horizontal={false} />
                         <XAxis type="number" tick={TICK_SM} axisLine={{ stroke: GRID }} tickLine={false} tickFormatter={v => `${v}kg`} />
                         <YAxis type="category" dataKey="name" tick={TICK_SM} axisLine={false} tickLine={false} width={70} />
-                        <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => KG(v)} />
+                        <Tooltip contentStyle={TT_STYLE} formatter={(v: unknown) => KG(v as number)} />
                         <Bar dataKey="kg" name="Tonnage" radius={[0, 6, 6, 0]}>
                           {artChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Bar>
@@ -660,7 +782,7 @@ export default function BODashboard({ user }: Props) {
                           <CartesianGrid strokeDasharray="4 3" stroke={GRID} horizontal={false} />
                           <XAxis type="number" tick={TICK_SM} axisLine={{ stroke: GRID }} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                           <YAxis type="category" dataKey="name" tick={TICK_SM} axisLine={false} tickLine={false} width={70} />
-                          <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => DH(v)} />
+                          <Tooltip contentStyle={TT_STYLE} formatter={(v: unknown) => DH(v as number)} />
                           <Bar dataKey="ca" name="CA" radius={[0, 6, 6, 0]}>
                             {secteurChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Bar>
@@ -673,11 +795,11 @@ export default function BODashboard({ user }: Props) {
                         <PieChart>
                           <Pie data={top10Clients.map(([, c]) => ({ name: c.nom, value: Math.round(c.ca) }))}
                             dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={40}
-                            label={({ name, percent }) => `${name.split(" ")[0]} ${(percent * 100).toFixed(0)}%`}
+                            label={({ name, percent }: { name?: string; percent?: number }) => `${(name ?? "").split(" ")[0]} ${((percent ?? 0) * 100).toFixed(0)}%`}
                             labelLine={false} fontSize={9}>
                             {top10Clients.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Pie>
-                          <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => DH(v)} />
+                          <Tooltip contentStyle={TT_STYLE} formatter={(v: unknown) => DH(v as number)} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -824,7 +946,7 @@ export default function BODashboard({ user }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.01 240)" />
                   <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}kg`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
-                  <Tooltip formatter={(v: number) => KG(v)} />
+                  <Tooltip formatter={(v: unknown) => KG(v as number)} />
                   <Bar dataKey="kg" fill="#ef4444" name="Retour (kg)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>

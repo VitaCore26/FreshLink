@@ -51,9 +51,9 @@ function computeCmdVsFacturation(dateFrom: string, dateTo: string): CmdVsFactura
   for (const cmd of commandes) {
     for (const ligne of cmd.lignes) {
       const matchingBLs = bls.filter(b => b.commandeId === cmd.id)
-      const qteFact = matchingBLs.reduce((s, b) => s + (b.lignes.find(l => l.articleId === ligne.articleId)?.quantite ?? 0), 0)
+      const qteFact = matchingBLs.reduce((s, b) => s + (b.lignes.find(l => l.articleNom === ligne.articleNom)?.quantite ?? 0), 0)
       const prixFact = matchingBLs.reduce((s, b) => {
-        const l = b.lignes.find(l => l.articleId === ligne.articleId)
+        const l = b.lignes.find(l => l.articleNom === ligne.articleNom)
         return s + (l ? l.total : 0)
       }, 0)
       rows.push({

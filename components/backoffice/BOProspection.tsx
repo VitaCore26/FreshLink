@@ -1,4 +1,6 @@
 "use client"
+// @ts-ignore — shared AI helper
+import { callLLM, triggerN3Alert } from "@/lib/ai"
 
 import { useState, useCallback, useRef } from "react"
 import { store, type User, type Client } from "@/lib/store"
@@ -211,8 +213,6 @@ Génère une analyse complète en JSON avec exactement cette structure:
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "customerId": "cus_TSL8iYLtbslUQB",
-      "Authorization": "Bearer xxx",
     },
     body: JSON.stringify({
       model: "openrouter/claude-sonnet-4",
@@ -588,8 +588,7 @@ export default function BOProspection({ user }: { user: User }) {
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(v => !v)}
-              disabled={prospects.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold border border-border bg-background hover:bg-muted transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold border border-border bg-background hover:bg-muted transition-colors"
               title="Exporter les prospects">
               <Icon d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               Exporter

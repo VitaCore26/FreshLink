@@ -6,6 +6,7 @@ import { printBL, printFacture as printFactureLib } from "@/lib/print"
 
 // ── FMT ──────────────────────────────────────────────────────────────────
 const fmtDH = (n: number) => n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " DH"
+const fmtDate = () => new Date().toLocaleDateString("fr-FR")
 
 // ── Legacy inline wrappers replaced by lib/print ─────────────────────────
 // keeping _printBLLegacy to avoid breaking anything that still references it
@@ -569,7 +570,7 @@ export default function BOCash() {
                         </button>
                         {/* Print Facture */}
                         <button
-                          onClick={() => printFactureLib(bl as Parameters<typeof printFactureLib>[0])}
+                          onClick={() => printFactureLib(bl, bl.id)}
                           title="Imprimer Facture"
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
                           style={{ background: "oklch(0.60 0.16 195 / 0.1)", color: "oklch(0.60 0.16 195)" }}

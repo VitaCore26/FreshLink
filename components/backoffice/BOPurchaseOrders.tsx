@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type PurchaseOrder, type Article, type Fournisseur } from "@/lib/store"
+import { store, type PurchaseOrder, type Article, type Fournisseur, type DemandeAchat } from "@/lib/store"
 import { sendEmail } from "@/lib/email"
 import { printPO } from "@/lib/print"
+import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
 const fmtDH = (n: number) => n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " DH"
+const fmtDate = () => new Date().toLocaleDateString("fr-FR")
 
 // ── Calcul nb caisses pour un article ────────────────────────────────────────
 // Logique: qte / colisageCaisses = nb caisses entières + reste → demi-caisses
@@ -173,12 +175,15 @@ const STATUT_COLORS: Record<string, string> = {
 
 export default function BoPurchaseOrders() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
+  const [demandesAchat, setDemandesAchat] = useState<DemandeAchat[]>([])
   const [articles, setArticles] = useState<Article[]>([])
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([])
   const [showForm, setShowForm] = useState(false)
   const [filterStatut, setFilterStatut] = useState<string>("tous")
   const [filterArticle, setFilterArticle] = useState<string>("")
   const [emailConfig] = useState(store.getEmailConfig().achat)
+  const [poTab, setPoTab] = useState<"po" | "da">("po")
+  const [autoGenMsg, setAutoGenMsg] = useState<string | null>(null)
 
   // Form
   const [fArticleId, setFArticleId] = useState("")
@@ -196,6 +201,19 @@ export default function BoPurchaseOrders() {
     setOrders(store.getPurchaseOrders())
     setArticles(store.getArticles())
     setFournisseurs(store.getFournisseurs())
+    setDemandesAchat(store.getDemandesAchat())
+  }
+
+  // Auto-generate POs from besoin net (called by user or can be automated)
+  const handleAutoGenPOs = () => {
+    const newPOs = store.autoGeneratePOsFromBesoin()
+    if (newPOs.length === 0) {
+      setAutoGenMsg("Aucun PO a generer — stock suffisant ou POs deja crees aujourd'hui.")
+    } else {
+      setAutoGenMsg(`${newPOs.length} PO(s) genere(s) automatiquement depuis le besoin net.`)
+    }
+    refresh()
+    setTimeout(() => setAutoGenMsg(null), 5000)
   }
 
   const selectedArticle = articles.find(a => a.id === fArticleId)
@@ -305,6 +323,34 @@ export default function BoPurchaseOrders() {
         ))}
       </div>
 
+      {/* PO / DA Tabs */}
+      <div className="flex gap-2 bg-muted p-1 rounded-xl self-start">
+        {([
+          { id: "po" as const, label: "PO Consolides", count: orders.length },
+          { id: "da" as const, label: "Demandes d'Achat (DA)", count: demandesAchat.filter(d => d.statut === "ouverte" || d.statut === "en_cours").length },
+        ]).map(t => (
+          <button key={t.id} onClick={() => setPoTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${poTab === t.id ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            {t.label}
+            {t.count > 0 && (
+              <span className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center ${poTab === t.id ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-muted-foreground"}`}>
+                {t.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Auto-gen feedback */}
+      {autoGenMsg && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          {autoGenMsg}
+        </div>
+      )}
+
+      {poTab === "po" && (
+      <>
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -314,6 +360,14 @@ export default function BoPurchaseOrders() {
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           Nouveau PO
+        </button>
+
+        <button
+          onClick={handleAutoGenPOs}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-sans transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Auto-generer depuis besoin
         </button>
 
         <select
@@ -352,20 +406,15 @@ export default function BoPurchaseOrders() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Article *</label>
-              <select
+              <ArticleCombobox
+                articles={articles}
                 value={fArticleId}
-                onChange={e => {
-                  setFArticleId(e.target.value)
-                  const a = articles.find(a => a.id === e.target.value)
-                  if (a) setFPrix(a.prixAchat.toString())
+                onChange={(artId, artObj) => {
+                  setFArticleId(artId)
+                  if (artObj) setFPrix(artObj.prixAchat.toString())
                 }}
-                className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-sans focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">Choisir un article</option>
-                {articles.map(a => (
-                  <option key={a.id} value={a.id}>{a.nom} ({a.unite}) — Stock: {a.stockDisponible}</option>
-                ))}
-              </select>
+                placeholder="Choisir un article"
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -648,6 +697,98 @@ export default function BoPurchaseOrders() {
           </table>
         </div>
       </div>
+      </>
+      )}
+
+      {/* ── DA Tab ────────────────────────────────────────────────────────── */}
+      {poTab === "da" && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
+            <p className="text-sm font-bold text-amber-800">Demandes d&apos;Achat (DA)</p>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              Une DA est <strong>generee automatiquement</strong> uniquement lorsque <strong>tous les acheteurs ont refuse un PO</strong> (ou si un seul acheteur existe et refuse).
+              Elle signale un besoin non satisfait qui doit etre traite en urgence.
+            </p>
+          </div>
+          {demandesAchat.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+              <svg className="w-12 h-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-sm font-semibold">Aucune DA generee</p>
+              <p className="text-xs text-center max-w-xs">Les DAs apparaissent ici quand tous les acheteurs ont refuse un PO.</p>
+            </div>
+          ) : (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm font-sans">
+                  <thead>
+                    <tr className="bg-amber-700 text-white">
+                      {["N° DA", "Date", "Article", "Qte", "Fournisseur", "Statut", "Source PO", "Actions"].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {demandesAchat.map((da, i) => {
+                      const STATUT_DA: Record<string, string> = {
+                        ouverte: "bg-red-100 text-red-800",
+                        en_cours: "bg-amber-100 text-amber-800",
+                        traitee: "bg-green-100 text-green-800",
+                        annulee: "bg-slate-100 text-slate-600",
+                      }
+                      return (
+                        <tr key={da.id} className="border-t border-border hover:bg-muted/30 transition-colors"
+                          style={{ background: i % 2 === 0 ? "white" : "oklch(0.975 0.003 240)" }}>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono font-bold text-amber-700">
+                              DA-{da.id.slice(-6).toUpperCase()}
+                            </span>
+                            {da.statut === "ouverte" && (
+                              <span className="block text-[9px] font-bold text-red-600 mt-0.5">URGENT</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">{da.date}</td>
+                          <td className="px-4 py-3">
+                            <span className="font-semibold text-sm">{da.articleNom}</span>
+                            <span className="block text-[10px] text-muted-foreground">{da.articleUnite}</span>
+                          </td>
+                          <td className="px-4 py-3 font-bold text-sm">{da.quantite.toLocaleString("fr-MA")} {da.articleUnite}</td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">{da.fournisseurNom ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${STATUT_DA[da.statut] ?? "bg-slate-100 text-slate-600"}`}>
+                              {da.statut.charAt(0).toUpperCase() + da.statut.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono text-muted-foreground">{da.poId.slice(0, 8).toUpperCase()}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1">
+                              {da.statut === "ouverte" && (
+                                <button onClick={() => { store.updateDemandeAchat(da.id, { statut: "en_cours", assigneNom: "Back Office" }); refresh() }}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors whitespace-nowrap">
+                                  Prendre en charge
+                                </button>
+                              )}
+                              {da.statut === "en_cours" && (
+                                <button onClick={() => { store.updateDemandeAchat(da.id, { statut: "traitee", traiteeAt: new Date().toISOString() }); refresh() }}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-100 text-green-800 hover:bg-green-200 transition-colors whitespace-nowrap">
+                                  Marquer traitee
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

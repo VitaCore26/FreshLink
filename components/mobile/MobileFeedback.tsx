@@ -28,10 +28,7 @@ export default function MobileFeedback({ user }: Props) {
     setHistory(updated)
     // Also push to store feedbacks if exists
     try {
-      // @ts-ignore
-      if (store.getState().feedbacks !== undefined) {
-        store.getState().addFeedback?.({ ...entry, userId: user.id, userName: user.name })
-      }
+      store.addFeedback?.({ id: store.genId(), source: "client", auteur: user.name ?? "", sujet: category, message: entry.message, note: rating, date: entry.date, statut: "nouveau" })
     } catch { /* silent */ }
     setSaving(false)
     setSubmitted(true)

@@ -278,7 +278,7 @@ export default function BOBonPreparation({ user }: Props) {
     const d = store.today()
     if (tripId) {
       const t = trips.find(t => t.id === tripId)
-      return `Prep ${d} — ${t?.nom ?? tripId}`
+      return `Prep ${d} — ${t?.numero ?? t?.id ?? tripId}`
     }
     const bons = store.getBonsPreparation()
     const seq = String(bons.filter(b => b.date === d).length + 1).padStart(2, "0")
@@ -432,6 +432,30 @@ export default function BOBonPreparation({ user }: Props) {
     arr[idx].validatedAt = new Date().toISOString()
     arr[idx].validatedBy = user.id
     store.saveBonsPreparation(arr)
+
+    // ── Mise à jour automatique statut commandes liées → "en_preparation" ──
+    const bp = arr[idx]
+    let linkedCmdIds: string[] = []
+    if (bp.tripId) {
+      const trip = trips.find(t => t.id === bp.tripId)
+      if (trip?.commandeIds) linkedCmdIds = trip.commandeIds
+    } else if (bp.clientIds?.length) {
+      // Find commandes for these clients (today)
+      const today = store.today()
+      linkedCmdIds = store.getCommandes()
+        .filter(c => bp.clientIds!.includes(c.clientId) && (c.date === today || !c.date))
+        .map(c => c.id)
+    }
+    if (linkedCmdIds.length > 0) {
+      const cmds = store.getCommandes()
+      const updatedCmds = cmds.map(c =>
+        linkedCmdIds.includes(c.id) && ["valide", "en_attente"].includes(c.statut)
+          ? { ...c, statut: "en_preparation" as typeof c.statut }
+          : c
+      )
+      store.saveCommandes(updatedCmds)
+    }
+
     refresh()
     if (viewing?.id === bonId) setViewing({ ...arr[idx] })
   }

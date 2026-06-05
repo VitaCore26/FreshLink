@@ -295,13 +295,13 @@ function TripRow({ trip, onUpdate }: { trip: TripCharge; onUpdate: () => void })
 
 // ── Auto-sync Trip from BL + Controle Preparation + Retour ────────────────────
 function buildTripFromFlows(livreurNom: string, date: string): Partial<TripCharge> & {
-  sourceBLs: string[]; sourcePrepIds: string[]; sourceCaisses: { gros: number; demi: number }
+  sourceBLs: string[]; sourcePrepIds: string[]; sourceCaisses: { gros: number; demi: number }; observations?: string
 } {
   const today = date || store.today()
 
   // 1. BL for this livreur on this date
   const bls = store.getBonsLivraison().filter(
-    bl => bl.date === today && (bl.livreurNom === livreurNom || bl.livreurId === livreurNom)
+    bl => bl.date === today && bl.livreurNom === livreurNom
   )
   const nbClients = bls.length
   const secteurs = [...new Set(bls.map(bl => (bl as { secteur?: string; clientSecteur?: string }).secteur || (bl as { secteur?: string; clientSecteur?: string }).clientSecteur || "").filter(Boolean))]

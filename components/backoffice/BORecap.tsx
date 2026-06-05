@@ -49,7 +49,8 @@ function computeStats(date: string): DailyStats {
   const totalLivraisons = bls.reduce((s, b) => s + b.montantTotal, 0)
   const totalRetours    = retours.reduce((s, r) => s + r.lignes.reduce((ls, l) => {
     const art = articles.find(a => a.id === l.articleId)
-    return ls + l.quantite * (art?.prixVente ?? 0)
+    const pv = art ? (art.pvMethode === "pourcentage" ? art.prixAchat * (1 + art.pvValeur / 100) : art.pvMethode === "montant" ? art.prixAchat + art.pvValeur : art.pvValeur) : 0
+    return ls + l.quantite * pv
   }, 0), 0)
   const totalCash = bls.filter(b => b.statut === "encaissé").reduce((s, b) => s + b.montantTotal, 0)
   const marge     = totalLivraisons - totalAchats
@@ -133,7 +134,7 @@ function groupByFournisseur(
     if (!map.has(r.fournisseurId)) {
       const f = fournisseurs.find(f => f.id === r.fournisseurId)
       map.set(r.fournisseurId, {
-        fournisseurNom:   r.fournisseurNom,
+        fournisseurNom:   r.fournisseurNom ?? "",
         fournisseurEmail: f?.email ?? "",
         lignes: [],
       })

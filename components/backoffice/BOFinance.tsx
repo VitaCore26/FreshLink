@@ -123,7 +123,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
   const [showCaiForm, setShowCaiForm] = useState(false)
 
   // Salarie form
-  const EMPTY_SAL: Omit<Salarie, "id"> = { nom: "", prenom: "", poste: "", telephone: "", cin: "", cnss: "", dateEmbauche: store.today(), typeContrat: "cdi", salaireBrut: 0, avances: 0, statut: "actif" }
+  const EMPTY_SAL: Omit<Salarie, "id"> = { civilite: "M.", nom: "", prenom: "", poste: "", telephone: "", cin: "", cnss: "", dateEmbauche: store.today(), typeContrat: "cdi", salaireBrut: 0, avances: 0, statut: "actif", createdBy: "", createdAt: "" }
   const [salForm, setSalForm] = useState(EMPTY_SAL)
   const [editSalId, setEditSalId] = useState<string | null>(null)
   const [showSalForm, setShowSalForm] = useState(false)
@@ -197,6 +197,62 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
       return { ...a, part, montant }
     })
   }, [actionnaires, synthese.beneficeDistribuable])
+
+  // ── Profitabilité par jour ────────────────────────────────────────────────
+  const profitParJour = useMemo(() => {
+    const bonsAchat = store.getBonsAchat()
+    const commandes = store.getCommandes()
+    const inPeriod = (date: string) => date >= periodFilter.from && date <= periodFilter.to
+
+    // Group days that have activity
+    const days = new Set<string>()
+    commandes.filter(c => inPeriod(c.date)).forEach(c => days.add(c.date))
+    bonsAchat.filter(b => inPeriod(b.date) && b.statut === "validé").forEach(b => days.add(b.date))
+
+    const totalChargesPeriod = charges.filter(c => inPeriod(c.date)).reduce((s, c) => s + c.montant, 0)
+    const nbJours = days.size || 1
+
+    return Array.from(days).sort().map(day => {
+      const ca = commandes
+        .filter(c => c.date === day && ["valide", "livre", "en_transit"].includes(c.statut))
+        .reduce((s, c) => s + c.lignes.reduce((ls, l) => ls + l.quantite * l.prixVente, 0), 0)
+      const coutAchat = bonsAchat
+        .filter(b => b.date === day && b.statut === "validé")
+        .reduce((s, b) => s + b.lignes.reduce((ls, l) => ls + l.quantite * l.prixAchat, 0), 0)
+      const chargesJour = totalChargesPeriod / nbJours
+      const marge = ca - coutAchat
+      const profit = marge - chargesJour
+      const margePct = ca > 0 ? (marge / ca) * 100 : 0
+      return { day, ca, coutAchat, chargesJour, marge, profit, margePct }
+    })
+  }, [periodFilter, charges])
+
+  // ── Profitabilité par trip (BL) ───────────────────────────────────────────
+  const profitParTrip = useMemo(() => {
+    const inPeriod = (date: string) => date >= periodFilter.from && date <= periodFilter.to
+    const commandes = store.getCommandes()
+    const bonsAchat = store.getBonsAchat()
+
+    const totalChargesPeriod = charges.filter(c => inPeriod(c.date)).reduce((s, c) => s + c.montant, 0)
+    const nbBls = bls.filter(b => inPeriod(b.date)).length || 1
+
+    return bls.filter(b => inPeriod(b.date)).map(bl => {
+      // CA: the commande linked to this BL
+      const blCmds = commandes.filter(c => c.id === bl.commandeId)
+      const ca = blCmds.length > 0
+        ? blCmds.reduce((s, c) => s + c.lignes.reduce((ls, l) => ls + l.quantite * l.prixVente, 0), 0)
+        : bl.montantTotal
+      // Coût achat: bons achat same day
+      const coutAchat = bonsAchat
+        .filter(b => b.date === bl.date && b.statut === "validé")
+        .reduce((s, b) => s + b.lignes.reduce((ls, l) => ls + l.quantite * l.prixAchat, 0), 0) / nbBls
+      const chargesTrip = totalChargesPeriod / nbBls
+      const marge = ca - coutAchat
+      const profit = marge - chargesTrip
+      const margePct = ca > 0 ? (marge / ca) * 100 : 0
+      return { bl, ca, coutAchat, chargesTrip, marge, profit, margePct, nbCommandes: blCmds.length }
+    }).sort((a, b) => b.bl.date.localeCompare(a.bl.date))
+  }, [periodFilter, bls, charges])
 
   // Caisse filtered
   const caisseFiltree = useMemo(() => caisse.filter(e => {
@@ -464,6 +520,94 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
                 )
               })}
             </div>
+          </div>
+
+          {/* ── Profitabilité par jour ── */}
+          <div className="bg-card rounded-2xl border border-border p-5">
+            <h3 className="font-bold text-sm mb-1">Rentabilite par jour / الربحية اليومية</h3>
+            <p className="text-xs text-muted-foreground mb-4">Les charges sont reparties equitablement sur le nombre de jours actifs de la periode.</p>
+            {profitParJour.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune activite dans la periode selectionnee.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-sans">
+                  <thead className="bg-muted">
+                    <tr>
+                      {["Date", "CA", "Coût achat", "Marge brute", "Charges/j", "Profit net", "Marge%"].map(h => (
+                        <th key={h} className={`px-3 py-2.5 font-semibold text-muted-foreground ${h === "Date" ? "text-left" : "text-right"}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitParJour.map(row => (
+                      <tr key={row.day} className="border-t border-border hover:bg-muted/20 transition-colors">
+                        <td className="px-3 py-2.5 font-semibold text-foreground">{row.day}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-blue-600 font-semibold">{fmt(row.ca)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-red-600">{fmt(row.coutAchat)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-bold ${row.marge >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmt(row.marge)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-orange-600">{fmt(row.chargesJour)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-bold ${row.profit >= 0 ? "text-green-700" : "text-red-700"}`}>
+                          {row.profit >= 0 ? "+" : ""}{fmt(row.profit)}
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-bold ${row.margePct >= 25 ? "text-green-600" : row.margePct >= 15 ? "text-amber-600" : "text-red-600"}`}>
+                          {row.margePct.toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-border bg-muted/30 font-bold">
+                      <td className="px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">Total</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-blue-700 font-bold">{fmt(profitParJour.reduce((s, r) => s + r.ca, 0))}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-red-700 font-bold">{fmt(profitParJour.reduce((s, r) => s + r.coutAchat, 0))}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-emerald-700 font-bold">{fmt(profitParJour.reduce((s, r) => s + r.marge, 0))}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-orange-700">{fmt(profitParJour.reduce((s, r) => s + r.chargesJour, 0))}</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-bold text-green-800">{fmt(profitParJour.reduce((s, r) => s + r.profit, 0))}</td>
+                      <td className="px-3 py-2.5 text-right text-muted-foreground">—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ── Profitabilité par trip ── */}
+          <div className="bg-card rounded-2xl border border-border p-5">
+            <h3 className="font-bold text-sm mb-1">Rentabilite par trip (BL) / الربحية حسب الرحلة</h3>
+            <p className="text-xs text-muted-foreground mb-4">Chaque bon de livraison = 1 trip. Les charges et achats sont repartis proportionnellement.</p>
+            {profitParTrip.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucun bon de livraison dans la periode selectionnee.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-sans">
+                  <thead className="bg-muted">
+                    <tr>
+                      {["BL", "Date", "Livreur", "Cmds", "CA", "Coût achat", "Marge brute", "Charges/trip", "Profit net", "Marge%"].map(h => (
+                        <th key={h} className={`px-3 py-2.5 font-semibold text-muted-foreground ${["BL", "Date", "Livreur"].includes(h) ? "text-left" : "text-right"}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitParTrip.map(row => (
+                      <tr key={row.bl.id} className="border-t border-border hover:bg-muted/20 transition-colors">
+                        <td className="px-3 py-2.5 font-mono text-muted-foreground">{row.bl.id.slice(0, 8)}</td>
+                        <td className="px-3 py-2.5 font-semibold text-foreground">{row.bl.date}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{row.bl.livreurNom ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold">{row.nbCommandes}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-blue-600 font-semibold">{fmt(row.ca)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-red-600">{fmt(row.coutAchat)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-bold ${row.marge >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmt(row.marge)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-orange-600">{fmt(row.chargesTrip)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-bold ${row.profit >= 0 ? "text-green-700" : "text-red-700"}`}>
+                          {row.profit >= 0 ? "+" : ""}{fmt(row.profit)}
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-bold ${row.margePct >= 25 ? "text-green-600" : row.margePct >= 15 ? "text-amber-600" : "text-red-600"}`}>
+                          {row.margePct.toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -871,7 +1015,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
                 {[{ f: "prenom", label: "Prenom", ph: "Mohammed" }, { f: "nom", label: "Nom", ph: "Benali" }, { f: "poste", label: "Poste", ph: "Magasinier, Livreur..." }, { f: "telephone", label: "Telephone", ph: "0661234567" }, { f: "cin", label: "CIN", ph: "AB123456" }, { f: "cnss", label: "N° CNSS", ph: "1234567" }].map(({ f, label, ph }) => (
                   <div key={f} className="flex flex-col gap-1">
                     <label className="text-xs font-semibold">{label}</label>
-                    <input value={(salForm as Record<string, string|number>)[f] as string}
+                    <input value={(salForm as unknown as Record<string, string|number>)[f] as string}
                       onChange={e => setSalForm(a => ({ ...a, [f]: e.target.value }))} placeholder={ph}
                       className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                   </div>
@@ -941,7 +1085,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
                       <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full border ${STATUT_SAL_COLORS[s.statut]}`}>{STATUT_SAL_LABELS[s.statut]}</span></td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <button onClick={() => { setSalForm({ nom: s.nom, prenom: s.prenom, poste: s.poste, telephone: s.telephone||"", cin: s.cin||"", cnss: s.cnss||"", dateEmbauche: s.dateEmbauche, typeContrat: s.typeContrat, salaireBrut: s.salaireBrut, avances: s.avances, statut: s.statut }); setEditSalId(s.id); setShowSalForm(true); setShowPaiForm(false) }} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+                          <button onClick={() => { setSalForm({ civilite: s.civilite ?? "M.", nom: s.nom, prenom: s.prenom, poste: s.poste, telephone: s.telephone||"", cin: s.cin||"", cnss: s.cnss||"", dateEmbauche: s.dateEmbauche, typeContrat: s.typeContrat, salaireBrut: s.salaireBrut, avances: s.avances, statut: s.statut, createdBy: s.createdBy ?? "", createdAt: s.createdAt ?? "" }); setEditSalId(s.id); setShowSalForm(true); setShowPaiForm(false) }} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
                           <button onClick={() => { store.deleteSalarie(s.id); refresh() }} className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                         </div>
                       </td>
@@ -995,7 +1139,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
             const plafond = c.plafondCredit ?? 0
             const delai = c.delaiRecouvrement ?? "a_definir"
             const delaiMs = DELAI_MS[delai] ?? Infinity
-            const clientBLs = bls.filter(b => b.clientId === c.id)
+            const clientBLs = bls.filter(b => b.clientId === c.id || b.clientNom === c.nom)
             const lastBLDate = clientBLs.length > 0
               ? clientBLs.sort((a, b2) => b2.date.localeCompare(a.date))[0].date
               : null
@@ -1393,7 +1537,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
                           <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">Aucun encours credit</td>
                         </tr>
                       ) : clients.filter(c => (c.creditSolde ?? 0) > 0).map(c => {
-                        const clientBLs = bls.filter(b => b.clientId === c.id)
+                        const clientBLs = bls.filter(b => b.clientId === c.id || b.clientNom === c.nom)
                         const lastBL = clientBLs.sort((a, b2) => b2.date.localeCompare(a.date))[0]
                         const ageMs = lastBL ? now - new Date(lastBL.date).getTime() : null
                         const ageDays = ageMs !== null ? Math.round(ageMs / (24 * 3600 * 1000)) : null

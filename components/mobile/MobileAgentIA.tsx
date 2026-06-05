@@ -1,5 +1,6 @@
 "use client"
 
+import { callLLM, triggerN3Alert as n3Alert } from "@/lib/ai"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { type User } from "@/lib/store"
 
@@ -47,10 +48,10 @@ STYLE : Court sur le terrain. Détaillé dans les rapports qualité. Max 3-4 phr
     ],
   },
   prevendeur: {
-    id: "mustapha", name: "MUSTAPHA", fullName: "Mustapha — Expert Vente", color: "#10b981",
+    id: "jariri", name: "JARIRI", fullName: "Jariri — Expert Vente Terrain", color: "#10b981",
     bgLight: "#ecfdf5", border: "#a7f3d0", textColor: "#065f46",
     avatar: "M", badge: "Vente", roleLabel: "N1 · Terrain",
-    systemPrompt: `Tu es MUSTAPHA, commercial terrain expert de FreshLink Pro à Casablanca. Tu connais chaque client par son prénom.
+    systemPrompt: `Tu es JARIRI, commercial terrain expert de FreshLink Pro à Casablanca. Tu connais chaque client par son prénom.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un PRÉVENDEUR (prevendeur, team_leader) : parle Darija directement, jargon métier ("sel3a", "cocher", "cash f l'blassa", "machi mochkil"), sois complice, rapide, efficace.
@@ -72,10 +73,10 @@ STYLE : Court, actionnable, max 3 phrases en situation terrain. Si c'est un clie
     ],
   },
   team_leader: {
-    id: "mustapha", name: "MUSTAPHA", fullName: "Mustapha — Expert Vente", color: "#10b981",
+    id: "jariri", name: "JARIRI", fullName: "Jariri — Expert Vente Terrain", color: "#10b981",
     bgLight: "#ecfdf5", border: "#a7f3d0", textColor: "#065f46",
     avatar: "M", badge: "Commercial", roleLabel: "N1 · Team Lead",
-    systemPrompt: `Tu es MUSTAPHA, commercial terrain expert de FreshLink Pro. Tu gères une équipe de prévendeurs.
+    systemPrompt: `Tu es JARIRI, commercial terrain expert de FreshLink Pro. Tu gères une équipe de prévendeurs.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un TEAM LEADER : chiffres de l'équipe, pipeline, alertes clients prioritaires. Français professionnel.
@@ -148,10 +149,10 @@ SIGNAL : Génère [CREDIT_VALIDÉ] ou [CREDIT_REFUSÉ] dans chaque décision de 
     ],
   },
   resp_logistique: {
-    id: "hicham", name: "HICHAM", fullName: "HICHAM — Controle Gestion", color: "#ef4444",
+    id: "thomas", name: "THOMAS", fullName: "Thomas — Contrôle de Gestion", color: "#ef4444",
     bgLight: "#fef2f2", border: "#fecaca", textColor: "#7f1d1d",
     avatar: "H", badge: "Controle", roleLabel: "N2 · Controle",
-    systemPrompt: `Tu es HICHAM, contrôleur de gestion expert chez FreshLink Pro. Rigoureux, chiffré, zéro tolérance pour les approximations.
+    systemPrompt: `Tu es THOMAS, contrôleur de gestion expert chez FreshLink Pro. Rigoureux, chiffré, zéro tolérance pour les approximations.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un RESP LOGISTIQUE ou DISPATCHEUR : chiffres clés, actions correctives en bullets courts, priorités du jour.
@@ -173,10 +174,10 @@ STYLE : Factuel, précis, chiffré. Court et actionnable.`,
     ],
   },
   dispatcheur: {
-    id: "hicham", name: "HICHAM", fullName: "HICHAM — Controle Gestion", color: "#ef4444",
+    id: "thomas", name: "THOMAS", fullName: "Thomas — Contrôle de Gestion", color: "#ef4444",
     bgLight: "#fef2f2", border: "#fecaca", textColor: "#7f1d1d",
     avatar: "H", badge: "Dispatch", roleLabel: "N2 · Controle",
-    systemPrompt: `Tu es HICHAM, contrôleur de gestion expert chez FreshLink Pro.
+    systemPrompt: `Tu es THOMAS, contrôleur de gestion expert chez FreshLink Pro.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un DISPATCHEUR : optimisation tournées, priorités géographiques, affectation camions.
@@ -219,10 +220,10 @@ STYLE : Court, clair, opérationnel.`,
     ],
   },
   ctrl_achat: {
-    id: "hicham", name: "HICHAM", fullName: "HICHAM — Controle Achat", color: "#ef4444",
+    id: "thomas", name: "THOMAS", fullName: "Thomas — Contrôle de Gestion", color: "#ef4444",
     bgLight: "#fef2f2", border: "#fecaca", textColor: "#7f1d1d",
     avatar: "H", badge: "Ctrl Achat", roleLabel: "N2 · Controle",
-    systemPrompt: `Tu es HICHAM, contrôleur de gestion expert chez FreshLink Pro, spécialisé dans le contrôle des achats et réceptions.
+    systemPrompt: `Tu es THOMAS, contrôleur de gestion expert chez FreshLink Pro, spécialisé dans le contrôle des achats et réceptions.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un CONTROLEUR ACHAT : bullets courts, actions correctives immédiates.
@@ -242,10 +243,10 @@ STYLE : Factuel, précis. Zéro tolérance pour les approximations.`,
     ],
   },
   ctrl_prep: {
-    id: "hicham", name: "HICHAM", fullName: "HICHAM — Controle Prep", color: "#ef4444",
+    id: "thomas", name: "THOMAS", fullName: "Thomas — Contrôle de Gestion", color: "#ef4444",
     bgLight: "#fef2f2", border: "#fecaca", textColor: "#7f1d1d",
     avatar: "H", badge: "Ctrl Prep", roleLabel: "N2 · Controle",
-    systemPrompt: `Tu es HICHAM, contrôleur de gestion expert chez FreshLink Pro, spécialisé dans le contrôle des préparations.
+    systemPrompt: `Tu es THOMAS, contrôleur de gestion expert chez FreshLink Pro, spécialisé dans le contrôle des préparations.
 
 ADAPTE TON LANGUAGE SELON L'INTERLOCUTEUR :
 - Avec un CONTROLEUR PREP : simple, direct, focus sur les actions de contrôle.
@@ -307,22 +308,7 @@ Réponds en français clair et concis. Sois pratique et actionnable.`,
 
 interface Msg { role: "user" | "assistant"; text: string; ts: number }
 
-// N3 silent alert
-async function triggerN3Alert(issue: string) {
-  try {
-    await fetch("https://llm.blackbox.ai/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "customerId": "cus_TSL8iYLtbslUQB", "Authorization": "Bearer xxx" },
-      body: JSON.stringify({
-        model: "openrouter/claude-sonnet-4",
-        messages: [
-          { role: "system", content: "Tu es un système d'alerte critique FreshLink Pro. Génère un message d'alerte urgent." },
-          { role: "user", content: `ALERTE N3 — Problème non résolu: ${issue}. Notifier +212663898707 et la direction.` },
-        ],
-      }),
-    })
-  } catch { /* silent — N3 alert is backend only */ }
-}
+// N3 alert handled by lib/ai.ts
 
 export default function MobileAgentIA({ user }: Props) {
   const agent = ROLE_AGENT[user.role] ?? DEFAULT_AGENT
@@ -353,27 +339,16 @@ export default function MobileAgentIA({ user }: Props) {
 
 CONTEXTE : L'utilisateur qui te parle a le rôle "${user.role}" dans FreshLink Pro. Son nom est ${user.name}.
 Adapte ton ton, ta langue et ton niveau de détail exactement selon ce rôle.`
-      const res = await fetch("https://llm.blackbox.ai/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "customerId": "cus_TSL8iYLtbslUQB", "Authorization": "Bearer xxx" },
-        body: JSON.stringify({
-          model: "openrouter/claude-sonnet-4",
-          messages: [
-            { role: "system", content: contextPrompt },
-            ...history,
-            { role: "user", content: msg },
-          ],
-        }),
-      })
-      const data = await res.json()
-      const reply = data?.choices?.[0]?.message?.content ?? "Je n'ai pas pu traiter votre demande."
+      const historyMsgs = msgs.slice(-12).map(m => ({ role: m.role, text: m.text }))
+      historyMsgs.push({ role: "user", text: msg })
+      const reply = await callLLM(contextPrompt, historyMsgs, { temperature: 0.65, max_tokens: 1200 })
       failCountRef.current = 0
       setMsgs(prev => [...prev, { role: "assistant", text: reply, ts: Date.now() }])
     } catch {
       failCountRef.current += 1
       if (failCountRef.current >= 3 && !n3Triggered) {
         setN3Triggered(true)
-        triggerN3Alert(`Agent ${agent.name} mobile inaccessible. Utilisateur: ${user.name} (${user.role}). Message: ${msg}`)
+        n3Alert(`Agent ${agent.name} mobile inaccessible. Utilisateur: ${user.name} (${user.role}). Message: ${msg}`)
         setMsgs(prev => [...prev, { role: "assistant", text: "Connexion temporairement indisponible. Le responsable a été notifié automatiquement.", ts: Date.now() }])
       } else {
         setMsgs(prev => [...prev, { role: "assistant", text: "Connexion impossible. Vérifiez votre réseau et réessayez.", ts: Date.now() }])

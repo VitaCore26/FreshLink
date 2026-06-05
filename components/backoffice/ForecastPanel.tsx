@@ -119,18 +119,18 @@ export default function ForecastPanel() {
     const bon = {
       id: store.genId(),
       date: store.today(),
-      fournisseur: "FORECAST AUTO",
-      statut: "en_attente" as const,
+      acheteurId: "",
+      acheteurNom: "FORECAST AUTO",
+      fournisseurId: "forecast",
+      fournisseurNom: "FORECAST AUTO",
+      emailDestinataire: "",
+      statut: "brouillon" as const,
       lignes: toOrder.map(f => ({
         articleId: f.articleId,
         articleNom: f.articleNom,
         quantite: f.qteACommander,
-        quantiteValidee: 0,
-        prixUnitaire: f.prixAchat,
-        unite: f.unite,
+        prixAchat: f.prixAchat,
       })),
-      note: `Bon genere automatiquement par Forecast — livraison prevue ${tomorrowStr} 08h00`,
-      createdAt: new Date().toISOString(),
     }
     store.addBonAchat(bon)
     alert(`Bon d'achat cree (${toOrder.length} articles) pour livraison le ${tomorrowStr} a 08h00.`)

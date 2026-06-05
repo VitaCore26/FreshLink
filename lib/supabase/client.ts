@@ -2,22 +2,83 @@
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// ── Supabase Project: jwdrwapuetqoqnankgma ─────────────────────────────────
+// Get your keys at: https://supabase.com/dashboard/project/jwdrwapuetqoqnankgma/settings/api
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  "https://jwdrwapuetqoqnankgma.supabase.co"
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error(
-    "Variables d'environnement Supabase manquantes.\n" +
-    "Créez un fichier .env.local avec NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY.\n" +
-    "Voir .env.example pour le modèle."
-  )
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3ZHJ3YXB1ZXRxb3FuYW5rZ21hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDE1NzUsImV4cCI6MjA5NDAxNzU3NX0.9l0e2eE9milvCWg29TIoGXgWY-ULOmTVrPmWRCsIvtw"
+
+if (!SUPABASE_ANON_KEY && typeof window !== "undefined") {
+  console.warn("[FreshLink] NEXT_PUBLIC_SUPABASE_ANON_KEY not set — running offline mode")
 }
 
+// Singleton — avoid multiple client instances
 let _client: ReturnType<typeof createSupabaseClient> | null = null
 
 export function createClient() {
   if (!_client) {
-    _client = createSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!)
+    _client = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY || "offline")
   }
   return _client
+}
+
+// Public URL helper for freshlink-media storage bucket
+export function getStorageUrl(path: string): string {
+  return `${SUPABASE_URL}/storage/v1/object/public/freshlink-media/${path}`
+}
+
+export type StorageFolder =
+  | "articles"
+  | "conducteurs"
+  | "signatures"
+  | "documents"
+  | "contrats"      // contrats CHR, devis clients
+  | "permis"        // permis de conduire livreurs
+  | "cartes_grises" // cartes grises véhicules
+  | "photos_livreurs"
+
+// Upload file to freshlink-media bucket — with base64 fallback if Storage unavailable
+export async function uploadToStorage(
+  file: File,
+  folder: StorageFolder
+): Promise<string | null> {
+  try {
+    const client = createClient()
+    const ext = file.name.split(".").pop() ?? "jpg"
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+    const path = `${folder}/${Date.now()}_${safeName}`
+    const { error } = await client.storage
+      .from("freshlink-media")
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (error) throw error
+    const { data } = client.storage.from("freshlink-media").getPublicUrl(path)
+    return data.publicUrl
+  } catch (e) {
+    console.error("[storage] upload failed — fallback base64:", e)
+    // Fallback: encode as base64 data URL for offline mode
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (ev) => resolve(ev.target?.result as string ?? null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+  }
+}
+
+// Delete file from storage by public URL
+export async function deleteFromStorage(publicUrl: string): Promise<boolean> {
+  try {
+    const client = createClient()
+    // Extract path from public URL: .../object/public/freshlink-media/FOLDER/FILE
+    const match = publicUrl.match(/freshlink-media\/(.+)$/)
+    if (!match) return false
+    const { error } = await client.storage.from("freshlink-media").remove([match[1]])
+    return !error
+  } catch {
+    return false
+  }
 }

@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type Article, type HistoriquePrixAchat, FAMILLES_ARTICLES } from "@/lib/store"
-import { createClient } from "@/lib/supabase/client"
+import { store, type Article, type HistoriquePrixAchat, FAMILLES_ARTICLES, FAMILLE_GROUPES } from "@/lib/store"
+import { createClient, uploadToStorage, getStorageUrl } from "@/lib/supabase/client"
+import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 
 const DH = (n: number) => `${n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
 
@@ -46,6 +47,9 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   // Confirm resets
   const [confirmResetStock, setConfirmResetStock] = useState(false)
   const [confirmResetDefect, setConfirmResetDefect] = useState(false)
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncAllDone, setSyncAllDone] = useState(false)
+  const [reloadingFromSb, setReloadingFromSb] = useState(false)
 
   const EMPTY_FORM: Omit<Article, "id"> = {
     nom: "", nomAr: "", famille: "Légumes fruits", unite: "kg",
@@ -59,8 +63,21 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   const [photoUrlInput, setPhotoUrlInput] = useState("")
   const [photoDragOver, setPhotoDragOver] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { setArticles(store.getArticles()) }, [])
+  useEffect(() => {
+    // Chargement local immédiat — pas d'auto-sync !
+    // L'auto-sync de TOUT le localStorage à l'ouverture causait des régressions :
+    // - Anciens IDs (a1, a2...) repoussés vers Supabase
+    // - marketplaceActif:true forcé sur tous les articles
+    // - Boutique affichait 287+ articles au lieu de ceux activés manuellement
+    //
+    // Désormais : le sync se fait UNIQUEMENT lors de toggles explicites
+    // via BOMarketplace.handleSave / handleBulkPublish
+    // OU via le bouton "🌐 Publier sur le site" (push manuel)
+    // OU via le bouton "🔄 Recharger Supabase" (pull manuel)
+    setArticles(store.getArticles())
+  }, [])
 
   // Upload photo — tries Supabase Storage first, falls back to base64 local
   const handlePhotoUpload = async (file: File) => {
@@ -75,9 +92,9 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
       const sb = createClient()
       const ext = file.name.split(".").pop() ?? "jpg"
       const path = `articles/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: upErr } = await sb.storage.from("articles").upload(path, file, { upsert: true, contentType: file.type })
+      const { error: upErr } = await sb.storage.from("freshlink-media").upload(`articles/${path}`, file, { upsert: true, contentType: file.type })
       if (upErr) throw new Error(upErr.message)
-      const { data } = sb.storage.from("articles").getPublicUrl(path)
+      const { data } = sb.storage.from("freshlink-media").getPublicUrl(`articles/${path}`)
       // Replace blob URL with the permanent Supabase URL
       setForm(f => ({ ...f, photo: data.publicUrl }))
       URL.revokeObjectURL(localUrl)
@@ -96,10 +113,137 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
     }
   }
 
+  // ── Supabase sync helpers ─────────────────────────────────────────────────
+  const syncArticleToSupabase = async (article: Article) => {
+    try {
+      const { id, ...payload } = article
+      await fetch("/api/sync-write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table: "fl_articles",
+          upserts: [{ id, payload, updated_at: new Date().toISOString() }],
+        }),
+      })
+    } catch (e) {
+      console.error("[BOArticles] syncArticleToSupabase error:", e)
+    }
+  }
+
+  const syncAllArticlesToSupabase = async () => {
+    setSyncingAll(true)
+    setSyncAllDone(false)
+    try {
+      // ── Normaliser ID + Photo + marketplaceActif pour chaque article ────────
+      let counter = 1
+      const all = store.getArticles().map(a => {
+        const { id, ...rest } = a
+        const payload = rest as Record<string, unknown>
+        // 1. ID propre format VFP00001
+        let cleanId = String(id)
+        if (!/^VFP\d{5,}$/.test(cleanId)) {
+          cleanId = "VFP" + String(counter).padStart(5, "0")
+        }
+        counter++
+        // 2. Photo : placeholder si manquante (utilise le nom + famille)
+        const nom = String(payload.nom ?? "Article")
+        const famille = String(payload.famille ?? "")
+        if (!payload.photo || String(payload.photo).trim() === "") {
+          const color = famille.toLowerCase().includes("fruit") ? "e74c3c" :
+                        famille.toLowerCase().includes("légume") ? "27ae60" :
+                        famille.toLowerCase().includes("herbe") ? "16a34a" : "94a3b8"
+          payload.photo = `https://placehold.co/400x300/${color}/fff?text=${encodeURIComponent(nom)}`
+        }
+        // 3. marketplaceActif = catalogueVisible !== false
+        const catalogueVisible = payload.catalogueVisible !== false
+        const marketplaceActif = catalogueVisible && payload.marketplaceActif !== false
+        return {
+          id: cleanId,
+          payload: { ...payload, marketplaceActif, catalogueVisible },
+          updated_at: new Date().toISOString(),
+        }
+      })
+      if (all.length === 0) {
+        alert("⚠️ Aucun article à publier. Ajoutez d'abord des articles dans le catalogue.")
+        setSyncingAll(false)
+        return
+      }
+      // Push en batch de 50 pour éviter timeout
+      let pushed = 0
+      const errors: string[] = []
+      for (let i = 0; i < all.length; i += 50) {
+        const batch = all.slice(i, i + 50)
+        const res = await fetch("/api/sync-write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "fl_articles", upserts: batch }),
+        })
+        const data = await res.json()
+        if (data.ok) pushed += batch.length
+        else errors.push(...(data.errors ?? [`batch ${i}`]))
+      }
+      if (errors.length === 0) {
+        setSyncAllDone(true)
+        alert(`✅ ${pushed} articles publiés sur le site web !`)
+        setTimeout(() => setSyncAllDone(false), 5000)
+      } else {
+        alert(`⚠️ ${pushed} publiés, ${errors.length} erreurs :\n${errors.slice(0, 3).join("\n")}`)
+        console.error("[BOArticles] sync errors:", errors)
+      }
+    } catch (e) {
+      alert("❌ Erreur réseau : " + String(e))
+      console.error("[BOArticles] syncAllArticlesToSupabase error:", e)
+    } finally {
+      setSyncingAll(false)
+    }
+  }
+
+  // ⚡ Recharger depuis Supabase (source de vérité) — efface localStorage local
+  // et resynchronise avec ce qui est réellement publié sur le site web.
+  // Résout le souci du compteur 287 (localStorage) vs 135 (Supabase).
+  const reloadFromSupabase = async () => {
+    if (!confirm(
+      "Cette action va remplacer le catalogue local (localStorage) par celui de Supabase.\n\n" +
+      "Tous les changements non publiés seront perdus.\n\nContinuer ?"
+    )) return
+    setReloadingFromSb(true)
+    try {
+      const res = await fetch("/api/sync-read?table=fl_articles", { cache: "no-cache" })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || "sync-read failed")
+      // Flatten {id, payload} → Article objects
+      const fromSb = (data.data ?? [])
+        .filter((r: { id: string }) => !String(r.id).startsWith("__"))
+        .map((r: { id: string; payload: Record<string, unknown> }) => ({
+          id: r.id,
+          ...(r.payload && typeof r.payload === "object" ? r.payload : {}),
+        })) as Article[]
+      if (fromSb.length === 0) {
+        alert("⚠️ Supabase est vide. Aucun article à recharger.")
+        return
+      }
+      // Écraser le localStorage
+      try { localStorage.setItem("fl_articles", JSON.stringify(fromSb)) } catch {}
+      setArticles(fromSb)
+      alert(`✅ ${fromSb.length} articles rechargés depuis Supabase`)
+    } catch (e) {
+      alert("❌ Erreur : " + String(e))
+      console.error("[BOArticles] reloadFromSupabase error:", e)
+    } finally {
+      setReloadingFromSb(false)
+    }
+  }
+
   const filtered = articles.filter(a => {
     const q = search.toLowerCase()
     const matchSearch = !q || a.nom.toLowerCase().includes(q) || a.nomAr.includes(q) || a.famille.toLowerCase().includes(q)
-    const matchFamille = !famille || a.famille === famille
+    const matchFamille = !famille
+      ? true
+      : famille === "catalogue"
+        ? (a as any).catalogueVisible !== false && (a as any).marketplaceActif !== false
+        : famillesFiltre.length > 0
+          ? famillesFiltre.includes(a.famille)
+          : a.famille === famille
     return matchSearch && matchFamille
   })
 
@@ -117,13 +261,17 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   const handleSave = () => {
     if (!form.nom) return
     const all = store.getArticles()
+    let saved: Article | null = null
     if (editArt) {
       const idx = all.findIndex(a => a.id === editArt.id)
-      if (idx >= 0) { all[idx] = { ...all[idx], ...form }; store.saveArticles(all) }
+      if (idx >= 0) { all[idx] = { ...all[idx], ...form }; store.saveArticles(all); saved = all[idx] }
     } else {
-      all.push({ ...form, id: store.genId() })
+      const newArt: Article = { ...form, id: store.genId() }
+      all.push(newArt)
       store.saveArticles(all)
+      saved = newArt
     }
+    if (saved) syncArticleToSupabase(saved)
     setArticles(store.getArticles())
     setShowForm(false)
     setEditArt(null)
@@ -131,10 +279,39 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   }
 
   const handleDelete = (id: string) => {
+    if (!window.confirm("Supprimer définitivement cet article ? Cette action est irréversible.")) return
     const all = store.getArticles().filter(a => a.id !== id)
     store.saveArticles(all)
     setArticles(store.getArticles())
   }
+
+  const handleToggleActif = (id: string) => {
+    const all = store.getArticles().map(a => a.id === id ? { ...a, actif: !(a.actif ?? true) } : a)
+    store.saveArticles(all)
+    const updated = all.find(a => a.id === id)
+    if (updated) syncArticleToSupabase(updated)
+    setArticles(store.getArticles())
+  }
+
+  const handleToggleCatalogue = (id: string) => {
+    const all = store.getArticles().map(a => a.id === id ? { ...a, catalogueVisible: !(a.catalogueVisible ?? true) } : a)
+    store.saveArticles(all)
+    const updated = all.find(a => a.id === id)
+    if (updated) syncArticleToSupabase(updated)
+    setArticles(store.getArticles())
+  }
+
+  // Groupes principaux (Légumes, Fruits, Herbes, Autres, Transformés)
+  const byGroupe = Object.entries(FAMILLE_GROUPES).map(([groupe, familles]) => ({
+    groupe,
+    familles,
+    count: articles.filter(a => familles.includes(a.famille)).length,
+  }))
+
+  // Pour le filtre actif : si famille choisie → chercher via groupe
+  const famillesFiltre = famille
+    ? (FAMILLE_GROUPES[famille] ?? [famille])
+    : []
 
   const byFamille = FAMILLES_ARTICLES.map(f => ({
     famille: f,
@@ -386,20 +563,37 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
         </div>
       </div>
 
-      {/* Famille chips */}
+      {/* Groupe chips — 5 groupes principaux */}
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setFamille("")}
           className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${!famille ? "text-white border-transparent" : "text-muted-foreground border-border hover:border-primary"}`}
           style={!famille ? { background: "oklch(0.38 0.2 260)" } : {}}>
           Tous ({articles.length})
         </button>
-        {byFamille.map(f => (
-          <button key={f.famille} onClick={() => setFamille(f.famille === famille ? "" : f.famille)}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${famille === f.famille ? "text-white border-transparent" : `${FAMILLE_COLORS[f.famille] || "bg-slate-50 text-slate-700 border-slate-200"}`}`}
-            style={famille === f.famille ? { background: "oklch(0.38 0.2 260)" } : {}}>
-            {f.famille} ({f.count})
-          </button>
-        ))}
+        {byGroupe.filter(g => g.count > 0).map(g => {
+          const GROUPE_COLORS: Record<string, string> = {
+            "Légumes":    "bg-green-50 text-green-700 border-green-200",
+            "Fruits":     "bg-orange-50 text-orange-700 border-orange-200",
+            "Herbes":     "bg-teal-50 text-teal-700 border-teal-200",
+            "Autres":     "bg-slate-50 text-slate-700 border-slate-200",
+            "Transformés":"bg-purple-50 text-purple-700 border-purple-200",
+          }
+          const isActive = famille === g.groupe
+          return (
+            <button key={g.groupe}
+              onClick={() => setFamille(isActive ? "" : g.groupe)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${isActive ? "text-white border-transparent" : (GROUPE_COLORS[g.groupe] || "bg-slate-50 text-slate-700 border-slate-200")}`}
+              style={isActive ? { background: "oklch(0.38 0.2 260)" } : {}}>
+              {g.groupe} ({g.count})
+            </button>
+          )
+        })}
+        {/* Chip catalogue (filtre par marketplaceActif) */}
+        <button onClick={() => setFamille("catalogue")}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${famille === "catalogue" ? "text-white border-transparent" : "bg-blue-50 text-blue-700 border-blue-200"}`}
+          style={famille === "catalogue" ? { background: "oklch(0.38 0.2 260)" } : {}}>
+          Catalogue 🌐 ({articles.filter(a => (a as any).catalogueVisible !== false && (a as any).marketplaceActif !== false).length})
+        </button>
       </div>
 
       {/* Selection action bar */}
@@ -484,6 +678,28 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
             <button onClick={() => setConfirmResetDefect(false)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted">Annuler</button>
           </div>
         )}
+        <button
+          onClick={reloadFromSupabase}
+          disabled={reloadingFromSb}
+          title="Recharge les articles depuis Supabase (résout les compteurs incohérents 287 vs 135)"
+          className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold border-2 transition-all disabled:opacity-60 shadow-sm border-blue-600 bg-blue-600 text-white hover:bg-blue-700">
+          {reloadingFromSb
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />Rechargement...</>
+            : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>🔄 Recharger Supabase</>
+          }
+        </button>
+        <button
+          onClick={syncAllArticlesToSupabase}
+          disabled={syncingAll}
+          title={`Publie les ${articles.length} articles ERP sur le site web vitafresh.vercel.app`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all disabled:opacity-60 shadow-sm ${syncAllDone ? "border-emerald-500 bg-emerald-500 text-white" : "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"}`}>
+          {syncingAll
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />Publication...</>
+            : syncAllDone
+              ? <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>✅ Publié sur le site !</>
+              : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" /></svg>🌐 Publier sur le site</>
+          }
+        </button>
         <button onClick={() => { setShowForm(true); setEditArt(null); setForm(EMPTY_FORM) }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
           style={{ background: "oklch(0.38 0.2 260)" }}>
@@ -504,8 +720,8 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold">Nom (Arabe)</label>
-              <input value={form.nomAr} onChange={e => setForm(f => ({ ...f, nomAr: e.target.value }))} placeholder="طماطم" dir="rtl"
-                className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <input value={form.nomAr} onChange={e => setForm(f => ({ ...f, nomAr: e.target.value }))} placeholder="طماطم" dir="rtl" lang="ar"
+                className="font-arabic px-3 py-2.5 rounded-xl border border-border bg-background text-base focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold">Famille</label>
@@ -575,8 +791,10 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                   }
                 </div>
                 <div className="flex flex-col gap-2 flex-1 min-w-0">
-                  {/* Hidden file input */}
+                  {/* Hidden inputs: gallery + camera */}
                   <input ref={photoInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const file = e.target.files?.[0]; if (file) handlePhotoUpload(file); e.target.value = "" }} />
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
                     onChange={e => { const file = e.target.files?.[0]; if (file) handlePhotoUpload(file); e.target.value = "" }} />
                   {/* Drag & Drop zone */}
                   <div
@@ -597,6 +815,24 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                         <span>{photoDragOver ? "Deposez l'image ici" : "Cliquer ou glisser-deposer une image"}</span>
                       </>
                     }
+                  </div>
+                  {/* Quick action buttons: gallery + camera */}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => photoInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 transition-colors">
+                      <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Galerie
+                    </button>
+                    <button type="button" onClick={() => cameraInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 transition-colors">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Appareil photo
+                    </button>
                   </div>
                   {/* URL input method */}
                   <div className="flex gap-1.5">
@@ -681,11 +917,11 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
             const marge = pv - a.prixAchat
             const margePct = a.prixAchat > 0 ? (marge / a.prixAchat) * 100 : 0
             return (
-              <div key={a.id} className={`bg-card rounded-2xl border overflow-hidden hover:shadow-md transition-all group flex flex-col ${selectedArticleIds.has(a.id) ? "border-blue-400 ring-2 ring-blue-300" : "border-border"}`}>
+              <div key={a.id} className={`bg-card rounded-2xl border overflow-hidden hover:shadow-md transition-all group flex flex-col ${selectedArticleIds.has(a.id) ? "border-blue-400 ring-2 ring-blue-300" : "border-border"} ${!(a.actif ?? true) ? "opacity-60" : ""}`}>
                 {/* Image */}
                 <div className="relative w-full aspect-square bg-muted/40 overflow-hidden">
                   <img
-                    src={a.photo || DEFAULT_PHOTO}
+                    src={resolveArticlePhoto(a)}
                     alt={`${a.nom} — fruit ou legume frais`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     onError={e => { e.currentTarget.src = DEFAULT_PHOTO }}
@@ -711,12 +947,24 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                   <div className={`absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${a.stockDisponible > 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
                     {a.stockDisponible > 0 ? `${a.stockDisponible} ${a.unite}` : "Rupture"}
                   </div>
+                  {/* Inactive overlay */}
+                  {!(a.actif ?? true) && (
+                    <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
+                      <span className="px-2 py-1 rounded-lg bg-slate-800/80 text-white text-[10px] font-black uppercase tracking-wide">Désactivé</span>
+                    </div>
+                  )}
+                  {/* Catalogue hidden badge */}
+                  {(a.actif ?? true) && !(a.catalogueVisible ?? true) && (
+                    <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-full bg-slate-700/80 text-white text-[9px] font-bold">
+                      🚫 Catalogue
+                    </div>
+                  )}
                 </div>
 
                 {/* Info */}
                 <div className="p-3 flex flex-col gap-1 flex-1">
                   <p className="font-semibold text-sm text-foreground truncate">{a.nom}</p>
-                  <p className="text-[11px] text-muted-foreground" dir="rtl">{a.nomAr}</p>
+                  <p className="font-arabic text-[12px] text-muted-foreground" dir="rtl" lang="ar">{a.nomAr}</p>
                   <div className="flex justify-between items-center mt-auto pt-2">
                     <div>
                       <p className="text-[10px] text-muted-foreground">Achat</p>
@@ -750,6 +998,12 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                     className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1 border-l border-border">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                     Modifier
+                  </button>
+                  <button onClick={() => handleToggleActif(a.id)}
+                    title={(a.actif ?? true) ? "Désactiver (stock + catalogue)" : "Réactiver"}
+                    className={`flex-1 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1 border-l border-border ${(a.actif ?? true) ? "text-muted-foreground hover:text-amber-600 hover:bg-amber-50" : "text-amber-600 hover:bg-amber-50"}`}>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={a.actif ?? true ? "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" : "M5 13l4 4L19 7"} /></svg>
+                    {(a.actif ?? true) ? "Désact." : "Activer"}
                   </button>
                   <button onClick={() => handleDelete(a.id)}
                     className="flex-1 py-2 text-xs font-semibold text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1 border-l border-border">
@@ -808,13 +1062,13 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <img src={a.photo || DEFAULT_PHOTO} alt={`${a.nom} produit frais`}
+                        <img src={resolveArticlePhoto(a)} alt={`${a.nom} produit frais`}
                           className="w-10 h-10 rounded-xl object-cover border border-border"
                           onError={e => { e.currentTarget.src = DEFAULT_PHOTO }} />
                       </td>
                       <td className="px-4 py-2">
                         <p className="font-semibold text-foreground">{a.nom}</p>
-                        <p className="text-xs text-muted-foreground" dir="rtl">{a.nomAr}</p>
+                        <p className="font-arabic text-sm text-muted-foreground" dir="rtl" lang="ar">{a.nomAr}</p>
                       </td>
                       <td className="px-4 py-2">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${FAMILLE_COLORS[a.famille] || "bg-slate-50 text-slate-700 border-slate-200"}`}>
@@ -835,11 +1089,21 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
                       <td className="px-4 py-2">
                         <div className="flex gap-1">
                           <button onClick={() => openEdit(a)}
-                            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Modifier">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                           </button>
+                          <button onClick={() => handleToggleActif(a.id)}
+                            title={(a.actif ?? true) ? "Désactiver (stock+catalogue)" : "Réactiver"}
+                            className={`p-1.5 rounded-lg transition-colors ${(a.actif ?? true) ? "hover:bg-amber-50 text-muted-foreground hover:text-amber-600" : "bg-amber-50 text-amber-600 hover:bg-amber-100"}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={(a.actif ?? true) ? "M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" : "M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z"} /></svg>
+                          </button>
+                          <button onClick={() => handleToggleCatalogue(a.id)}
+                            title={(a.catalogueVisible ?? true) ? "Masquer du catalogue portail" : "Afficher dans le catalogue portail"}
+                            className={`p-1.5 rounded-lg transition-colors ${(a.catalogueVisible ?? true) ? "hover:bg-blue-50 text-muted-foreground hover:text-blue-600" : "bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600"}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={(a.catalogueVisible ?? true) ? "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" : "M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"} /></svg>
+                          </button>
                           <button onClick={() => handleDelete(a.id)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors" title="Supprimer définitivement">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                           </button>
                         </div>

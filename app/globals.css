@@ -64,4 +64,116 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  /* Mobile: prevent elastic overscroll on iOS */
+  overscroll-behavior: none;
+}
+
+/* ✅ Police arabe (Noto Sans Arabic via next/font) — fix lettres séparées */
+
+/* Chaîne globale : --font-arabic en fallback couvre les caractères arabes
+   partout sans avoir à le préciser élément par élément. */
+body, * {
+  font-family: var(--font-sans), var(--font-arabic), "Noto Sans Arabic", "Amiri", "Cairo", system-ui, sans-serif;
+}
+
+/* Tout texte explicitement en arabe ou RTL : Noto Sans Arabic en priorité,
+   reset letter-spacing (Tailwind tracking-tight peut casser le chaînage),
+   et activation des ligatures arabes via font-feature-settings. */
+:lang(ar),
+[lang="ar"],
+[dir="rtl"],
+.font-arabic {
+  font-family: var(--font-arabic), "Noto Sans Arabic", "Amiri", "Cairo", "Tajawal", system-ui, sans-serif !important;
+  letter-spacing: 0 !important;
+  word-spacing: normal !important;
+  font-feature-settings: "calt" 1, "liga" 1 !important;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Mobile touch optimizations ─────────────────────────────────────────────── */
+
+/* Remove blue tap highlight on all interactive elements */
+button, a, [role="button"], [tabindex] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent text selection on interactive UI elements */
+button, [role="button"] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Safe area padding utilities for iPhone notch / Dynamic Island */
+.pb-safe  { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe  { padding-top:    env(safe-area-inset-top); }
+.pl-safe  { padding-left:   env(safe-area-inset-left); }
+.pr-safe  { padding-right:  env(safe-area-inset-right); }
+
+/* ── Scrollbar utilities ─────────────────────────────────────────────────────── */
+
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin custom scrollbar (sidebar, panels) */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 99px;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────────── */
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.93) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+.animate-scale-in {
+  animation: scale-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 0.3s ease both;
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slide-down 0.2s ease both;
+}
+
+/* ── Focus ring ──────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #4ADE80;
+  outline-offset: 2px;
 }

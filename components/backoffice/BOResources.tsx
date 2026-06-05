@@ -164,7 +164,7 @@ function ProductiviteTab({ users }: { users: User[] }) {
   const stats = staffUsers.map(u => {
     const groupe = groupeForRole(u.role)
     if (groupe === "prevendeur") {
-      const uvisitp = visites.filter(v => v.commercialId === u.id && v.date?.startsWith(periode))
+      const uvisitp = visites.filter(v => v.prevendeurId === u.id && v.date?.startsWith(periode))
       const ucmds = commandes.filter(c => c.commercialId === u.id && c.date?.startsWith(periode))
       const tonnage = ucmds.reduce((s, c) => s + c.lignes.reduce((a, l) => a + (l.quantite ?? 0), 0), 0)
       const newClients = new Set(ucmds.map(c => c.clientId)).size
@@ -592,7 +592,7 @@ function CalculSalaireTab({ users }: { users: User[] }) {
           montant = r.valeur * tonnage
           detail = `${tonnage.toFixed(1)} tonnes × ${r.valeur} DH`
         } else if (r.type === "visite") {
-          const nb = visites.filter(v => v.commercialId === u.id && v.date?.startsWith(periode)).length
+          const nb = visites.filter(v => v.prevendeurId === u.id && v.date?.startsWith(periode)).length
           montant = r.valeur * nb
           detail = `${nb} visites × ${r.valeur} DH`
         } else if (r.type === "nouveau_client") {

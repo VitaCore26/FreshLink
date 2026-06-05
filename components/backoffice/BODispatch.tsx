@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type Commande, type Trip, type Livreur, type User, ROLE_COLORS } from "@/lib/store"
+import { store, type Commande, type Trip, type Livreur, type TransportCompany, type User, ROLE_COLORS } from "@/lib/store"
+import { uploadToStorage } from "@/lib/supabase/client"
 
 interface Props { user: User }
 
@@ -11,7 +12,7 @@ const EMPTY_LIVREUR: Omit<Livreur, "id"> = {
 }
 
 export default function BODispatch({ user }: Props) {
-  const [activeTab, setActiveTab] = useState<"trips" | "livreurs" | "charge">("trips")
+  const [activeTab, setActiveTab] = useState<"trips" | "livreurs" | "transporteurs" | "charge">("trips")
 
   // ---- Charge logistique state ----
   const [chargeForm, setChargeForm] = useState({
@@ -44,6 +45,11 @@ export default function BODispatch({ user }: Props) {
   const [commandes, setCommandes] = useState<Commande[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
   const [livreurs, setLivreurs] = useState<Livreur[]>([])
+  const [transporteurs, setTransporteurs] = useState<TransportCompany[]>([])
+  const [showTransportForm, setShowTransportForm] = useState(false)
+  const [editingTransport, setEditingTransport] = useState<TransportCompany | null>(null)
+  const EMPTY_TC: TransportCompany = { id: "", nom: "", actif: true }
+  const [transportForm, setTransportForm] = useState<TransportCompany>(EMPTY_TC)
   const [showTripForm, setShowTripForm] = useState(false)
   const [showLivreurForm, setShowLivreurForm] = useState(false)
   const [editingLivreur, setEditingLivreur] = useState<Livreur | null>(null)
@@ -58,11 +64,46 @@ export default function BODispatch({ user }: Props) {
 
   useEffect(() => { refresh() }, [])
 
+  // Rechargement Realtime depuis un autre appareil
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ev = e as CustomEvent<{ table: string }>
+      const relevant = ["fl_commandes", "fl_trips", "fl_bons_livraison", "all"]
+      if (!ev.detail?.table || relevant.includes(ev.detail.table)) refresh()
+    }
+    window.addEventListener("fl_store_updated", handler)
+    return () => window.removeEventListener("fl_store_updated", handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const refresh = () => {
     setCommandes(store.getCommandes())
     setTrips(store.getTrips())
     setLivreurs(store.getLivreurs())
+    setTransporteurs(store.getTransportCompanies())
   }
+
+  const saveTransport = () => {
+    if (!transportForm.nom.trim()) return
+    const all = store.getTransportCompanies()
+    if (editingTransport) {
+      const idx = all.findIndex(t => t.id === editingTransport.id)
+      if (idx >= 0) { all[idx] = { ...transportForm, id: editingTransport.id }; store.saveTransportCompanies(all) }
+    } else {
+      store.addTransportCompany({ ...transportForm, id: store.genId() })
+    }
+    setShowTransportForm(false)
+    setEditingTransport(null)
+    setTransportForm(EMPTY_TC)
+    refresh()
+  }
+
+  const openNewTransport = () => { setEditingTransport(null); setTransportForm(EMPTY_TC); setShowTransportForm(true) }
+  const openEditTransport = (t: TransportCompany) => { setEditingTransport(t); setTransportForm({ ...t }); setShowTransportForm(true) }
+  const toggleTransportActive = (t: TransportCompany) => {
+    store.updateTransportCompany(t.id, { actif: !t.actif }); refresh()
+  }
+  const deleteTransport = (id: string) => { store.deleteTransportCompany(id); refresh() }
 
   // --- TRIPS ---
   // Toutes les commandes non encore affectees a un trip — pas besoin de stock disponible
@@ -148,8 +189,14 @@ export default function BODispatch({ user }: Props) {
   const loadTripMap = async (trip: Trip, el: HTMLDivElement) => {
     if (mapsLoaded.current.has(trip.id) || !trip.itineraire?.length) return
     try {
+      if (!document.getElementById("leaflet-cdn-css")) {
+        const link = document.createElement("link")
+        link.id = "leaflet-cdn-css"
+        link.rel = "stylesheet"
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        document.head.appendChild(link)
+      }
       const L = (await import("leaflet")).default
-      await import("leaflet/dist/leaflet.css" as string)
       const map = L.map(el).setView([trip.itineraire[0].lat, trip.itineraire[0].lng], 11)
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OSM" }).addTo(map)
       L.polyline(trip.itineraire.map(p => [p.lat, p.lng] as [number, number]), { color: "#0891b2", weight: 3 }).addTo(map)
@@ -205,6 +252,7 @@ export default function BODispatch({ user }: Props) {
         {[
           { id: "trips" as const, label: "Trips & Dispatch", labelAr: "الرحلات" },
           { id: "livreurs" as const, label: "Livreurs", labelAr: "السائقون" },
+          { id: "transporteurs" as const, label: "Transporteurs", labelAr: "شركات النقل" },
           { id: "charge" as const, label: "Charge Logistique", labelAr: "تكلفة النقل" },
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
@@ -589,6 +637,234 @@ export default function BODispatch({ user }: Props) {
         </div>
       )}
 
+      {/* ====== TRANSPORTEURS ====== */}
+      {activeTab === "transporteurs" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-foreground">Sociétés de Transport / شركات النقل</h2>
+              <p className="text-sm text-muted-foreground">{transporteurs.length} société(s) — {transporteurs.filter(t => t.actif).length} active(s)</p>
+            </div>
+            <button onClick={openNewTransport}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+              style={{ background: "oklch(0.38 0.2 260)" }}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Ajouter un transporteur
+            </button>
+          </div>
+
+          {/* Transport form modal */}
+          {showTransportForm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={e => e.target === e.currentTarget && setShowTransportForm(false)}>
+              <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card z-10">
+                  <h3 className="font-bold text-foreground">🚛 {editingTransport ? "Modifier le transporteur" : "Nouveau transporteur"}</h3>
+                  <button onClick={() => setShowTransportForm(false)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <div className="p-6 flex flex-col gap-5">
+
+                  {/* Type */}
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <input type="checkbox" id="tc_auto" checked={transportForm.isAutoEntrepreneur || false}
+                      onChange={e => setTransportForm({ ...transportForm, isAutoEntrepreneur: e.target.checked })}
+                      className="w-4 h-4 rounded accent-primary" />
+                    <label htmlFor="tc_auto" className="text-sm font-semibold text-slate-700 cursor-pointer">
+                      Auto-entrepreneur (conducteur indépendant sans société)
+                    </label>
+                  </div>
+
+                  {/* Infos société / conducteur */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📋 {transportForm.isAutoEntrepreneur ? "Informations conducteur" : "Informations société"}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: (transportForm.isAutoEntrepreneur ? "Nom complet *" : "Raison sociale *"), key: "nom", ph: transportForm.isAutoEntrepreneur ? "Mohamed Alami" : "Transport Express Maroc" },
+                        { label: "Téléphone", key: "telephone", ph: "06xxxxxxxx" },
+                        { label: "Email", key: "email", ph: "contact@transport.ma" },
+                        { label: "Ville", key: "ville", ph: "Casablanca" },
+                        ...(!transportForm.isAutoEntrepreneur ? [
+                          { label: "ICE", key: "ice", ph: "00000000000000" },
+                          { label: "RC", key: "rc", ph: "12345/Casa" },
+                          { label: "IF Fiscal", key: "if_fiscal", ph: "12345678" },
+                          { label: "CNSS", key: "cnss", ph: "1234567" },
+                        ] : [
+                          { label: "CIN", key: "cnss", ph: "AB123456" },
+                          { label: "RIB Bancaire", key: "ribBancaire", ph: "007 123 0000000123456789 12" },
+                        ]),
+                        { label: "Contact / Responsable", key: "contact", ph: "M. Hassan" },
+                      ].map(f => (
+                        <div key={f.key} className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-foreground">{f.label}</label>
+                          <input type="text" placeholder={f.ph}
+                            value={(transportForm as unknown as Record<string, string>)[f.key] || ""}
+                            onChange={e => setTransportForm({ ...transportForm, [f.key]: e.target.value })}
+                            className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Véhicule */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">🚛 Véhicule</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: "Type véhicule", key: "typeVehicule", ph: "Camion frigo 3.5T" },
+                        { label: "Immatriculation", key: "immatriculation", ph: "12345-A-1" },
+                        { label: "Capacité (kg)", key: "capaciteKg", ph: "3500", type: "number" },
+                        { label: "Tarif / km (DH)", key: "tarifKm", ph: "0.45", type: "number" },
+                      ].map(f => (
+                        <div key={f.key} className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-foreground">{f.label}</label>
+                          <input type={f.type || "text"} placeholder={f.ph}
+                            value={(transportForm as unknown as Record<string, string>)[f.key] || ""}
+                            onChange={e => setTransportForm({ ...transportForm, [f.key]: e.target.value })}
+                            className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Documents conducteur — always shown, required for auto-entrepreneur */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                      📄 Documents conducteur {transportForm.isAutoEntrepreneur ? "(requis)" : "(optionnels — pour le chauffeur désigné)"}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: "📸 Photo conducteur", key: "photoConducteur", accept: "image/*", capture: "user" },
+                        { label: "🪪 Scan CIN", key: "scanCin", accept: "image/*,application/pdf", capture: undefined },
+                        { label: "🚗 Scan Permis", key: "scanPermis", accept: "image/*,application/pdf", capture: undefined },
+                        { label: "📋 Scan Carte Grise", key: "scanCarteGrise", accept: "image/*,application/pdf", capture: undefined },
+                      ].map(f => (
+                        <div key={f.key} className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-foreground">{f.label}</label>
+                          <div className="flex gap-1.5">
+                            <input type="text" placeholder="URL du fichier…"
+                              value={(transportForm as unknown as Record<string, string>)[f.key] || ""}
+                              onChange={e => setTransportForm({ ...transportForm, [f.key]: e.target.value })}
+                              className="flex-1 px-2 py-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary min-w-0" />
+                            <label className="px-2 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer text-xs font-semibold text-slate-600 whitespace-nowrap transition-colors">
+                              📎
+                              <input type="file" accept={f.accept} {...(f.capture ? { capture: f.capture as "user"|"environment" } : {})} className="hidden"
+                                onChange={async e => {
+                                  const file = e.target.files?.[0]
+                                  if (!file) return
+                                  // Upload vers Supabase Storage (fallback base64 si offline)
+                                  const folder = f.key === "scanPermis" ? "permis"
+                                    : f.key === "scanCarteGrise" ? "cartes_grises"
+                                    : f.key === "photoConducteur" ? "photos_livreurs"
+                                    : "conducteurs"
+                                  const url = await uploadToStorage(file, folder as Parameters<typeof uploadToStorage>[1])
+                                  if (url) setTransportForm(prev => ({ ...prev, [f.key]: url }))
+                                }} />
+                            </label>
+                          </div>
+                          {(() => {
+                            const val = (transportForm as unknown as Record<string, string>)[f.key]
+                            if (!val) return null
+                            const isImg = val.startsWith("data:image") || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(val)
+                            return isImg
+                              ? <img src={val} alt={f.label} className="w-full h-20 object-cover rounded-lg border border-slate-200 mt-1" />
+                              : <a href={val} target="_blank" rel="noreferrer" className="text-[10px] text-blue-600 underline mt-1 truncate block">{val}</a>
+                          })()}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">Photos et scans uploadés dans Supabase Storage (bucket freshlink-media) — fallback base64 si hors-ligne</p>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-foreground">Adresse</label>
+                    <input type="text" placeholder="Rue, Quartier, Ville"
+                      value={transportForm.adresse || ""}
+                      onChange={e => setTransportForm({ ...transportForm, adresse: e.target.value })}
+                      className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-foreground">Notes</label>
+                    <textarea rows={2} placeholder="Notes internes, conditions, tarifs..."
+                      value={transportForm.notes || ""}
+                      onChange={e => setTransportForm({ ...transportForm, notes: e.target.value })}
+                      className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="tc_actif" checked={transportForm.actif}
+                      onChange={e => setTransportForm({ ...transportForm, actif: e.target.checked })}
+                      className="w-4 h-4 rounded accent-primary" />
+                    <label htmlFor="tc_actif" className="text-sm text-foreground cursor-pointer">Transporteur actif</label>
+                  </div>
+                  <div className="flex gap-2 pt-2 sticky bottom-0 bg-card pb-2">
+                    <button onClick={() => setShowTransportForm(false)}
+                      className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:bg-muted">
+                      Annuler
+                    </button>
+                    <button onClick={saveTransport} disabled={!transportForm.nom.trim()}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+                      style={{ background: "oklch(0.38 0.2 260)" }}>
+                      ✅ Sauvegarder
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Transporteurs list */}
+          {transporteurs.length === 0 ? (
+            <div className="bg-card rounded-2xl border border-border p-12 text-center text-muted-foreground">
+              <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 17H5a2 2 0 01-2-2V7a2 2 0 012-2h14a2 2 0 012 2v4m-6 8a2 2 0 01-2-2v-4a2 2 0 012-2h4a2 2 0 012 2v4a2 2 0 01-2 2h-4z" />
+              </svg>
+              <p className="font-semibold">Aucune société de transport enregistrée</p>
+              <p className="text-sm mt-1">Cliquez sur &quot;Ajouter un transporteur&quot; pour commencer.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {transporteurs.map(tc => (
+                <div key={tc.id} className={`bg-card rounded-2xl border p-4 flex items-start justify-between gap-3 ${tc.actif ? "border-border" : "border-border opacity-60"}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-bold text-foreground">{tc.nom}</span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${tc.actif ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                        {tc.actif ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-0.5 text-xs text-muted-foreground mt-1">
+                      {tc.contact && <span>Contact : <strong>{tc.contact}</strong></span>}
+                      {tc.telephone && <span>Tél : {tc.telephone}</span>}
+                      {tc.email && <span>Email : {tc.email}</span>}
+                      {tc.ville && <span>Ville : {tc.ville}</span>}
+                      {tc.ice && <span>ICE : {tc.ice}</span>}
+                      {tc.rc && <span>RC : {tc.rc}</span>}
+                    </div>
+                    {tc.notes && <p className="text-xs text-muted-foreground mt-2 italic">{tc.notes}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => openEditTransport(tc)}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                    <button onClick={() => toggleTransportActive(tc)}
+                      className={`p-1.5 rounded-lg hover:bg-muted transition-colors ${tc.actif ? "text-amber-500" : "text-green-600"}`}>
+                      {tc.actif
+                        ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                        : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                    </button>
+                    <button onClick={() => deleteTransport(tc.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ====== CHARGE LOGISTIQUE ====== */}
       {activeTab === "charge" && (
         <div className="flex flex-col gap-5">
@@ -684,7 +960,7 @@ export default function BODispatch({ user }: Props) {
                     <div key={f.key} className="flex items-center justify-between gap-3">
                       <label className="text-xs text-muted-foreground">{f.label}</label>
                       <input type="number" min={0} step={f.step}
-                        value={(chargeForm as Record<string, number>)[f.key]}
+                        value={(chargeForm as unknown as Record<string, number>)[f.key]}
                         onChange={e => setChargeForm(p => ({ ...p, [f.key]: Number(e.target.value) }))}
                         className="w-20 px-2 py-1 rounded-lg border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>

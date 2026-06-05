@@ -70,7 +70,7 @@ export default function MobileControlRetour({ user }: Props) {
       analysisResult: null,
       statut: "en_attente",
       createdAt: new Date().toISOString(),
-      createdBy: user.nom,
+      createdBy: user.name,
     }
     const updated = [...retours, item]
     setRetours(updated)

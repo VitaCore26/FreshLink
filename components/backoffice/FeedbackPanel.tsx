@@ -162,7 +162,7 @@ function Stars({ n, onRate }: { n: number; onRate?: (v: number) => void }) {
 function exportCSV(feedbacks: Feedback[]) {
   const cols = ["id", "date", "source", "auteur", "sujet", "note", "message", "statut"]
   const rows = feedbacks.map(f =>
-    cols.map(c => `"${String((f as Record<string, unknown>)[c] ?? "").replace(/"/g, '""')}"`).join(",")
+    cols.map(c => `"${String((f as unknown as Record<string, unknown>)[c] ?? "").replace(/"/g, '""')}"`).join(",")
   )
   const blob = new Blob(["\uFEFF" + [cols.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" })
   const a = document.createElement("a")
@@ -177,7 +177,7 @@ function SubmitOnlyView({ user }: { user: User }) {
   const [done, setDone] = useState(false)
   const [form, setForm] = useState({
     source: "client" as FeedbackSource,
-    auteur: user.prenom ? `${user.prenom} ${user.nom ?? ""}`.trim() : user.nom ?? "",
+    auteur: user.name ?? "",
     sujets: [] as string[],
     message: "",
     note: 5,
@@ -680,7 +680,7 @@ function AdminView() {
 
 // ─── Main export — routes by admin status ─────────────────────────────────
 export default function FeedbackPanel({ user }: Props) {
-  const isAdmin = user.role === "super_admin" || user.role === "admin" || user.canViewDatabase
+  const isAdmin = user.role === "super_super_admin" || user.role === "super_admin" || user.role === "admin" || user.canViewDatabase
   if (!isAdmin) return <SubmitOnlyView user={user} />
   return <AdminView />
 }

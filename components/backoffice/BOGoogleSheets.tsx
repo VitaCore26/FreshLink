@@ -67,7 +67,7 @@ export default function BOGoogleSheets({ user }: Props) {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Use a ref so pushAllFn can be called from useEffect without temporal dead zone
   const pushAllRef = useRef<() => Promise<void>>(async () => {})
-  const canAccess = user.role === "admin" || user.role === "super_admin"
+  const canAccess = user.role === "super_super_admin" || user.role === "admin" || user.role === "super_admin"
 
   // ALL useEffects MUST be before any conditional return
   useEffect(() => {

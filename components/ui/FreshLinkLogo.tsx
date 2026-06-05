@@ -2,95 +2,102 @@
 
 interface Props {
   size?: number
-  variant?: "icon-only" | "full" | "full-white"
+  variant?: "icon-only" | "full" | "full-white" | "company-only" | "stacked"
   className?: string
+  showAppName?: boolean
 }
 
-/**
- * FreshLink Pro — official logo component.
- * Matches the reference brand image: dark-green bg, leaf+recycle icon, white text.
- */
-export default function FreshLinkLogo({ size = 36, variant = "full", className = "" }: Props) {
-  const iconBg   = "#1B4332"   // deep forest green — sidebar background color
-  const leafGreen = "#4ADE80"  // bright leaf green
-  const leafDark  = "#16A34A"  // darker green for depth
+export const BRAND = {
+  company: "Vita Fresh",
+  companyTag: "Fruit & Vegetable Distribution Network — Morocco",
+  app: "Fresh Link Pro",
+  tagline: "Gestion & Distribution Intelligente",
+  poweredBy: "Powered by Vita tech",
+  primaryGreen: "#1a4f2a",
+  accentGold: "#b8962e",
+  logoPath: "/vita-fresh-logo.png",
+}
 
-  const Icon = (
+function VFIcon({ size }: { size: number }) {
+  return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 40 40"
+      viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
-      aria-hidden="true"
+      style={{ flexShrink: 0 }}
     >
-      {/* Circular badge background */}
-      <circle cx="20" cy="20" r="20" fill={iconBg} />
-
-      {/* Outer ring arc (recycle/loop) */}
-      <path
-        d="M20 7 C27.7 7 34 12.9 34 20.5 C34 28.1 27.7 34 20 34"
-        stroke={leafGreen}
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <path
-        d="M20 34 C12.3 34 6 28.1 6 20.5 C6 12.9 12.3 7 20 7"
-        stroke={leafDark}
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        fill="none"
-      />
-
-      {/* Arrow head right */}
-      <path d="M31.5 17 L34 20.5 L31 23" stroke={leafGreen} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      {/* Arrow head left */}
-      <path d="M8.5 23.5 L6 20 L9 17" stroke={leafDark} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-
-      {/* Leaf center */}
-      <path
-        d="M20 13 C20 13 26 16 26 21 C26 24.5 23.5 27 20 27 C16.5 27 14 24.5 14 21 C14 16 20 13 20 13 Z"
-        fill={leafGreen}
-        opacity="0.92"
-      />
-      {/* Leaf vein */}
-      <path d="M20 27 L20 17" stroke={iconBg} strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M20 22 L23.5 19" stroke={iconBg} strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M20 24 L17 21.5" stroke={iconBg} strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="50" cy="50" r="50" fill="#1a4d2e" />
+      <path d="M28 40 L50 77 L72 40" fill="none" stroke="#ffffff" strokeWidth="11" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M53 32 C61 16,80 12,92 16 C86 34,66 40,53 32 Z" fill="#4ade80" />
+      <path d="M59 29 C69 22,81 19,89 17" stroke="#1a4d2e" strokeWidth="2.4" fill="none" strokeLinecap="round" />
     </svg>
   )
+}
 
-  if (variant === "icon-only") return <span className={className}>{Icon}</span>
+export default function FreshLinkLogo({ size = 40, variant = "full", className = "", showAppName = true }: Props) {
+  const logoSize = variant === "icon-only" ? size : Math.round(size * 1.1)
 
-  const textWhite = variant === "full-white"
+  const Logo = <VFIcon size={logoSize} />
+
+  if (variant === "icon-only") {
+    return <span className={`inline-block ${className}`}>{Logo}</span>
+  }
+
+  if (variant === "stacked") {
+    return (
+      <div className={`flex flex-col items-center gap-1.5 ${className}`}>
+        <VFIcon size={size} />
+        <div className="text-center leading-none">
+          <div className="font-black tracking-tight" style={{ fontSize: size * 0.28, color: BRAND.primaryGreen }}>
+            {BRAND.company}
+          </div>
+          <div className="font-semibold tracking-wide" style={{ fontSize: size * 0.13, color: BRAND.accentGold }}>
+            {BRAND.companyTag}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (variant === "company-only") {
+    return (
+      <div className={`flex items-center gap-2.5 ${className}`}>
+        {Logo}
+        <div className="flex flex-col leading-none gap-0.5">
+          <span className="font-black tracking-tight" style={{ fontSize: Math.round(size * 0.4), color: BRAND.primaryGreen, letterSpacing: "-0.01em" }}>
+            {BRAND.company}
+          </span>
+          <span className="font-medium tracking-wide uppercase" style={{ fontSize: Math.round(size * 0.18), color: BRAND.accentGold }}>
+            {BRAND.companyTag}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  const isWhite = variant === "full-white"
 
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      {Icon}
-      <div className="flex flex-col leading-none">
+      {Logo}
+      <div className="flex flex-col leading-none gap-1">
+        {showAppName && (
+          <span
+            className="font-extrabold tracking-tight"
+            style={{ fontSize: Math.round(size * 0.38), color: isWhite ? "#ffffff" : BRAND.primaryGreen, letterSpacing: "-0.01em", lineHeight: 1.1 }}
+          >
+            Fresh{" "}
+            <span style={{ color: isWhite ? "#86efac" : BRAND.accentGold }}>Link</span>{" "}
+            <span style={{ color: isWhite ? "#4ade80" : BRAND.primaryGreen }}>Pro</span>
+          </span>
+        )}
         <span
-          className="font-extrabold tracking-tight"
-          style={{
-            fontSize: size * 0.42,
-            color: textWhite ? "#ffffff" : "#1B4332",
-            letterSpacing: "-0.01em",
-            lineHeight: 1.1,
-          }}
+          className="font-bold tracking-wide"
+          style={{ fontSize: Math.round(size * 0.2), color: isWhite ? "rgba(255,255,255,0.65)" : BRAND.accentGold, letterSpacing: "0.04em", lineHeight: 1.2, textTransform: "uppercase" }}
         >
-          FRESH<span style={{ color: leafGreen }}>LINK</span>
-        </span>
-        <span
-          className="font-black tracking-widest uppercase"
-          style={{
-            fontSize: size * 0.22,
-            color: textWhite ? leafGreen : leafDark,
-            letterSpacing: "0.18em",
-            lineHeight: 1.2,
-          }}
-        >
-          PRO
+          {BRAND.company}
         </span>
       </div>
     </div>

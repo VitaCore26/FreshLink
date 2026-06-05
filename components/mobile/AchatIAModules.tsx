@@ -1,16 +1,19 @@
 "use client"
+// @ts-ignore — shared AI helper
+import { callLLM, triggerN3Alert } from "@/lib/ai"
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import { type Article, type Fournisseur, type User, type HistoriquePrixAchat } from "@/lib/store"
+import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
 // ── Shared API call ──────────────────────────────────────────────────────────
 async function callAI(messages: { role: string; content: unknown }[], signal?: AbortSignal): Promise<string> {
   const res = await fetch("https://llm.blackbox.ai/chat/completions", {
     method: "POST",
     headers: {
-      "customerId": "cus_TSL8iYLtbslUQB",
+      // blackbox-legacy-key — move to env var BLACKBOX_CUSTOMER_ID
       "Content-Type": "application/json",
-      "Authorization": "Bearer xxx",
+      // blackbox-legacy-auth — move to env var BLACKBOX_API_KEY
     },
     body: JSON.stringify({
       model: "openrouter/claude-sonnet-4",
@@ -286,13 +289,12 @@ Analyse cette photo et reponds UNIQUEMENT en JSON valide avec ce schema exact:
 
       {/* Article + Fournisseur selectors */}
       <div className="flex flex-col gap-2">
-        <select
+        <ArticleCombobox
+          articles={articles}
           value={selectedArticleId}
-          onChange={e => setSelectedArticleId(e.target.value)}
-          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-          <option value="">-- Choisir l&apos;article a analyser *</option>
-          {articles.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.unite})</option>)}
-        </select>
+          onChange={(artId, _art) => setSelectedArticleId(artId)}
+          placeholder="-- Choisir l'article a analyser *"
+        />
         <div className="grid grid-cols-2 gap-2">
           <select
             value={selectedFournisseurId}
@@ -822,13 +824,12 @@ Fais une analyse comparative experte et reponds UNIQUEMENT en JSON valide:
       </div>
 
       {/* Article selector */}
-      <select
+      <ArticleCombobox
+        articles={articles}
         value={selectedArticleId}
-        onChange={e => { setSelectedArticleId(e.target.value); setResult(null) }}
-        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-        <option value="">-- Choisir l&apos;article a comparer *</option>
-        {articles.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.unite})</option>)}
-      </select>
+        onChange={(artId, _art) => { setSelectedArticleId(artId); setResult(null) }}
+        placeholder="-- Choisir l'article a comparer *"
+      />
 
       {/* Price history for this article */}
       {selectedArticleId && histByFournisseur.length > 0 && (

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { store, type User, type Client } from "@/lib/store"
+import { store, type User, type Client, type Visite } from "@/lib/store"
 
 interface Props { user: User }
 
@@ -115,6 +115,10 @@ export default function BOGPSTracker({ user }: Props) {
   const [etaOrderedIds, setEtaOrderedIds] = useState<string[]>([])
   const [etaClientSearch, setEtaClientSearch] = useState("")
   const [showEtaPanel, setShowEtaPanel] = useState(false)
+  const [gpsTrackerTab, setGpsTrackerTab] = useState<"live" | "visites">("live")
+  const [visitesData, setVisitesData] = useState<Visite[]>(() => store.getVisites())
+  const [visitDateFilter, setVisitDateFilter] = useState<"today" | "week" | "all">("today")
+  const heatmapRef = useRef<HTMLCanvasElement>(null)
   const [camera, setCamera] = useState<CameraState>({
     open: false, stream: null, photo: null,
     recording: false, audioBlob: null, mediaRecorder: null,
@@ -253,6 +257,78 @@ export default function BOGPSTracker({ user }: Props) {
     setCamera({ open: false, stream: null, photo: null, recording: false, audioBlob: null, mediaRecorder: null })
   }
 
+  // ── Visit heatmap data ──────────────────────────────────────────────────
+  const todayStr = new Date().toISOString().split("T")[0]
+  const weekStart = (() => {
+    const d = new Date()
+    const day = d.getDay() === 0 ? 6 : d.getDay() - 1
+    d.setDate(d.getDate() - day)
+    return d.toISOString().split("T")[0]
+  })()
+  const filteredVisites = useMemo(() => visitesData.filter(v => {
+    if (visitDateFilter === "today") return v.date === todayStr
+    if (visitDateFilter === "week") return v.date >= weekStart
+    return true
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [visitesData, visitDateFilter])
+  const pvStats = useMemo(() => {
+    const stats: Record<string, { nom: string; visites: number; commandes: number }> = {}
+    filteredVisites.forEach(v => {
+      if (!stats[v.prevendeurId]) stats[v.prevendeurId] = { nom: v.prevendeurNom, visites: 0, commandes: 0 }
+      stats[v.prevendeurId].visites++
+      if (v.resultat === "commande") stats[v.prevendeurId].commandes++
+    })
+    return Object.values(stats).sort((a, b) => b.visites - a.visites)
+  }, [filteredVisites])
+  useEffect(() => {
+    if (gpsTrackerTab === "visites") setVisitesData(store.getVisites())
+  }, [gpsTrackerTab])
+  useEffect(() => {
+    if (gpsTrackerTab !== "visites") return
+    const canvas = heatmapRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 0, W, H)
+    for (let i = 0; i <= 10; i++) {
+      ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 0.5
+      ctx.beginPath(); ctx.moveTo(i * W / 10, 0); ctx.lineTo(i * W / 10, H); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, i * H / 10); ctx.lineTo(W, i * H / 10); ctx.stroke()
+    }
+    const withGPS = filteredVisites.filter(v => v.gpsLat && v.gpsLng)
+    if (withGPS.length === 0) {
+      ctx.fillStyle = "#4b5563"; ctx.font = "13px system-ui"; ctx.textAlign = "center"
+      ctx.fillText("Aucune visite avec coordonnées GPS disponibles", W / 2, H / 2)
+      ctx.fillStyle = "#374151"; ctx.font = "11px system-ui"
+      ctx.fillText("Les visites enregistrées avec GPS apparaîtront ici", W / 2, H / 2 + 20)
+      return
+    }
+    const lats = withGPS.map(v => v.gpsLat!), lngs = withGPS.map(v => v.gpsLng!)
+    const latMin = Math.min(...lats) - 0.008, latMax = Math.max(...lats) + 0.008
+    const lngMin = Math.min(...lngs) - 0.015, lngMax = Math.max(...lngs) + 0.015
+    const pad = 24, mW = W - pad * 2, mH = H - pad * 2
+    const toX = (lng: number) => pad + ((lng - lngMin) / (lngMax - lngMin || 0.001)) * mW
+    const toY = (lat: number) => H - pad - ((lat - latMin) / (latMax - latMin || 0.001)) * mH
+    withGPS.forEach(v => {
+      const x = toX(v.gpsLng!), y = toY(v.gpsLat!)
+      const isCmd = v.resultat === "commande"
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 26)
+      g.addColorStop(0, isCmd ? "rgba(16,185,129,0.45)" : "rgba(239,68,68,0.4)")
+      g.addColorStop(1, isCmd ? "rgba(16,185,129,0)" : "rgba(239,68,68,0)")
+      ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill()
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2)
+      ctx.fillStyle = isCmd ? "#10b981" : "#ef4444"; ctx.fill()
+      ctx.strokeStyle = isCmd ? "#34d399" : "#f87171"; ctx.lineWidth = 1.5; ctx.stroke()
+    })
+    ctx.fillStyle = "#10b981"; ctx.beginPath(); ctx.arc(pad + 7, H - pad - 20, 5, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(pad + 7, H - pad - 6, 5, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = "#94a3b8"; ctx.font = "11px system-ui"; ctx.textAlign = "left"
+    ctx.fillText("Commande", pad + 16, H - pad - 16)
+    ctx.fillText("Sans commande", pad + 16, H - pad - 2)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsTrackerTab, filteredVisites])
+
   const filteredTracked = tracked.filter(t => {
     if (filter === "all") return true
     if (filter === "livreur") return t.role === "livreur"
@@ -330,6 +406,34 @@ export default function BOGPSTracker({ user }: Props) {
     setEtaOrderedIds(arr)
   }
 
+  // ── Nearest-neighbor route optimizer ──────────────────────────
+  const optimizeRouteNearestNeighbor = useCallback(() => {
+    if (!etaStartLat || !etaStartLng || etaOrderedIds.length < 2) return
+    const remaining = [...etaOrderedIds]
+    let currentLat = etaStartLat
+    let currentLng = etaStartLng
+    const result: string[] = []
+    while (remaining.length > 0) {
+      let nearestIdx = 0
+      let nearestDist = Infinity
+      remaining.forEach((id, i) => {
+        const c = etaClients.find(cl => cl.id === id)
+        if (!c?.gpsLat || !c?.gpsLng) { nearestIdx = i; return }
+        const d = haversineKm(currentLat, currentLng, c.gpsLat, c.gpsLng)
+        if (d < nearestDist) { nearestDist = d; nearestIdx = i }
+      })
+      const nextId = remaining[nearestIdx]
+      result.push(nextId)
+      remaining.splice(nearestIdx, 1)
+      const nextClient = etaClients.find(cl => cl.id === nextId)
+      if (nextClient?.gpsLat && nextClient?.gpsLng) {
+        currentLat = nextClient.gpsLat
+        currentLng = nextClient.gpsLng
+      }
+    }
+    setEtaOrderedIds(result)
+  }, [etaStartLat, etaStartLng, etaOrderedIds, etaClients])
+
   return (
     <div className="flex flex-col gap-5">
 
@@ -340,6 +444,32 @@ export default function BOGPSTracker({ user }: Props) {
         <KpiCard label="En route" value={inRouteCount.toString()} icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" color="cyan" />
         <KpiCard label="Mon GPS" value={myPosition ? "Actif" : "Inactif"} icon="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" color={myPosition ? "emerald" : "gray"} />
       </div>
+
+      {/* ── Tab Bar ──────────────────────────────────────────── */}
+      <div className="flex gap-1 p-1 rounded-xl bg-gray-900 border border-gray-800 w-fit">
+        {([
+          { id: "live" as const, label: "Positions Live", icon: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" },
+          { id: "visites" as const, label: "Visites & Heatmap", icon: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setGpsTrackerTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              gpsTrackerTab === t.id
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={t.icon} />
+            </svg>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── LIVE TAB ───────────────────────────────────────── */}
+      {gpsTrackerTab === "live" && (<>
 
       {/* GPS control bar */}
       <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-900 rounded-2xl border border-gray-800">
@@ -599,6 +729,440 @@ export default function BOGPSTracker({ user }: Props) {
               WhatsApp
             </a>
           </div>
+        </div>
+      )}
+
+      {/* ── ETA ESTIMATOR & ROUTE PANEL ──────────────────── */}
+      <div className="bg-gray-900 rounded-2xl border border-gray-800">
+        {/* Panel header / toggle */}
+        <button
+          onClick={() => setShowEtaPanel(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-800/40 transition-colors rounded-2xl"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <svg width="16" height="16" className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-white">Estimateur ETA &amp; Tournée</span>
+            {etaOrderedIds.length > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/30 font-medium">
+                {etaOrderedIds.length} arrêt(s)
+              </span>
+            )}
+          </div>
+          <svg width="16" height="16" className={`w-4 h-4 text-gray-400 transition-transform ${showEtaPanel ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showEtaPanel && (
+          <div className="border-t border-gray-800 p-4 flex flex-col gap-4">
+
+            {/* ── Start position ── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Latitude départ</label>
+                <input
+                  type="number"
+                  step="0.00001"
+                  value={etaStartLat ?? ""}
+                  onChange={e => setEtaStartLat(parseFloat(e.target.value) || null)}
+                  placeholder="33.57310"
+                  className="px-3 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500 placeholder-gray-600"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Longitude départ</label>
+                <input
+                  type="number"
+                  step="0.00001"
+                  value={etaStartLng ?? ""}
+                  onChange={e => setEtaStartLng(parseFloat(e.target.value) || null)}
+                  placeholder="-7.58980"
+                  className="px-3 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500 placeholder-gray-600"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Heure départ</label>
+                <input
+                  type="time"
+                  value={etaStartTime}
+                  onChange={e => setEtaStartTime(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Position GPS</label>
+                <button
+                  onClick={useMyGPSAsStart}
+                  disabled={!myPosition}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 text-emerald-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 justify-center"
+                >
+                  <svg width="12" height="12" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {myPosition ? "Utiliser mon GPS" : "GPS non actif"}
+                </button>
+              </div>
+            </div>
+
+            {/* ── Speed and interval ── */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Vitesse moy. (km/h)</label>
+                <input
+                  type="number"
+                  min={5} max={120}
+                  value={etaSpeedKmh}
+                  onChange={e => setEtaSpeedKmh(Math.max(5, parseInt(e.target.value) || 30))}
+                  className="px-3 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Durée par client (min)</label>
+                <input
+                  type="number"
+                  min={1} max={120}
+                  value={etaIntervalMin}
+                  onChange={e => setEtaIntervalMin(Math.max(1, parseInt(e.target.value) || 20))}
+                  className="px-3 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+
+            {/* ── Client search ── */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Ajouter un client GPS à la tournée</label>
+              <div className="relative">
+                <svg width="14" height="14" className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={etaClientSearch}
+                  onChange={e => setEtaClientSearch(e.target.value)}
+                  placeholder="Rechercher par nom..."
+                  className="w-full pl-9 pr-4 py-2 rounded-xl text-xs bg-gray-800 border border-gray-700 text-gray-200 focus:outline-none focus:border-amber-500 placeholder-gray-600"
+                />
+              </div>
+              {etaClientSearch.trim().length > 0 && (
+                <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden max-h-36 overflow-y-auto">
+                  {etaClients
+                    .filter(c => !etaOrderedIds.includes(c.id) && c.nom.toLowerCase().includes(etaClientSearch.toLowerCase()))
+                    .slice(0, 10)
+                    .map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => { addClientToRoute(c); setEtaClientSearch("") }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-700/60 transition-colors text-left border-b border-gray-700/40 last:border-b-0"
+                      >
+                        <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                          {c.nom[0]?.toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-200 truncate">{c.nom}</p>
+                          {c.secteur && <p className="text-[10px] text-gray-500 truncate">{c.secteur} — {c.zone}</p>}
+                        </div>
+                        <svg width="14" height="14" className="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    ))
+                  }
+                  {etaClients.filter(c => !etaOrderedIds.includes(c.id) && c.nom.toLowerCase().includes(etaClientSearch.toLowerCase())).length === 0 && (
+                    <div className="p-3 text-center text-xs text-gray-500">Aucun client GPS trouvé</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Route list ── */}
+            {etaOrderedIds.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-semibold text-gray-300">
+                    Itinéraire — {etaOrderedIds.length} arrêt(s)
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={optimizeRouteNearestNeighbor}
+                      disabled={!etaStartLat || !etaStartLng || etaOrderedIds.length < 2}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg width="14" height="14" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Optimiser l&apos;itinéraire
+                    </button>
+                    <button
+                      onClick={() => setEtaOrderedIds([])}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-600/20 hover:bg-red-600/40 border border-red-500/30 text-red-400 transition-colors"
+                    >
+                      <svg width="14" height="14" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Vider
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+                  {etaOrderedIds.map((id, i) => {
+                    const c = etaClients.find(cl => cl.id === id)
+                    const eta = etaResults.find(r => r.client.id === id)
+                    return (
+                      <div key={id} className={`flex items-center gap-2.5 px-3 py-2.5 ${i > 0 ? "border-t border-gray-700/40" : ""}`}>
+                        <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold text-gray-300 shrink-0">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-white truncate">{c?.nom ?? id}</p>
+                          {eta ? (
+                            <p className="text-[10px] text-amber-400 font-mono">
+                              Arrivée {eta.arriveTime} · {eta.distanceKm.toFixed(1)} km · {Math.ceil(eta.travelMin)} min de trajet
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-gray-500">Définir une position de départ pour l&apos;ETA</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => moveClientUp(id)}
+                            disabled={i === 0}
+                            className="p-1 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-gray-200 disabled:opacity-30 transition-colors"
+                          >
+                            <svg width="12" height="12" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => moveClientDown(id)}
+                            disabled={i === etaOrderedIds.length - 1}
+                            className="p-1 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-gray-200 disabled:opacity-30 transition-colors"
+                          >
+                            <svg width="12" height="12" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => removeClientFromRoute(id)}
+                            className="p-1 rounded-lg hover:bg-red-900/40 text-gray-500 hover:text-red-400 transition-colors"
+                          >
+                            <svg width="12" height="12" className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* ── ETA Summary ── */}
+                {etaResults.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50">
+                      <p className="text-xs text-gray-500 mb-0.5">Distance totale</p>
+                      <p className="text-base font-bold text-amber-400">
+                        {etaResults.reduce((s, r) => s + r.distanceKm, 0).toFixed(1)} km
+                      </p>
+                    </div>
+                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50">
+                      <p className="text-xs text-gray-500 mb-0.5">Durée trajet</p>
+                      <p className="text-base font-bold text-cyan-400">
+                        {Math.ceil(etaResults.reduce((s, r) => s + r.travelMin, 0))} min
+                      </p>
+                    </div>
+                    <div className="bg-gray-800/50 rounded-xl p-3 border border-gray-700/50">
+                      <p className="text-xs text-gray-500 mb-0.5">Fin estimée</p>
+                      <p className="text-base font-bold text-emerald-400">
+                        {etaResults[etaResults.length - 1].arriveTime}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {etaClients.length === 0 && (
+              <div className="rounded-xl border border-dashed border-gray-700 p-4 text-center text-xs text-gray-500">
+                Aucun client avec coordonnées GPS. Ajoutez des coordonnées GPS aux fiches clients pour utiliser cet estimateur.
+              </div>
+            )}
+
+          </div>
+        )}
+      </div>
+
+      </>)}
+
+      {/* ── VISITES & HEATMAP TAB ──────────────────────────── */}
+      {gpsTrackerTab === "visites" && (
+        <div className="flex flex-col gap-4">
+
+          {/* Date filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              { id: "today" as const, label: "Aujourd'hui" },
+              { id: "week" as const, label: "Cette semaine" },
+              { id: "all" as const, label: "Tout" },
+            ] as const).map(f => (
+              <button
+                key={f.id}
+                onClick={() => setVisitDateFilter(f.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                  visitDateFilter === f.id
+                    ? "bg-emerald-600 text-white"
+                    : "bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <span className="text-xs text-gray-500 ml-1">{filteredVisites.length} visite(s) trouvée(s)</span>
+          </div>
+
+          {/* Stats banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Total visites",    value: filteredVisites.length,                                                                  color: "text-blue-400" },
+              { label: "Commandes",        value: filteredVisites.filter(v => v.resultat === "commande").length,                           color: "text-emerald-400" },
+              { label: "Sans commande",    value: filteredVisites.filter(v => v.resultat === "sans_commande").length,                      color: "text-red-400" },
+              { label: "Taux conversion",  value: filteredVisites.length > 0 ? `${Math.round(filteredVisites.filter(v => v.resultat === "commande").length / filteredVisites.length * 100)}%` : "—", color: "text-amber-400" },
+            ].map(s => (
+              <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+                <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Canvas heatmap */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2 flex-wrap">
+              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              <h3 className="text-sm font-semibold text-white">Heatmap Visites GPS</h3>
+              <span className="text-xs text-gray-500">
+                {filteredVisites.filter(v => v.gpsLat && v.gpsLng).length} point(s) géolocalisé(s) · vert = commande · rouge = sans commande
+              </span>
+            </div>
+            <canvas ref={heatmapRef} width={700} height={300} className="w-full" style={{ display: "block" }} />
+          </div>
+
+          {/* Per-prevendeur table */}
+          {pvStats.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-800">
+                <h3 className="text-sm font-semibold text-white">Par Commercial / Pré-vendeur</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Prévendeur</th>
+                      <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Visites</th>
+                      <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Commandes</th>
+                      <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Sans cmd</th>
+                      <th className="text-center px-3 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Taux</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pvStats.map((pv, i) => {
+                      const taux = pv.visites > 0 ? Math.round((pv.commandes / pv.visites) * 100) : 0
+                      return (
+                        <tr key={pv.nom + i} className={`border-b border-gray-800/40 ${i % 2 === 0 ? "" : "bg-gray-800/20"}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+                                {pv.nom[0]?.toUpperCase()}
+                              </div>
+                              <span className="text-sm font-medium text-white">{pv.nom}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-center font-bold text-white">{pv.visites}</td>
+                          <td className="px-3 py-3 text-center font-bold text-emerald-400">{pv.commandes}</td>
+                          <td className="px-3 py-3 text-center font-bold text-red-400">{pv.visites - pv.commandes}</td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={`text-sm font-black ${taux >= 70 ? "text-emerald-400" : taux >= 40 ? "text-amber-400" : "text-red-400"}`}>
+                              {taux}%
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Visit history list */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Historique des Visites</h3>
+              <span className="text-xs text-gray-500">{filteredVisites.length} visite(s)</span>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="max-h-64 overflow-y-auto">
+                {filteredVisites.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500 text-sm">Aucune visite dans cette période</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-900 z-10">
+                      <tr className="border-b border-gray-800">
+                        <th className="text-left px-4 py-2 text-[10px] text-gray-500 uppercase">Date</th>
+                        <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase">Prévendeur</th>
+                        <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase">Client</th>
+                        <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase">Résultat</th>
+                        <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase">GPS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...filteredVisites].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 100).map(v => (
+                        <tr key={v.id} className="border-b border-gray-800/30 hover:bg-gray-800/30 transition-colors">
+                          <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">{v.date}</td>
+                          <td className="px-3 py-2.5 text-xs text-white">{v.prevendeurNom}</td>
+                          <td className="px-3 py-2.5 text-xs text-gray-300 max-w-[120px] truncate">{v.clientNom}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              v.resultat === "commande"
+                                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                : "bg-red-500/15 text-red-400 border-red-500/30"
+                            }`}>
+                              {v.resultat === "commande" ? "Commande" : "Sans cmd"}
+                            </span>
+                            {v.raisonSansCommande && (
+                              <span className="ml-1.5 text-[10px] text-gray-500 italic">{v.raisonSansCommande}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {v.gpsLat && v.gpsLng ? (
+                              <a
+                                href={`https://www.google.com/maps?q=${v.gpsLat},${v.gpsLng}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-blue-400 hover:text-blue-300 font-mono whitespace-nowrap"
+                              >
+                                {v.gpsLat.toFixed(4)}, {v.gpsLng.toFixed(4)}
+                              </a>
+                            ) : (
+                              <span className="text-[10px] text-gray-600">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 

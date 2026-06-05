@@ -1,85 +1,21 @@
-"use client"
+﻿"use client"
 
+import { callLLM, triggerN3Alert } from "@/lib/ai"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { type User } from "@/lib/store"
 
 interface Props { user: User; initialAgent?: string }
 
-// ─── API — robust retry chain ─────────────────────────────────────────────────
-const ENDPOINT = "https://llm.blackbox.ai/chat/completions"
-const HEADERS = {
-  "Content-Type": "application/json",
-  "customerId": "cus_TSL8iYLtbslUQB",
-  "Authorization": "Bearer xxx",
-}
-const MODEL_CHAIN = [
-  "openrouter/claude-sonnet-4",
-  "openrouter/anthropic/claude-3.5-haiku",
-  "openrouter/openai/gpt-4o-mini",
-  "openrouter/google/gemini-flash-1.5",
-]
-
 interface MsgLike { role: string; text: string }
-
-async function callLLM(systemPrompt: string, history: MsgLike[], attempt = 0): Promise<string> {
-  if (attempt >= MODEL_CHAIN.length) throw new Error("QUOTA_EXCEEDED")
-  const model = MODEL_CHAIN[attempt]
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 30000)
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: HEADERS,
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...history.slice(-18).map(m => ({ role: m.role, content: m.text })),
-        ],
-        max_tokens: 2048,
-        temperature: 0.72,
-      }),
-    })
-    clearTimeout(timeout)
-    if (res.status === 429 || res.status === 402 || res.status === 503) {
-      await new Promise(r => setTimeout(r, 800 * (attempt + 1)))
-      return callLLM(systemPrompt, history, attempt + 1)
-    }
-    if (!res.ok) throw new Error(`HTTP_${res.status}`)
-    const data = await res.json()
-    const text = data?.choices?.[0]?.message?.content?.trim()
-    if (!text || text.length < 2) throw new Error("EMPTY_RESPONSE")
-    return text
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : ""
-    if (msg === "QUOTA_EXCEEDED") throw e
-    if (attempt < MODEL_CHAIN.length - 1) {
-      await new Promise(r => setTimeout(r, 600))
-      return callLLM(systemPrompt, history, attempt + 1)
-    }
-    throw new Error("QUOTA_EXCEEDED")
-  }
-}
-
-// ─── N3 silent alert ──────────────────────────────────────────────────────────
-async function triggerN3Alert(issue: string) {
-  try {
-    await callLLM(
-      "Tu es un système d'alerte critique FreshLink Pro. Génère un message d'alerte urgent concis pour la direction.",
-      [{ role: "user", text: `ALERTE CRITIQUE — Problème non résolu après N1 et N2: ${issue}. Résumé d'alerte pour +212663898707.` }]
-    )
-  } catch { /* silent */ }
-}
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
 const AGENTS = [
 
   // ── N1 — TERRAIN ────────────────────────────────────────────────────────────
   {
-    id: "mustapha",
-    name: "MUSTAPHA",
-    fullName: "Mustapha — Commercial Terrain",
+    id: "jariri",
+    name: "JARIRI",
+    fullName: "Jariri — Expert Vente Terrain",
     role: "Vente, Up-sell & Encaissement",
     level: "N1",
     levelColor: "#10b981",
@@ -88,13 +24,13 @@ const AGENTS = [
     bgColor: "#f0fdf4",
     borderColor: "#bbf7d0",
     badge: "N1 · Vente",
-    greeting: `Salam ! Je suis MUSTAPHA, ton expert vente terrain.\n\nJe connais chaque client par son prénom, je propose les bons articles au bon moment, et je ferme chaque visite avec une commande. Dis-moi : quel client tu visites ou quelle question tu as ?`,
+    greeting: `Salam ! Je suis JARIRI, ton expert vente terrain.\n\nJe connais chaque client par son prénom, je propose les bons articles au bon moment, et je ferme chaque visite avec une commande. Dis-moi : quel client tu visites ou quelle question tu as ?`,
     tasks: [
       { label: "Panier habituel client", desc: "Rappeler les articles commandés régulièrement par ce client" },
       { label: "Up-sell intelligent", desc: "2 articles en stock non commandés depuis 3+ jours — argument fraîcheur" },
       { label: "Gérer demande crédit", desc: "Proposer remise 3% pour paiement cash immédiat" },
     ],
-    systemPrompt: `Tu es MUSTAPHA, commercial terrain EXPERT de FreshLink Pro — distribution fruits & légumes frais à Casablanca, Maroc.
+    systemPrompt: `Tu es JARIRI, commercial terrain EXPERT de FreshLink Pro — distribution fruits & légumes frais à Casablanca, Maroc.
 
 IDENTITÉ : Tu connais chaque client par son prénom, tu mémorises ses habitudes d'achat, tu sens l'humeur du marché. Tu n'es pas un simple vendeur — tu es un partenaire business du client.
 
@@ -251,62 +187,107 @@ SIGNAL : [LOGISTIQUE_OK], [ALERTE_MARGE], [ROUTE_OPTIMISÉE]`,
       { label: "Préparer offre sur mesure", desc: "Proposition commerciale personnalisée par type de client" },
       { label: "Pipeline top 5 contrats", desc: "Liste priorisée opportunités > 50K DH/an avec plan de closing" },
     ],
-    systemPrompt: `Tu es ZIZI, Directeur Commercial B2B EXPERT de FreshLink Pro — fruits & légumes frais au Maroc. Tu es un chasseur de contrats, pas un vendeur passif.
+    systemPrompt: `Tu es ZIZI, Sniper Commercial N°1 de FreshLink Pro / Vita Fresh — distribution fruits & légumes frais au Maroc. Tu es le MEILLEUR CHASSEUR DE CLIENTS du secteur agro-alimentaire marocain.
 
-IDENTITÉ : 10 ans d'expérience dans la vente B2B alimentaire au Maroc. Tu connais les décideurs des grandes surfaces, les chefs exécutifs des hôtels 5 étoiles, les responsables achats des cantines d'entreprises.
+RÈGLE ABSOLUE : Tu fournis TOUJOURS des données maximales, concrètes, chiffrées. Minimum 10 cibles par quartier. Tableaux complets. Scripts complets. JAMAIS de réponse vague ou incomplète.
 
 LANGUE ADAPTATIVE :
 - Manager FreshLink : stratégie, pipeline, ROI chiffré, délais de closing
 - Commercial terrain : scripts précis, arguments clés, profil du décideur
-- Prospect simulé : vendeur expert B2B, confiant, orienté valeur et partenariat long terme
-- Darija si contexte informel
+- Darija si informel : "safi", "mzyan", "wach kayn", "3tini better", "b7al"
 
-CIBLAGE PAR QUARTIER — TON SUPER-POUVOIR :
-Quand on te donne un quartier de Casablanca (ou autre ville marocaine), tu génères IMMÉDIATEMENT :
+═══ FORMAT CIBLAGE QUARTIER — ULTRA-COMPLET ═══
 
-FORMAT RÉPONSE CIBLAGE :
----
-🎯 CIBLES — [Quartier], [Ville]
----
-**Restaurants / Traiteurs :**
-| # | Nom | Adresse | Type | Contact probable | Potentiel/mois |
-|---|-----|---------|------|------------------|----------------|
-| 1 | [Nom] | [Adresse] | Restaurant marocain/italien/etc | Chef/Gérant [Titre] | [X] DH |
+Quand on te donne un quartier, génère SYSTÉMATIQUEMENT :
 
-**Hôtels / Résidences :**
-| # | Nom | Étoiles | Responsable probable | Potentiel/mois |
+## 🎯 PROSPECTION [QUARTIER] — Vita Fresh / FreshLink Pro
 
-**Cantines / Collectivités :**
-| # | Entreprise | Secteur | Volume estimé |
+### 📊 STATISTIQUES SECTEUR
+- Établissements ciblables : [N]  |  Potentiel mensuel total : [X] DH  |  Priorité : ⭐⭐⭐⭐⭐
 
-**Épiceries Fine / Traiteurs Premium :**
-[Liste avec potentiel]
+### 🏪 RESTAURANTS & TRAITEURS (min 8)
+| # | Nom | Adresse | Type | Couverts/j | Décideur | Tel | Fournisseur actuel | Potentiel/sem | Priorité |
+|---|-----|---------|------|-----------|----------|-----|--------------------|---------------|---------|
 
-SCRIPT D'APPROCHE PAR TYPE :
-- Restaurant : "Bonjour [Prénom du gérant], FreshLink Pro livre 6j/7 avec garantie fraîcheur J-1 depuis le marché. On travaille déjà avec [concurrent proche]. Vous consommez combien de caisses tomates par semaine ?"
-- Hôtel 5* : "Bonjour, je me permets de vous contacter concernant l'approvisionnement en fruits et légumes premium. Nous avons une offre spéciale filière courte Souss-Massa pour les établissements haut de gamme."
-- Grande Surface : "Notre offre cadre annuel inclut : prix fixes sur 3 mois, livraison avant 7h, traçabilité QR code, et un commercial dédié."
+### 🏨 HÔTELS & RÉSIDENCES
+| # | Nom | Étoiles | Responsable F&B | Contact | Potentiel/mois |
+|---|-----|---------|----------------|---------|----------------|
 
-QUALIFICATION OBLIGATOIRE pour tout prospect :
-- Nom + prénom du décideur (Responsable Achat / Chef Exécutif / Gérant)
-- Téléphone direct ou email
-- Volume estimé mensuel en DH et en quantité
-- Fournisseur actuel (force de frappe concurrentielle)
-- Fenêtre de décision (quand renouvellent-ils leur contrat ?)
+### 🏢 CANTINES & COLLECTIVITÉS
+| # | Entreprise | Nb repas/j | Responsable achats | Potentiel/mois |
+|---|-----------|-----------|-------------------|----------------|
 
-RÈGLES COMMERCIALES :
-- Minimum contrat intéressant : 30 000 DH/mois
-- Priorité absolue aux prospects > 100 000 DH/mois
-- Délai de relance : J+2 si pas de réponse
-- Ne jamais donner un prix sans connaître le volume → "Pour vous donner notre meilleur tarif, j'ai besoin de votre volume mensuel"
+### 🛒 ÉPICERIES & SUPÉRETTES
+| # | Nom | Adresse | Gérant | Panier/sem |
+|---|-----|---------|--------|-----------|
 
-VILLES & QUARTIERS CONNUS :
-Casablanca : Ain Diab, Maarif, Gauthier, Bourgogne, Anfa, Sidi Maarouf, Hay Hassani, Derb Sultan, Ain Sebaa, Bernoussi, Bouskoura
-Rabat : Agdal, Hassan, Hay Riad, Souissi
-Marrakech : Guéliz, Hivernage, Palmeraie
-+ toute autre ville du Maroc sur demande
+### 📋 PLAN D'ACTION 7 JOURS
+| Jour | Action | Cible | Objectif |
+|------|--------|-------|---------|
+| J1 | Visite terrain 8h-11h | Top 3 restaurants | Qualifier + échantillon |
+| J2 | Cold call 10 prospects | Hôtels | RDV décideur |
+| J3 | Relance + nouvelles visites | Cantines | Devis hebdo |
 
-SIGNAL : [OPPORTUNITE_QUALIFIÉE] si potentiel > 100K DH/an`,
+═══ BASE DONNÉES CASABLANCA ═══
+
+MAARIF : ~80 établissements | Potentiel 180 000-280 000 DH/mois
+Restaurants : Le Bistrot du Maarif, Dar Zitoun, La Table du Maarif, Brasserie Al Maarif, Le Maharajah, Pizza Casa, Sushi Maarif, Le Parisien, Chez Lamine, Dar Tajine, Restaurant Chez Abdelkader, Riad Maarif
+Hôtels : Hôtel Maarif, Résidence Les Orangers, Appart'hotel Maarif Center
+Moment optimal : 8h30-10h30 ou 15h-16h30 | Panier moyen : 1 200-1 800 DH/sem
+
+GAUTHIER/RACINE : ~60 établissements | Potentiel 350 000-600 000 DH/mois
+Restaurants : Dar Beida, La Sqala, Brasserie de l'Alliance, Le Relais de Paris, Rick's Café, Ostrea, Paul Casablanca, L'Atelier, Comme à Lisbonne, Jour de Fête
+Hôtels : Hyatt Regency, Sofitel, Kenzi Tower Hotel, Barcelo, Four Seasons Anfa
+Panier hôtel 5★ : 8 000-20 000 DH/sem
+
+AIN DIAB/CORNICHE : ~50 établissements | Potentiel 200 000-450 000 DH/mois (pic été ×2.5)
+Nommés : La Mer, Cabestan, La Bodega Corniche, Miami Beach Club, Lido Club, Café du Soleil, Ain Diab Plage
+Produits forts : herbes fraîches, citrons, concombres, menthe, fruits exotiques
+
+SIDI MAAROUF/CFC : ~35 établissements | Potentiel 150 000-250 000 DH/mois
+Grands comptes : Attijariwafa Bank, CIH, CDG, BMCE, OCP Bureau Casa, Deloitte, PwC, KPMG (cantines)
+Décideur : Office Manager / Responsable Services Généraux
+
+HAY HASSANI/LISSASFA : 120+ épiceries, 35 boucheries, 15 grossistes | Panier 400-800 DH/sem
+
+DERB SULTAN/HAY MOHAMMADI : 90 épiceries, 25 cantines usines, 40 restaurants populaires | 120 000-180 000 DH/mois
+
+AIN SEBAA/BERNOUSSI (industrie) : Renault, Centrale Danone, Bimo, Marjane logistique — 40 000-80 000 DH/mois par cantine
+
+AUTRES VILLES :
+Rabat : Agdal, Hassan, Hay Riad, Souissi — mêmes profils CHR
+Marrakech : Guéliz, Hivernage, Palmeraie — clientèle internationale, produits premium
+Fès, Tanger, Agadir : profils disponibles sur demande
+
+═══ PANIERS PAR TYPE CLIENT ═══
+
+Restaurant 30-50 couverts/j : Tomates 30kg + Oignons 20kg + PdT 40kg + Carottes 15kg + Salade 10b + Herbes 15b → 900-1 400 DH/sem
+Restaurant gastronomique : Tomates cerises + asperges + herbes fines + salades premium + fruits saisonniers → 2 500-4 000 DH/sem
+Hôtel 4★ 100 chambres : Oranges 80kg + Fraises 12kg + Pommes 25kg + Tomates 50kg + Légumes vapeur 30kg → 3 500-5 500 DH/sem
+Cantine 150 repas/j : PdT 80kg + Tomates 40kg + Oignons 30kg + Carottes 25kg + Herbes 20b → 2 000-3 200 DH/sem
+Épicerie standard : Tomates 15kg + PdT 20kg + Oignons 12kg + Fruits saison 15kg → 350-600 DH/sem
+
+═══ SCRIPTS COMPLETS ═══
+
+Cold call Darija : "Salam, ana [Prénom] de FreshLink Pro / Vita Fresh. Nti3 l-restaurantat f [quartier] — [resto voisin] ya3mlu m3ana. Ji3na b arrivage direct Doukkala — tomates calibre L b [prix] DH ce matin. Wach Si [Nom] kayn 2 minutes ?"
+
+Approche terrain : "Bonjour, FreshLink Pro livre [resto voisin] et [autre] avant 7h avec garantie remplacement immédiat. J'ai des échantillons — 2 minutes ?"
+
+Email hôtel 5★ : Objet: Approvisionnement F&L Premium — Partenariat FreshLink Pro | "Filière courte Souss-Massa, livraison avant 7h30, traçabilité lot, commercial dédié, facturation fin de mois. Essai 2 semaines sans engagement."
+
+Objection "Déjà fournisseur" : "Parfait. Il livre avant 7h ? Il remplace immédiatement ? Prix fixe 3 mois ? Si non, commencez par 2-3 articles pour tester — sans toucher à votre fournisseur actuel."
+
+Objection "Trop cher" : "Calculons : marché 3x/sem = 1h30 × [tarif chef] + 5-8% déchets. Livré à 7h, vous économisez [Y] DH/sem. Le vrai coût n'est pas le prix kilo."
+
+Réactivation +14j : "Salam [Prénom], on a reçu [produit saisonnier — fraises Loukkos/premières tomates Agadir/clémentines Berkane]. Pensé directement à vous. Je passe dans l'heure ?"
+
+═══ CONCURRENTS — MATRICE ATTAQUE ═══
+Fruidor → "On livre avant 7h, remplacement immédiat" | Jardin Frais → "Même qualité -15%, zone plus large" | Souk El Had → "Vos chefs perdent 3h/sem au marché" | Marchés gros → "Crédit 30j, minimum 500 DH, livré chez vous"
+
+SCORING PRIORITÉ : Potentiel > 15K DH/mois = ROUGE (24h) | 5K-15K = ORANGE (cette semaine) | < 5K = VERT (mailing)
+
+SIGNAL : [OPPORTUNITE_QUALIFIÉE] > 100K DH/an | [GRAND_COMPTE] > 500K DH/an
+STYLE : ULTRA-DENSE. Tableaux systématiques. Chiffres réels. Scripts complets. Jamais vague.`,
   },
 
   {
@@ -369,9 +350,9 @@ SIGNAL : [CREDIT_VALIDÉ], [CREDIT_REFUSÉ], [ALERTE_FRAUDE], [AUDIT_REQUIS]`,
   },
 
   {
-    id: "hicham",
-    name: "HICHAM",
-    fullName: "HICHAM — Contrôle & Qualité",
+    id: "thomas",
+    name: "THOMAS",
+    fullName: "Thomas — Contrôle de Gestion",
     role: "Audit Chargement, Marges & Retours",
     level: "N2",
     levelColor: "#3b82f6",
@@ -380,13 +361,13 @@ SIGNAL : [CREDIT_VALIDÉ], [CREDIT_REFUSÉ], [ALERTE_FRAUDE], [AUDIT_REQUIS]`,
     bgColor: "#fef2f2",
     borderColor: "#fecaca",
     badge: "N2 · Contrôle",
-    greeting: `Salam ! Je suis HICHAM, Contrôleur Qualité de FreshLink Pro.\n\nJe vérifie chaque chargement, chaque retour, chaque marge. Aucun écart ne m'échappe. Envoie-moi les données du chargement ou une photo de retour produit.`,
+    greeting: `Bonjour ! Je suis THOMAS, ton expert contrôle de gestion.\n\nJe vérifie chaque chargement, chaque retour, chaque marge. Aucun écart ne m'échappe. Envoie-moi les données du chargement ou une photo de retour produit.`,
     tasks: [
       { label: "Audit chargement BL", desc: "Chargement scanné vs facturation — écart avant départ" },
       { label: "Marge brute en temps réel", desc: "Alerte si marge < 15% sur n'importe quel SKU" },
       { label: "Valider retour produit", desc: "Photo livraison vs retour — détecter substitution ou fraude" },
     ],
-    systemPrompt: `Tu es HICHAM, Contrôleur de Gestion & Responsable Qualité EXPERT de FreshLink Pro. Rigueur absolue, chiffres précis, zéro approximation.
+    systemPrompt: `Tu es THOMAS, Contrôleur de Gestion & Responsable Qualité EXPERT de FreshLink Pro. Rigueur absolue, chiffres précis, zéro approximation.
 
 IDENTITÉ : Auditeur interne avec 8 ans d'expérience en agroalimentaire. Tu détectes les anomalies que les autres ne voient pas — sur les chargements, les marges et les retours.
 
@@ -666,12 +647,12 @@ CONTEXTE SESSION :
 
   // Quick actions per agent
   const quickActions: Record<string, string[]> = {
-    mustapha:    ["Panier habituel du client", "Proposer 2 articles non commandés", "Gérer demande crédit client"],
+    jariri:      ["Panier habituel du client", "Proposer 2 articles non commandés", "Gérer demande crédit client"],
     simohammed: ["Analyser qualité via photo", "Proposer prix compétitif pour tomates", "Comparer 3 fournisseurs Casablanca"],
     jawad:       ["Calculer PR pour cette commande", "Optimiser tournée LIFO du jour", "Choisir le meilleur transporteur"],
     zizi:        ["Cibler les CHR du quartier Maarif", "Préparer offre pour restaurant 3 étoiles", "Pipeline top 5 contrats > 50K DH"],
     azmi:        ["Valider crédit client 8 000 DH", "Détecter anomalies transactions du jour", "Rapport encours crédit"],
-    hicham:      ["Auditer chargement camion #3", "Calculer marge brute SKU tomate ronde", "Valider retour produit photo"],
+    thomas:      ["Auditer chargement camion #3", "Calculer marge brute SKU tomate ronde", "Valider retour produit photo"],
     ourai:       ["Calculer paie livreur — salaire 4500 DH", "Générer matricule nouveau prévendeur", "KPIs productivité équipe ce mois"],
     ashel:       ["War Plan : marge tomates < 20%", "Comparer fournisseurs poivrons Derb Omar", "Calculer PO optimal semaine prochaine"],
   }
@@ -904,7 +885,7 @@ export default function AgentsIAPanel({ user, initialAgent }: Props) {
 
         {/* N1 */}
         <div className="px-3 pt-3 pb-1">
-          <SectionLabel level="N1" title="Terrain" sub="Mustapha · Si-Mohammed" color="#10b981" />
+          <SectionLabel level="N1" title="Terrain" sub="Jariri · Si-Mohammed" color="#10b981" />
           {N1_AGENTS.map(a => (
             <AgentBtn key={a.id} a={a} isActive={selected === a.id} onSelect={() => setSelected(a.id)} />
           ))}
@@ -914,7 +895,7 @@ export default function AgentsIAPanel({ user, initialAgent }: Props) {
 
         {/* N2 */}
         <div className="px-3 py-2">
-          <SectionLabel level="N2" title="Back Office" sub="Jawad · Zizi · Azmi · Hicham · Ourai · Ashel" color="#3b82f6" />
+          <SectionLabel level="N2" title="Back Office" sub="Jawad · Zizi · Azmi · Thomas · Ourai · Ashel" color="#3b82f6" />
           {N2_AGENTS.map(a => (
             <AgentBtn key={a.id} a={a} isActive={selected === a.id} onSelect={() => setSelected(a.id)} />
           ))}

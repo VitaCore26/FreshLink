@@ -31,7 +31,8 @@ export default function BORetour() {
   const totalRetour = filtered.reduce((s, r) =>
     s + r.lignes.reduce((ls, l) => {
       const art = store.getArticles().find(a => a.id === l.articleId)
-      return ls + l.quantite * (art?.prixVente ?? 0)
+      const pv = art ? (art.pvMethode === "pourcentage" ? art.prixAchat * (1 + art.pvValeur / 100) : art.pvMethode === "montant" ? art.prixAchat + art.pvValeur : art.pvValeur) : 0
+      return ls + l.quantite * pv
     }, 0), 0)
 
   return (
@@ -80,7 +81,8 @@ export default function BORetour() {
             ) : filtered.map(r => {
               const valeur = r.lignes.reduce((s, l) => {
                 const art = store.getArticles().find(a => a.id === l.articleId)
-                return s + l.quantite * (art?.prixVente ?? 0)
+                const pv = art ? (art.pvMethode === "pourcentage" ? art.prixAchat * (1 + art.pvValeur / 100) : art.pvMethode === "montant" ? art.prixAchat + art.pvValeur : art.pvValeur) : 0
+                return s + l.quantite * pv
               }, 0)
               return (
                 <tr key={r.id} className="border-t border-border hover:bg-muted/30">

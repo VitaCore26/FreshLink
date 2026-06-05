@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { store, type Article, type User, type Client, type Commande, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
+import ArticleCombobox from "@/components/ui/ArticleCombobox"
+import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 
 interface Props { user: User }
 
@@ -69,6 +71,7 @@ export default function MobileCommercial({ user }: Props) {
   const [gpsLat, setGpsLat] = useState<number | null>(null)
   const [gpsLng, setGpsLng] = useState<number | null>(null)
   const [gpsLoading, setGpsLoading] = useState(false)
+  const [gpsStatus, setGpsStatus] = useState<"loading" | "granted" | "denied">("loading")
   const [sending, setSending] = useState(false)
   const [success, setSuccess] = useState(false)
   const [successWorkflow, setSuccessWorkflow] = useState<string | null>(null)
@@ -91,6 +94,7 @@ export default function MobileCommercial({ user }: Props) {
     typeProduits: "moyenne" as Client["typeProduits"],
     rotation: "journalier" as Client["rotation"],
     telephone: "", email: "", adresse: "",
+    categorie: undefined as "chr" | "marchand" | "particulier" | undefined,
   })
 
   // Proximity radius (km) — configurable by prevendeur
@@ -108,9 +112,10 @@ export default function MobileCommercial({ user }: Props) {
 
   // Tab state
   const [commTab, setCommTab] = useState<CommTab>("nouvelle")
+  const [habitudeSearch, setHabitudeSearch] = useState("")
 
-  // Client habits: articleId -> { count, lastDate } — computed when client changes
-  const [clientHabits, setClientHabits] = useState<Record<string, { count: number; lastDate: string }>>({})
+  // Client habits: articleId -> { count, lastDate, qteTotal, dernierQte, dernierQteUM, dernierUM } — computed when client changes
+  const [clientHabits, setClientHabits] = useState<Record<string, { count: number; lastDate: string; qteTotal: number; dernierQte: number; dernierQteUM?: number; dernierUM?: string }>>({})
   const [showMissedAlert, setShowMissedAlert] = useState(false)
 
   // Inline article selector state
@@ -130,14 +135,26 @@ export default function MobileCommercial({ user }: Props) {
 
   // Inline article list — filtered + sorted
   const pickerArticles = useMemo(() => {
-    let list = [...articles]
+    // ⚡ Déduplication par id (évite les doublons d'articles dans la vue mobile)
+    const seen = new Set<string>()
+    let list = articles.filter(a => {
+      if (!a || !a.id || seen.has(a.id)) return false
+      seen.add(a.id)
+      return true
+    })
     if (articleSearch.trim()) {
       const q = articleSearch.trim().toLowerCase()
-      list = list.filter(a => a.nom.toLowerCase().includes(q) || a.nomAr.includes(q) || a.famille.toLowerCase().includes(q))
+      // 🛡️ Null-safety : sécurise nom/nomAr/famille contre undefined (fix crash client-side)
+      list = list.filter(a => {
+        const nom = (a.nom ?? "").toLowerCase()
+        const nomAr = a.nomAr ?? ""
+        const famille = (a.famille ?? "").toLowerCase()
+        return nom.includes(q) || nomAr.includes(q) || famille.includes(q)
+      })
     }
     if (articleSort === "rotation") list.sort((a, b) => (globalRotation[b.id] ?? 0) - (globalRotation[a.id] ?? 0))
-    else if (articleSort === "stock") list.sort((a, b) => b.stockDisponible - a.stockDisponible)
-    else list.sort((a, b) => a.nom.localeCompare(b.nom))
+    else if (articleSort === "stock") list.sort((a, b) => (Number(b.stockDisponible) || 0) - (Number(a.stockDisponible) || 0))
+    else list.sort((a, b) => (a.nom ?? "").localeCompare(b.nom ?? ""))
     return list
   }, [articles, articleSearch, articleSort, globalRotation])
 
@@ -151,11 +168,12 @@ export default function MobileCommercial({ user }: Props) {
     })
   }, [articles, clientHabits, selectedClientId])
 
-  // Articles in habits but NOT in current cart — ordered more than 30 days ago
+  // Articles in habits but NOT in current cart — ordered more than inactivityDays ago
   const missedArticles = useMemo(() => {
     if (!selectedClientId || Object.keys(clientHabits).length === 0) return []
     const inCart = new Set(lignes.map(l => l.articleId))
-    const threshold = new Date(); threshold.setDate(threshold.getDate() - 30)
+    const inactivityDays = store.getAlertConfig?.()?.inactivityDays ?? 30
+    const threshold = new Date(); threshold.setDate(threshold.getDate() - inactivityDays)
     const thresholdStr = threshold.toISOString().slice(0, 10)
     return Object.entries(clientHabits)
       .filter(([artId, h]) => !inCart.has(artId) && h.count >= 2 && h.lastDate < thresholdStr)
@@ -165,12 +183,18 @@ export default function MobileCommercial({ user }: Props) {
       .filter(Boolean) as Article[]
   }, [clientHabits, lignes, articles, selectedClientId])
 
-  // My today's commandes (to detect duplicate + show edit/delete)
+  // My commandes — show last 7 days (not only today) so prevendeur can always see their history
   const [myCommandes, setMyCommandes] = useState(
-    store.getCommandes().filter(c => c.commercialId === user.id && c.date === store.today())
+    store.getCommandes().filter(c => c.commercialId === user.id)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 50)
   )
   const refreshMyCommandes = () =>
-    setMyCommandes(store.getCommandes().filter(c => c.commercialId === user.id && c.date === store.today()))
+    setMyCommandes(
+      store.getCommandes().filter(c => c.commercialId === user.id)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 50)
+    )
 
   // Edit commande state — opens inline editor
   const [editCmd, setEditCmd] = useState<Commande | null>(null)
@@ -239,14 +263,32 @@ export default function MobileCommercial({ user }: Props) {
     setArticles(store.getArticles())
     setClients(store.getClients())
     if (isAdmin) setAllUsers(store.getUsers().filter(u => ["prevendeur","resp_commercial","team_leader","admin","super_admin"].includes(u.role) && u.actif))
+    // Pull fresh data from Supabase in background to hydrate habits
+    import("@/lib/supabase/db").then(async (db) => {
+      try {
+        const [cmdsFromSB, { clients: cFromSB }, arts] = await Promise.all([
+          db.fetchCommandes(),
+          db.fetchClients(),
+          db.fetchArticles(),
+        ])
+        if (cmdsFromSB?.length) refreshMyCommandes()
+        if (cFromSB?.length) setClients(cFromSB)
+        if (arts?.length) setArticles(arts)
+      } catch { /* offline — localStorage already shown */ }
+    })
   }, [])
 
-  // Auto-capture GPS on mount
+  // Auto-capture GPS on mount — GPS is MANDATORY
   useEffect(() => {
+    if (!navigator.geolocation) { setGpsStatus("denied"); return }
     navigator.geolocation.getCurrentPosition(
-      pos => { setGpsLat(pos.coords.latitude); setGpsLng(pos.coords.longitude) },
-      () => { setGpsLat(33.5731); setGpsLng(-7.5898) },
-      { timeout: 6000 }
+      pos => {
+        setGpsLat(pos.coords.latitude)
+        setGpsLng(pos.coords.longitude)
+        setGpsStatus("granted")
+      },
+      () => { setGpsStatus("denied") },
+      { timeout: 10000, enableHighAccuracy: true }
     )
   }, [])
 
@@ -257,44 +299,88 @@ export default function MobileCommercial({ user }: Props) {
     if (client?.defaultHeureLivraison) {
       setHeureLivraison(client.defaultHeureLivraison)
     }
+    setHabitudeSearch("")
   }, [selectedClientId, clients])
 
   // Compute article habits from past commandes for selected client
+  // Depends on both selectedClientId AND articles so it re-runs once articles are loaded
   useEffect(() => {
     if (!selectedClientId) { setClientHabits({}); return }
-    const pastCmds = store.getCommandes().filter(c => c.clientId === selectedClientId)
-    const habitsMap: Record<string, { count: number; lastDate: string }> = {}
+    // Guard: if articles not yet loaded, skip (will re-run when articles arrive)
+    if (articles.length === 0) return
+    const allCmds = store.getCommandes()
+    const pastCmds = allCmds
+      .filter(c => c.clientId === selectedClientId)
+      .sort((a, b) => a.date.localeCompare(b.date))   // oldest first so dernierQte = latest
+
+    if (pastCmds.length === 0) {
+      setClientHabits({})
+      setShowMissedAlert(false)
+      return
+    }
+
+    const habitsMap: Record<string, { count: number; lastDate: string; qteTotal: number; dernierQte: number; dernierQteUM?: number; dernierUM?: string }> = {}
     pastCmds.forEach(cmd => {
       cmd.lignes.forEach(l => {
         if (!l.articleId) return
-        if (!habitsMap[l.articleId]) habitsMap[l.articleId] = { count: 0, lastDate: "" }
-        habitsMap[l.articleId].count += 1
-        if (!habitsMap[l.articleId].lastDate || cmd.date > habitsMap[l.articleId].lastDate)
-          habitsMap[l.articleId].lastDate = cmd.date
+        if (!habitsMap[l.articleId]) habitsMap[l.articleId] = { count: 0, lastDate: "", qteTotal: 0, dernierQte: 0 }
+        const qte = l.quantite ?? 0
+        habitsMap[l.articleId].count    += 1
+        habitsMap[l.articleId].qteTotal += qte
+        // Since sorted oldest→newest, the last cmd we encounter is the most recent
+        if (!habitsMap[l.articleId].lastDate || cmd.date >= habitsMap[l.articleId].lastDate) {
+          habitsMap[l.articleId].lastDate  = cmd.date
+          habitsMap[l.articleId].dernierQte = qte
+          // Also store UM info if the order used UM
+          if (l.quantiteUM && l.um) {
+            habitsMap[l.articleId].dernierQteUM = l.quantiteUM
+            habitsMap[l.articleId].dernierUM = l.um
+          } else {
+            habitsMap[l.articleId].dernierQteUM = undefined
+            habitsMap[l.articleId].dernierUM = undefined
+          }
+        }
       })
     })
-    setClientHabits(habitsMap)
+    // Only keep habits for articles that still exist in the catalog
+    const validMap: typeof habitsMap = {}
+    Object.entries(habitsMap).forEach(([artId, h]) => {
+      if (articles.some(a => a.id === artId)) validMap[artId] = h
+    })
+    setClientHabits(validMap)
     setShowMissedAlert(false)
-  }, [selectedClientId])
+  }, [selectedClientId, articles])
 
   const getGPS = () => {
     setGpsLoading(true)
+    setGpsStatus("loading")
+    if (!navigator.geolocation) { setGpsStatus("denied"); setGpsLoading(false); return }
     navigator.geolocation.getCurrentPosition(
-      pos => { setGpsLat(pos.coords.latitude); setGpsLng(pos.coords.longitude); setGpsLoading(false) },
-      () => { setGpsLat(33.5731); setGpsLng(-7.5898); setGpsLoading(false) },
-      { timeout: 8000 }
+      pos => {
+        setGpsLat(pos.coords.latitude)
+        setGpsLng(pos.coords.longitude)
+        setGpsStatus("granted")
+        setGpsLoading(false)
+      },
+      () => { setGpsStatus("denied"); setGpsLoading(false) },
+      { timeout: 10000, enableHighAccuracy: true }
     )
   }
 
-  // Filter clients — prevendeur only sees their own (by secteur or prevendeurId) unless admin
+  // ── Filter clients ────────────────────────────────────────────────────────
+  // Prevendeur sees ONLY clients explicitly assigned to them (prevendeurId === user.id)
+  // + unassigned clients from their sector (so they can pick up new clients).
+  // Admins/team_leaders see all clients.
+  const isPrevendeur = user.role === "prevendeur"
   const myClients = clients.filter(c => {
-    if (user.role === "prevendeur") {
-      // match by prevendeurId if set, else fall back to secteur
-      if (c.prevendeurId) return c.prevendeurId === user.id
-      return !c.secteur || c.secteur === user.secteur
+    if (isPrevendeur) {
+      if (c.prevendeurId) return c.prevendeurId === user.id  // directly assigned
+      if (user.secteur)   return c.secteur === user.secteur   // same sector, not yet assigned
+      return false  // prevendeur without sector — show nothing (until sector is assigned)
     }
-    return true
+    return true  // admin / team_leader / resp_commercial see everyone
   })
+  const assignedCount = clients.filter(c => c.prevendeurId === user.id).length
 
   const filteredClients = myClients.filter(c => {
     if (filterKey === "nom") return c.nom.toLowerCase().includes(searchNom.toLowerCase())
@@ -308,7 +394,7 @@ export default function MobileCommercial({ user }: Props) {
     return true
   }).sort((a, b) => {
     if (filterKey === "proche" && gpsLat && gpsLng && a.gpsLat && b.gpsLat) {
-      return distKm(gpsLat, gpsLng, a.gpsLat, a.gpsLng) - distKm(gpsLat, gpsLng, b.gpsLat, b.gpsLng)
+      return distKm(gpsLat!, gpsLng!, a.gpsLat, a.gpsLng ?? 0) - distKm(gpsLat!, gpsLng!, b.gpsLat, b.gpsLng ?? 0)
     }
     return a.nom.localeCompare(b.nom)
   })
@@ -352,6 +438,8 @@ export default function MobileCommercial({ user }: Props) {
       gpsLng: gpsLng ?? undefined,
       createdBy: user.id,
       createdAt: store.today(),
+      prevendeurId: user.id,
+      categorie: newClient.categorie,
     }
     store.addClient(client)
     setClients(store.getClients())
@@ -359,7 +447,7 @@ export default function MobileCommercial({ user }: Props) {
     setShowAddClient(false)
     setNewClient({ nom: "", secteur: user.secteur || "", zone: "", type: "epicerie", typeAutre: "",
       taille: "150-300kg", typeProduits: "moyenne", rotation: "journalier",
-      telephone: "", email: "", adresse: "" })
+      telephone: "", email: "", adresse: "", categorie: undefined })
   }
 
   // Returns the quantity in BASE units (kg/piece/...) regardless of input mode
@@ -468,6 +556,8 @@ export default function MobileCommercial({ user }: Props) {
       clientNom: client.nom,
       commandeId: commande.id,
       resultat: "commande",
+      gpsLat: gpsLat ?? undefined,
+      gpsLng: gpsLng ?? undefined,
     })
     await sendEmail({ to_email: commande.emailDestinataire, subject: `Commande - ${client.nom} - ${store.today()}`, body: buildCommandeEmail(commande) })
     setSuccess(true); setSending(false)
@@ -498,6 +588,8 @@ export default function MobileCommercial({ user }: Props) {
       clientNom: client.nom,
       resultat: "sans_commande",
       raisonSansCommande: visiteRaison,
+      gpsLat: gpsLat ?? undefined,
+      gpsLng: gpsLng ?? undefined,
     })
     setVisiteClientId("")
     setVisiteRaison("")
@@ -515,19 +607,85 @@ export default function MobileCommercial({ user }: Props) {
       .filter(l => l.articleId)
       .map(l => {
         const art = articles.find(a => a.id === l.articleId)
+        const pv = art ? store.computePV(art) : (l.prixVente ?? 0)
+        // Restore UM mode if the last order used UM
+        const wasUM = !!(l.quantiteUM && l.um && art?.um && art.um === l.um && art.colisageParUM)
+        const displayQty = wasUM
+          ? String(l.quantiteUM)   // show UM count (e.g. 3 Caisses)
+          : String(l.quantite)     // show base units (e.g. 90 kg)
         return {
           articleId: l.articleId,
-          quantite: String(l.quantite),
-          prixVente: String(art ? store.computePV(art) : l.prixVente),
-          uniteMode: "base",
+          quantite: displayQty,
+          prixVente: String(pv),
+          uniteMode: wasUM ? (art!.um as string) : "base",
         }
       })
-    if (newLignes.length > 0) setLignes(newLignes)
+    if (newLignes.length > 0) {
+      setLignes(newLignes)
+      setCommTab("nouvelle")
+    }
   }
 
   const handleDeleteCommande = (id: string) => {
     store.deleteCommande(id)
     refreshMyCommandes()
+  }
+
+  // ── GPS blocking screens ──────────────────────────────────────────────────
+  if (gpsStatus === "loading") {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 p-8 text-center">
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+          <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-bold text-foreground">Activation GPS en cours...</p>
+          <p className="text-sm text-muted-foreground mt-1">جارٍ تفعيل تحديد الموقع...</p>
+          <p className="text-xs text-muted-foreground mt-3">Veuillez autoriser l&apos;accès à votre position lorsque le navigateur vous le demande.</p>
+        </div>
+        <button onClick={getGPS} disabled={gpsLoading}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+          style={{ background: "oklch(0.38 0.2 260)" }}>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Réessayer
+        </button>
+      </div>
+    )
+  }
+
+  if (gpsStatus === "denied") {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-5 p-8 text-center">
+        <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
+          <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-bold text-red-600">GPS requis / تحديد الموقع مطلوب</p>
+          <p className="text-sm text-foreground mt-2 font-medium">L&apos;activation du GPS est indispensable pour utiliser l&apos;application prévendeur.</p>
+          <p className="text-sm text-muted-foreground mt-1">يجب تفعيل تحديد الموقع لاستخدام تطبيق البائع.</p>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left text-xs text-amber-800 flex flex-col gap-1.5 w-full max-w-sm">
+          <p className="font-bold text-sm">Comment activer le GPS :</p>
+          <p>• Sur iPhone : Réglages → Confidentialité → Service de localisation → Activer</p>
+          <p>• Sur Android : Paramètres → Localisation → Activer</p>
+          <p>• Dans votre navigateur : cliquez sur le cadenas 🔒 dans la barre d&apos;adresse → Localisation → Autoriser</p>
+        </div>
+        <button onClick={getGPS} disabled={gpsLoading}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50 w-full max-w-sm justify-center"
+          style={{ background: "oklch(0.38 0.2 260)" }}>
+          {gpsLoading
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Localisation en cours...</>
+            : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Réessayer l&apos;activation GPS</>}
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -619,6 +777,22 @@ export default function MobileCommercial({ user }: Props) {
         </div>
       )}
 
+      {/* PREVENDEUR — Mes clients banner */}
+      {isPrevendeur && (
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
+          <svg className="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-indigo-800">
+              {assignedCount} client(s) affecté(s) à vous
+              {user.secteur ? ` · Secteur : ${user.secteur}` : ""}
+            </p>
+            <p className="text-[11px] text-indigo-600">Vous ne voyez que vos clients et ceux non encore affectés dans votre secteur.</p>
+          </div>
+        </div>
+      )}
+
       {/* CLIENT SELECTION */}
       <div className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -704,7 +878,15 @@ export default function MobileCommercial({ user }: Props) {
         {/* Dropdown list */}
         <div className="flex flex-col gap-1 max-h-52 overflow-y-auto">
           {filteredClients.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-2 py-3 text-center">Aucun client trouvé</p>
+            <div className="text-center py-4">
+              <p className="text-xs text-muted-foreground">Aucun client trouvé</p>
+              {isPrevendeur && myClients.length === 0 && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  Vous n&apos;avez pas encore de clients affectés.
+                  Contactez votre responsable pour l&apos;affectation.
+                </p>
+              )}
+            </div>
           ) : filteredClients.map(c => {
             const dist = gpsLat && c.gpsLat ? distKm(gpsLat, gpsLng!, c.gpsLat, c.gpsLng!) : null
             return (
@@ -714,16 +896,23 @@ export default function MobileCommercial({ user }: Props) {
                   {c.nom[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{c.nom}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-foreground truncate">{c.nom}</p>
+                    {isPrevendeur && c.prevendeurId === user.id && (
+                      <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">MON CLIENT</span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">{c.secteur} · {TYPE_LABELS[c.type]} · {TAILLE_LABELS[c.taille]}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {dist !== null && <span className="text-xs text-muted-foreground">{dist.toFixed(1)}km</span>}
                   {c.gpsLat && (
-                    <button onClick={e => { e.stopPropagation(); openGPSGuide(c) }}
-                      className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100">
+                    <div role="button" tabIndex={0}
+                      onClick={e => { e.stopPropagation(); openGPSGuide(c) }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); openGPSGuide(c) }}}
+                      className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer select-none">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                    </button>
+                    </div>
                   )}
                 </div>
               </button>
@@ -794,6 +983,18 @@ export default function MobileCommercial({ user }: Props) {
                   className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
               </div>
             )}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-foreground">Catégorie tarifaire</label>
+              <select
+                value={newClient.categorie ?? ""}
+                onChange={e => setNewClient({ ...newClient, categorie: (e.target.value as "chr"|"marchand"|"particulier") || undefined })}
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">Standard</option>
+                <option value="chr">CHR / HORECA</option>
+                <option value="marchand">Marchand</option>
+                <option value="particulier">Particulier</option>
+              </select>
+            </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-foreground">Taille / capacité</label>
               <select value={newClient.taille} onChange={e => setNewClient({ ...newClient, taille: e.target.value as Client["taille"] })}
@@ -904,99 +1105,6 @@ export default function MobileCommercial({ user }: Props) {
         {/* Coordinates intentionally hidden from prevendeur screen */}
       </div>
 
-      {/* ── HABITUDES TAB ─────────────────────────────────────────────────── */}
-      {commTab === "habitudes" && (
-        <div className="flex flex-col gap-3">
-          <div className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Habitudes du client</p>
-                <p className="text-xs text-muted-foreground">
-                  {selectedClientId
-                    ? Object.keys(clientHabits).length > 0
-                      ? `${Object.keys(clientHabits).length} articles commandes regulierement`
-                      : "Aucun historique pour ce client"
-                    : "Selectionnez un client pour voir ses habitudes"}
-                </p>
-              </div>
-            </div>
-            {selectedClientId && Object.keys(clientHabits).length > 0 && (
-              <button onClick={autoFillPanier}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                style={{ background: "oklch(0.38 0.2 260)" }}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                Preparer panier automatique
-              </button>
-            )}
-          </div>
-          {selectedClientId && Object.keys(clientHabits).length > 0 && (
-            <div className="flex flex-col gap-2">
-              {Object.entries(clientHabits)
-                .sort(([, a], [, b]) => b.count - a.count)
-                .map(([artId, habit]) => {
-                  const art = articles.find(a => a.id === artId)
-                  if (!art) return null
-                  const pv = store.computePV(art)
-                  const inCart = lignes.some(l => l.articleId === artId)
-                  return (
-                    <div key={artId} className={`flex items-center gap-3 p-3 rounded-xl border ${inCart ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}>
-                      <img src={art.photo || "https://placehold.co/48x48/e2e8f0/64748b?text=Art"}
-                        alt={`${art.nom} produit habituel`}
-                        className="w-11 h-11 rounded-xl object-cover shrink-0 border border-border"
-                        onError={e => { e.currentTarget.src = "https://placehold.co/48x48/e2e8f0/64748b?text=Art" }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-foreground truncate">{art.nom}</p>
-                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-700">{habit.count}x commande</span>
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${art.stockDisponible > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
-                            {art.stockDisponible > 0 ? `${art.stockDisponible} ${art.unite}` : "Rupture"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">Dernier: {habit.lastDate}</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className="text-sm font-bold text-primary">{pv} DH</span>
-                        {inCart ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-primary-foreground">Dans panier</span>
-                        ) : (
-                          <button
-                            disabled={art.stockDisponible <= 0}
-                            onClick={() => {
-                              const emptyIdx = lignes.findIndex(l => !l.articleId)
-                              if (emptyIdx >= 0) updateLigne(emptyIdx, "articleId", artId)
-                              else setLignes(prev => [...prev, { articleId: artId, quantite: "", prixVente: String(pv), uniteMode: "base" }])
-                              setCommTab("nouvelle")
-                            }}
-                            className="text-[10px] font-bold px-2 py-1 rounded-xl bg-primary text-primary-foreground disabled:opacity-40">
-                            + Ajouter
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          )}
-          {selectedClientId && Object.keys(clientHabits).length === 0 && (
-            <div className="bg-card rounded-xl border border-border p-8 flex flex-col items-center gap-3 text-center">
-              <svg className="w-10 h-10 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p className="text-sm font-semibold text-muted-foreground">Aucune habitude enregistree</p>
-              <p className="text-xs text-muted-foreground">Les habitudes se creent automatiquement apres plusieurs commandes passees par ce client.</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* placeholder to close previous structure */}
       {/* INLINE ARTICLE SELECTOR ─────────────────────────────────────────── */}
       <div className="bg-card rounded-xl border border-border flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -1074,16 +1182,23 @@ export default function MobileCommercial({ user }: Props) {
                     }
                   }}
                   className="w-4 h-4 rounded accent-primary shrink-0" />
-                <img src={a.photo || "https://placehold.co/40x40/e2e8f0/64748b?text=Art"}
+                <img src={resolveArticlePhoto(a)}
                   alt={`${a.nom} produit frais article`}
                   className="w-10 h-10 rounded-xl object-cover border border-border shrink-0"
                   onError={e => { e.currentTarget.src = "https://placehold.co/40x40/e2e8f0/64748b?text=Art" }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-foreground truncate">{a.nom}</p>
                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${stockOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
-                      {stockOk ? `${a.stockDisponible} ${a.unite}` : "Rupture"}
-                    </span>
+                    {(() => {
+                      const vs = store.getVirtualStock(a.id)
+                      const ok = vs.available > 0
+                      return (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                          {ok ? `${vs.available} ${a.unite} dispo` : "Rupture"}
+                          {vs.pending > 0 && ok && <span className="ml-1 font-normal text-slate-600">(-{vs.pending} en cmd)</span>}
+                        </span>
+                      )
+                    })()}
                     {globalCount > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-blue-100 text-blue-700">{globalCount} cmd</span>}
                     {habitCount >= 2 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-700">{habitCount}x client</span>}
                   </div>
@@ -1112,131 +1227,252 @@ export default function MobileCommercial({ user }: Props) {
                 )}
               </div>
 
-              {/* Article display — tap to open picker */}
-              {art ? (
-                <div className="flex items-center gap-3 p-2 rounded-xl border border-primary/30 bg-primary/5">
-                  <img src={art.photo || "https://placehold.co/48x48/e2e8f0/64748b?text=Art"}
-                    alt={`${art.nom} produit selectionne`}
-                    className="w-12 h-12 rounded-xl object-cover border border-border shrink-0"
-                    onError={e => { e.currentTarget.src = "https://placehold.co/48x48/e2e8f0/64748b?text=Art" }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-foreground text-sm">{art.nom}</p>
-                    <p className="text-xs text-muted-foreground" dir="rtl">{art.nomAr}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${art.stockDisponible > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
-                        Stock: {art.stockDisponible} {art.unite}
-                      </span>
-                      {(clientHabits[art.id]?.count ?? 0) >= 2 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-700 font-semibold">
-                          {clientHabits[art.id].count}x commande(s)
+              {/* Article selector */}
+              <ArticleCombobox
+                articles={pickerArticles}
+                value={ligne.articleId}
+                onChange={(artId, artObj) => {
+                  if (!artObj) { updateLigne(i, "articleId", ""); return }
+                  updateLigne(i, "articleId", artId)
+                }}
+              />
+
+              {art && (() => {
+                const vStock = store.getVirtualStock(art.id)
+                const isPrev = user.role === "prevendeur"
+                const canEditPrice = !isPrev && (user.role === "admin" || user.role === "super_admin" || user.role === "resp_commercial")
+                return (
+                  <div className="flex flex-col gap-1.5 px-1">
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      {/* PA hidden for prevendeur role */}
+                      {!isPrev && (
+                        <>
+                          <span className="text-slate-500">PA: <strong className="text-slate-900">{art.prixAchat} DH/{art.unite}</strong></span>
+                          <span className="text-slate-300">·</span>
+                        </>
+                      )}
+                      <span className="text-slate-500">PV: <strong className="text-green-700">{pvCalc} DH/{art.unite}</strong></span>
+                      {art.um && art.colisageParUM && (
+                        <>
+                          <span className="text-slate-300">·</span>
+                          <span className="text-blue-700 font-semibold">{art.um} = {art.colisageParUM} {art.unite}</span>
+                        </>
+                      )}
+                    </div>
+                    {/* ATP — Available-to-Promise stock indicator (high contrast) */}
+                    <div className={`rounded-xl border-2 px-3 py-2 flex flex-col gap-1 ${
+                      vStock.available > 0
+                        ? "bg-emerald-50 border-emerald-400"
+                        : vStock.physical > 0
+                          ? "bg-amber-50 border-amber-400"
+                          : "bg-red-50 border-red-500"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <svg className={`w-3.5 h-3.5 shrink-0 ${vStock.available > 0 ? "text-emerald-700" : "text-red-700"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={vStock.available > 0 ? "M5 13l4 4L19 7" : "M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"} />
+                          </svg>
+                          <span className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                            ATP — Disponible a la vente
+                          </span>
+                        </div>
+                        <span className={`text-sm font-black ${vStock.available > 0 ? "text-emerald-800" : "text-red-800"}`}>
+                          {vStock.available} {art.unite}
                         </span>
+                      </div>
+                      {vStock.pending > 0 && (
+                        <div className="flex items-center justify-between text-[11px] font-medium text-slate-900 border-t border-slate-200/60 pt-1 mt-0.5">
+                          <span>Stock physique: <strong className="text-slate-900">{vStock.physical} {art.unite}</strong></span>
+                          <span className="text-amber-800 font-bold">- {vStock.pending} en cmds en attente</span>
+                        </div>
+                      )}
+                      {vStock.available === 0 && vStock.physical === 0 && (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-900 bg-red-100 rounded-lg px-2 py-1 mt-0.5">
+                          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                          </svg>
+                          Demande d&apos;Achat (DA) sera declenchee automatiquement
+                        </div>
+                      )}
+                      {vStock.available === 0 && vStock.physical > 0 && (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-100 rounded-lg px-2 py-1 mt-0.5">
+                          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Stock virtuel epuise — tout le physique est en commandes en attente
+                        </div>
                       )}
                     </div>
                   </div>
-                  <button onClick={() => updateLigne(i, "articleId", "")}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 shrink-0">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-              ) : (
-                <div className="px-3 py-3 rounded-xl border-2 border-dashed border-border/50 text-center">
-                  <p className="text-xs text-muted-foreground">Cochez un article ci-dessus pour remplir cette ligne</p>
-                </div>
-              )}
-
-              {art && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground px-1 flex-wrap">
-                  {/* PA hidden for prevendeur role */}
-                  {user.role !== "prevendeur" && (
-                    <>
-                      <span>PA: <strong className="text-foreground">{art.prixAchat} DH/{art.unite}</strong></span>
-                      <span>·</span>
-                    </>
-                  )}
-                  <span>PV: <strong className="text-green-600">{pvCalc} DH/{art.unite}</strong></span>
-                  {art.um && art.colisageParUM && (
-                    <>
-                      <span>·</span>
-                      <span className="text-blue-600 font-semibold">{art.um} = {art.colisageParUM} {art.unite}</span>
-                    </>
-                  )}
-                </div>
-              )}
+                )
+              })()}
 
               {/* UM / Unite mode selector — simple 2-button toggle */}
               {art && art.um && art.colisageParUM && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-foreground">
-                    Saisir par / وحدة الطلب
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">
+                      Saisir par / وحدة الطلب
+                    </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                      1 {art.um} = {art.colisageParUM} {art.unite}
+                    </span>
+                  </div>
                   <div className="flex gap-2">
-                    {/* Base unit button */}
+                    {/* Base unit button — single atomic update to avoid stale-closure */}
                     <button type="button"
-                      onClick={() => { updateLigne(i, "uniteMode", "base"); updateLigne(i, "quantite", "") }}
-                      className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${ligne.uniteMode !== art.um ? "border-primary text-white" : "border-border bg-background text-muted-foreground"}`}
+                      onClick={() => {
+                        setLignes(prev => {
+                          const updated = [...prev]
+                          const cur = Number(updated[i].quantite) || 0
+                          const isUM = updated[i].uniteMode === art.um
+                          const newQty = isUM && cur > 0 ? String(cur * art.colisageParUM!) : updated[i].quantite
+                          updated[i] = { ...updated[i], uniteMode: "base", quantite: newQty }
+                          return updated
+                        })
+                      }}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${ligne.uniteMode !== art.um ? "border-green-500 text-white" : "border-border bg-background text-foreground"}`}
                       style={ligne.uniteMode !== art.um ? { background: "oklch(0.45 0.18 145)" } : {}}>
-                      {art.unite}
-                      <span className="block text-[10px] font-normal opacity-70">unité de base</span>
+                      <span className="text-sm font-black">{art.unite}</span>
+                      <span className="block text-[10px] font-normal opacity-80 mt-0.5">unite de base</span>
                     </button>
-                    {/* UM button */}
+                    {/* UM button — single atomic update */}
                     <button type="button"
-                      onClick={() => { updateLigne(i, "uniteMode", art.um!); updateLigne(i, "quantite", "") }}
-                      className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${ligne.uniteMode === art.um ? "border-blue-500 text-white" : "border-border bg-background text-blue-600"}`}
+                      onClick={() => {
+                        setLignes(prev => {
+                          const updated = [...prev]
+                          const cur = Number(updated[i].quantite) || 0
+                          const isBase = updated[i].uniteMode !== art.um
+                          const newQty = isBase && cur > 0 && art.colisageParUM
+                            ? String(Math.round((cur / art.colisageParUM!) * 100) / 100)
+                            : updated[i].quantite
+                          updated[i] = { ...updated[i], uniteMode: art.um!, quantite: newQty }
+                          return updated
+                        })
+                      }}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${ligne.uniteMode === art.um ? "border-blue-500 text-white" : "border-border bg-background text-blue-700"}`}
                       style={ligne.uniteMode === art.um ? { background: "oklch(0.45 0.18 240)" } : {}}>
-                      {art.um}
-                      <span className="block text-[10px] font-normal opacity-80">= {art.colisageParUM} {art.unite}</span>
+                      <span className="text-sm font-black">{art.um}</span>
+                      <span className="block text-[10px] font-normal opacity-80 mt-0.5">= {art.colisageParUM} {art.unite}</span>
                     </button>
                   </div>
-                  {/* Live conversion display */}
-                  {ligne.uniteMode === art.um && ligne.quantite && Number(ligne.quantite) > 0 && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200">
-                      <svg className="w-4 h-4 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                      </svg>
-                      <span className="text-sm font-bold text-blue-700">
-                        {ligne.quantite} {art.um} = <strong>{(Number(ligne.quantite) * art.colisageParUM).toFixed(1)} {art.unite}</strong>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-foreground">
-                    Qté ({ligne.uniteMode === art?.um ? art?.um : art?.unite || "unité"}) / الكمية
-                  </label>
-                  <input type="number" min="0" step={ligne.uniteMode === art?.um ? "1" : "0.5"}
-                    value={ligne.quantite} onChange={e => updateLigne(i, "quantite", e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary" placeholder="0" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-foreground">
-                    PV DH/{art?.unite || "unité"} / السعر
-                  </label>
-                  <input type="number" min="0" step="0.01" value={ligne.prixVente} onChange={e => updateLigne(i, "prixVente", e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="0.00" />
-                </div>
-              </div>
-
-              {art && ligne.quantite && Number(ligne.quantite) > 0 && (
-                <div className="flex items-center justify-between text-xs bg-muted/40 rounded-xl px-3 py-2">
-                  {(() => {
-                    const bq = baseQty(ligne)
-                    const ok = bq <= art.stockDisponible
-                    return (
-                      <>
-                        <span className={`font-semibold ${ok ? "text-green-700" : "text-red-600"}`}>
-                          {ok ? "Stock OK" : "Stock insuffisant"} — {bq.toFixed(1)} {art.unite} demandes
-                        </span>
-                        <span className="font-bold text-primary">
-                          {(bq * Number(ligne.prixVente || pvCalc)).toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH
-                        </span>
-                      </>
-                    )
+                  {/* Live bidirectional conversion display */}
+                  {ligne.quantite && Number(ligne.quantite) > 0 && (() => {
+                    const qty = Number(ligne.quantite)
+                    const isUM = ligne.uniteMode === art.um
+                    if (isUM) {
+                      // UM mode → show base total
+                      const baseTotal = qty * art.colisageParUM!
+                      return (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-300">
+                          <svg className="w-4 h-4 text-blue-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          </svg>
+                          <span className="text-sm font-black text-blue-900">
+                            {qty} {art.um} &rarr; <strong>{baseTotal % 1 === 0 ? baseTotal : baseTotal.toFixed(1)} {art.unite}</strong>
+                          </span>
+                        </div>
+                      )
+                    } else {
+                      // Base mode → show UM equivalent
+                      const umEquiv = qty / art.colisageParUM!
+                      const umWhole = Math.floor(umEquiv)
+                      const remainder = qty - umWhole * art.colisageParUM!
+                      return (
+                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${remainder === 0 ? "bg-green-50 border-green-300" : "bg-amber-50 border-amber-300"}`}>
+                          <svg className="w-4 h-4 shrink-0" style={{ color: remainder === 0 ? "#166534" : "#92400e" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          </svg>
+                          <span className={`text-sm font-black ${remainder === 0 ? "text-green-900" : "text-amber-900"}`}>
+                            {qty} {art.unite} &rarr;&nbsp;
+                            {remainder === 0
+                              ? <strong>{umWhole} {art.um}</strong>
+                              : <><strong>{umWhole} {art.um}</strong> + {remainder} {art.unite} hors UM</>
+                            }
+                          </span>
+                        </div>
+                      )
+                    }
                   })()}
                 </div>
               )}
+
+              {(() => {
+                const isPrev = user.role === "prevendeur"
+                const canEditPx = !isPrev && (user.role === "admin" || user.role === "super_admin" || user.role === "resp_commercial" || user.role === "team_leader")
+                return (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold text-slate-800">
+                        Qte ({ligne.uniteMode === art?.um ? art?.um : art?.unite || "unite"}) / الكمية
+                      </label>
+                      <input type="number" min="0" step={ligne.uniteMode === art?.um ? "1" : "0.5"}
+                        value={ligne.quantite} onChange={e => updateLigne(i, "quantite", e.target.value)}
+                        className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="0" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs font-bold text-slate-800">
+                          PV DH/{art?.unite || "unite"} / السعر
+                        </label>
+                        {isPrev && (
+                          <span className="flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-white border border-slate-700">
+                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            PRIX FIXE
+                          </span>
+                        )}
+                      </div>
+                      {canEditPx ? (
+                        <input type="number" min="0" step="0.01" value={ligne.prixVente}
+                          onChange={e => updateLigne(i, "prixVente", e.target.value)}
+                          className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="0.00" />
+                      ) : (
+                        <div className="px-3 py-2 rounded-xl border-2 border-slate-300 bg-slate-100 text-sm font-black text-slate-900 select-none cursor-not-allowed flex items-center justify-between gap-2">
+                          <span>{ligne.prixVente || art ? (Number(ligne.prixVente) || (art ? store.computePV(art) : 0)).toFixed(2) : "—"} DH</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-wide">Verrou</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {art && ligne.quantite && Number(ligne.quantite) > 0 && (() => {
+                const bq = baseQty(ligne)
+                const vStock = store.getVirtualStock(art.id)
+                const ok = bq <= vStock.available
+                const needPR = !ok && bq > vStock.physical
+                return (
+                  <div className={`flex items-start justify-between text-xs rounded-xl px-3 py-2 gap-2 ${
+                    ok ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200"
+                  }`}>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`font-bold ${ok ? "text-emerald-800" : "text-red-700"}`}>
+                        {ok ? "Stock disponible" : needPR ? "DA auto-declenchee" : "Stock virtuel insuffisant"}
+                        {" "}&mdash; {bq.toFixed(1)} {art.unite} demandes
+                      </span>
+                      {!ok && (
+                        <span className="text-red-600 font-normal">
+                          {needPR
+                            ? `Stock physique insuffisant (${vStock.physical} ${art.unite}) — une DA sera creee automatiquement`
+                            : `${vStock.pending} ${art.unite} deja en commande en attente (stock virtuel = ${vStock.available} ${art.unite})`
+                          }
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-slate-900 shrink-0">
+                      {(bq * Number(ligne.prixVente || pvCalc)).toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
@@ -1287,7 +1523,15 @@ export default function MobileCommercial({ user }: Props) {
                       {" "}· {clientHabits[art.id]?.count}x commande(s)
                     </p>
                   </div>
-                  <button onClick={() => setLignes(prev => [...prev, { articleId: art.id, quantite: "", prixVente: "", uniteMode: "base" }])}
+                  <button onClick={() => {
+                    const pv = store.computePV(art)
+                    const hab = clientHabits[art.id]
+                    const hasUM = !!(hab?.dernierQteUM && hab?.dernierUM && art.um && hab.dernierUM === art.um)
+                    const dq = hab?.dernierQte ?? 0
+                    const prefillQty = hasUM ? String(hab!.dernierQteUM) : dq > 0 ? String(dq) : ""
+                    const prefillMode = hasUM ? art.um! : "base"
+                    setLignes(prev => [...prev, { articleId: art.id, quantite: prefillQty, prixVente: String(pv), uniteMode: prefillMode }])
+                  }}
                     className="ml-3 px-3 py-1.5 rounded-xl text-xs font-bold text-white shrink-0"
                     style={{ background: "oklch(0.65 0.17 145)" }}>
                     + Ajouter
@@ -1351,6 +1595,141 @@ export default function MobileCommercial({ user }: Props) {
 
       {/* END nouvelle commande tab */}
       </>)}
+
+      {/* ── HABITUDES TAB ─────────────────────────────────────────────────── */}
+      {(commTab as string) === "habitudes" && (
+        <div className="flex flex-col gap-3">
+          {/* Header */}
+          <div className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Habitudes d&apos;achat / عادات الشراء</h3>
+                <p className="text-xs text-muted-foreground">
+                  {selectedClientId
+                    ? `${Object.keys(clientHabits).length} article(s) commandes regulierement`
+                    : "Selectionnez un client pour voir ses habitudes"}
+                </p>
+              </div>
+              {selectedClientId && Object.keys(clientHabits).length > 0 && (
+                <button
+                  onClick={() => { autoFillPanier(); setCommTab("nouvelle") }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Auto-panier
+                </button>
+              )}
+            </div>
+
+            {/* Search */}
+            {selectedClientId && Object.keys(clientHabits).length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-background">
+                <svg className="w-4 h-4 text-muted-foreground shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={habitudeSearch}
+                  onChange={e => setHabitudeSearch(e.target.value)}
+                  placeholder="Filtrer les articles..."
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+                {habitudeSearch && (
+                  <button onClick={() => setHabitudeSearch("")} className="text-muted-foreground hover:text-foreground">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Habits list */}
+          {!selectedClientId ? (
+            <div className="bg-card rounded-xl border border-border p-10 text-center">
+              <svg className="w-10 h-10 mx-auto text-muted-foreground mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <p className="text-sm font-semibold text-muted-foreground">Selectionnez un client</p>
+              <p className="text-xs text-muted-foreground mt-1">Les habitudes d&apos;achat s&apos;affichent apres avoir choisi un client</p>
+            </div>
+          ) : Object.keys(clientHabits).length === 0 ? (
+            <div className="bg-card rounded-xl border border-border p-10 text-center">
+              <svg className="w-10 h-10 mx-auto text-muted-foreground mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-sm font-semibold text-muted-foreground">Aucune habitude enregistree</p>
+              <p className="text-xs text-muted-foreground mt-1">Ce client n&apos;a pas encore de commandes repetees</p>
+            </div>
+          ) : (
+            <div className="bg-card rounded-xl border border-border overflow-hidden">
+              <div className="divide-y divide-border">
+                {Object.entries(clientHabits)
+                  .filter(([artId]) => {
+                    const art = articles.find(a => a.id === artId)
+                    if (!art) return false
+                    if (!habitudeSearch.trim()) return true
+                    const q = habitudeSearch.trim().toLowerCase()
+                    return (art.nom ?? "").toLowerCase().includes(q) || (art.nomAr ?? "").includes(q)
+                  })
+                  .sort(([, a], [, b]) => b.count - a.count)
+                  .map(([artId, hab]) => {
+                    const art = articles.find(a => a.id === artId)
+                    if (!art) return null
+                    const pv = store.computePV(art)
+                    const inCart = lignes.some(l => l.articleId === artId)
+                    const stockOk = art.stockDisponible > 0
+                    return (
+                      <div key={artId} className="flex items-center gap-3 px-4 py-3">
+                        <img
+                          src={resolveArticlePhoto(art)}
+                          alt={`${art.nom} habitude`}
+                          className="w-10 h-10 rounded-xl object-cover border border-border shrink-0"
+                          onError={e => { e.currentTarget.src = "https://placehold.co/40x40/e2e8f0/64748b?text=Art" }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-foreground truncate">{art.nom}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-700">
+                              {hab.count}x commande(s)
+                            </span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${stockOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                              {stockOk ? `${art.stockDisponible} ${art.unite} dispo` : "Rupture"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              Derniere: {hab.lastDate}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-sm font-bold text-primary">{pv} DH</span>
+                          <button
+                            onClick={() => {
+                              const hasUM = !!(hab.dernierQteUM && hab.dernierUM && art.um && hab.dernierUM === art.um)
+                              const dq = hab.dernierQte ?? 0
+                              const prefillQty = hasUM ? String(hab.dernierQteUM) : dq > 0 ? String(dq) : ""
+                              const prefillMode = hasUM ? art.um! : "base"
+                              if (inCart) {
+                                const idx = lignes.findIndex(l => l.articleId === artId)
+                                if (idx >= 0) setLignes(prev => prev.filter((_, j) => j !== idx))
+                              } else {
+                                setLignes(prev => [...prev, { articleId: artId, quantite: prefillQty, prixVente: String(pv), uniteMode: prefillMode }])
+                                setCommTab("nouvelle")
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${inCart ? "bg-red-50 text-red-600 border border-red-200" : "text-white"}`}
+                            style={inCart ? {} : { background: "oklch(0.65 0.17 145)" }}>
+                            {inCart ? "Retirer" : "Commander"}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── MES COMMANDES TAB ─────────────────────────────────────── */}
       {commTab === "mes_commandes" && (
@@ -1441,8 +1820,26 @@ export default function MobileCommercial({ user }: Props) {
                 </div>
               )}
 
-              {/* Commandes list */}
-              {myCommandes.map(cmd => {
+              {/* Commandes list — grouped by date */}
+              {(() => {
+                // Group commandes by date for visual clarity
+                const grouped: Record<string, typeof myCommandes> = {}
+                myCommandes.forEach(cmd => {
+                  if (!grouped[cmd.date]) grouped[cmd.date] = []
+                  grouped[cmd.date].push(cmd)
+                })
+                return Object.entries(grouped)
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .map(([date, cmds]) => (
+                    <div key={date} className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${date === store.today() ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                          {date === store.today() ? "Aujourd\'hui" : date}
+                        </span>
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-[11px] text-muted-foreground">{cmds.length} cmd(s)</span>
+                      </div>
+                      {cmds.map(cmd => {
                 const total = cmd.lignes.reduce((s, l) => s + l.total, 0)
                 const tonn  = cmd.lignes.reduce((s, l) => s + l.quantite, 0)
                 const editable = canEdit(cmd)
@@ -1506,6 +1903,9 @@ export default function MobileCommercial({ user }: Props) {
                   </div>
                 )
               })}
+                    </div>
+                  ))
+              })()}
             </>
           )}
         </div>

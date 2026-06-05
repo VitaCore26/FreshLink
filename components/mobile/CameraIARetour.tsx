@@ -1,4 +1,6 @@
 "use client"
+// @ts-ignore — shared AI helper
+import { callLLM, triggerN3Alert } from "@/lib/ai"
 import { useState, useRef, useCallback } from "react"
 
 interface AnalysisResult {
@@ -66,9 +68,9 @@ export default function CameraIARetour({ articleNom, onValidate, onCancel }: Pro
       const res = await fetch("https://llm.blackbox.ai/chat/completions", {
         method: "POST",
         headers: {
-          "customerId": "cus_TSL8iYLtbslUQB",
+          // blackbox-legacy-key — move to env var BLACKBOX_CUSTOMER_ID
           "Content-Type": "application/json",
-          "Authorization": "Bearer xxx",
+          // blackbox-legacy-auth — move to env var BLACKBOX_API_KEY
         },
         body: JSON.stringify({
           model: "openrouter/claude-sonnet-4",
