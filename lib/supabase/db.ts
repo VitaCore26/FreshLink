@@ -549,6 +549,34 @@ export async function upsertMessage(m: Message) {
 
 // ── NOTICES ───────────────────────────────────────────────────────────────────
 
+function noticeToRow(n: Notice) {
+  return {
+    id: n.id,
+    titre: n.titre,
+    contenu: n.contenu,
+    auteur_id: n.auteurId,
+    auteur_nom: n.auteurNom,
+    date: n.date,
+    type: n.type,
+    statut: n.statut,
+    destinataire: n.destinataire,
+  }
+}
+
+function rowToNotice(r: Record<string, unknown>): Notice {
+  return {
+    id: r.id as string,
+    titre: r.titre as string,
+    contenu: r.contenu as string,
+    auteurId: r.auteur_id as string,
+    auteurNom: r.auteur_nom as string,
+    date: r.date as string,
+    type: r.type as "notice" | "reclamation",
+    statut: r.statut as "ouvert" | "traité",
+    destinataire: r.destinataire as string,
+  }
+}
+
 export async function upsertNotice(n: Notice) {
   const all = store.getNotices()
   const idx = all.findIndex(x => x.id === n.id)
@@ -556,11 +584,26 @@ export async function upsertNotice(n: Notice) {
   store.saveNotices(all)
 
   try {
-    const { error } = await sb().from("fl_notices").upsert({ ...n }, { onConflict: "id" })
+    const { error } = await sb().from("fl_notices").upsert(noticeToRow(n), { onConflict: "id" })
     if (error) console.error("[db] upsertNotice:", error.message)
   } catch (e) {
     console.error("[db] upsertNotice offline:", e)
   }
+}
+
+export async function fetchNotices(): Promise<Notice[]> {
+  try {
+    const { data, error } = await sb().from("fl_notices").select("*").order("date", { ascending: false })
+    if (error) throw error
+    if (data && data.length > 0) {
+      const notices = data.map(rowToNotice)
+      store.saveNotices(notices)
+      return notices
+    }
+  } catch (e) {
+    console.error("[db] fetchNotices offline:", e)
+  }
+  return store.getNotices()
 }
 
 // ── SYNC INITIAL: charge toutes les données de Supabase vers localStorage ─────
@@ -581,6 +624,7 @@ export async function syncFromSupabase(): Promise<{
     ["trips",        async () => { await fetchTrips();         tables.push("trips")        }],
     ["bons_livraison",async () => { await fetchBonsLivraison();tables.push("bons_livraison")}],
     ["retours",      async () => { await fetchRetours();       tables.push("retours")      }],
+    ["notices",      async () => { await fetchNotices();       tables.push("notices")      }],
   ]
 
   await Promise.allSettled(
