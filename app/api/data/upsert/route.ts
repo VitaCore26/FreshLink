@@ -3,6 +3,25 @@ import { createClient } from "@/lib/supabase/client"
 import { getCurrentUser } from "@/lib/auth/supabaseAuth"
 
 /**
+ * Whitelist des tables autorisées pour l'upsert
+ * SECURITY: Empêche les attaques par injection de nom de table
+ */
+const ALLOWED_TABLES = [
+  "fl_commandes",
+  "fl_articles",
+  "fl_clients",
+  "fl_bons_achat",
+  "fl_trips",
+  "fl_bons_livraison",
+  "fl_bons_preparation",
+  "fl_stock",
+  "fl_fournisseurs",
+  "fl_depots",
+  "fl_messages",
+  "fl_motifs_retour",
+] as const
+
+/**
  * POST /api/data/upsert
  *
  * Insérer ou mettre à jour des données dans Supabase
@@ -10,7 +29,7 @@ import { getCurrentUser } from "@/lib/auth/supabaseAuth"
  *
  * Body:
  * {
- *   "table": "fl_commandes",  // nom de la table
+ *   "table": "fl_commandes",  // nom de la table (whitelist stricte)
  *   "data": { ... },          // les données à insérer/modifier
  *   "conflictColumn": "id"    // colonne pour le conflit (pour upsert)
  * }
@@ -36,7 +55,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. Vérifier les permissions basées sur la table et le rôle
+    // 3. SECURITY: Vérifier que la table est dans la whitelist
+    if (!ALLOWED_TABLES.includes(table as any)) {
+      console.warn(`[SECURITY] Tentative d'upsert sur table non autorisée: ${table} par user ${user.id}`)
+      return NextResponse.json(
+        { error: "Table non autorisée" },
+        { status: 403 }
+      )
+    }
+
+    // 4. Vérifier les permissions basées sur la table et le rôle
     const canInsert = checkPermission(user.role, table, "insert")
     const canUpdate = checkPermission(user.role, table, "update")
 
@@ -47,16 +75,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. Insérer/mettre à jour les données
+    // 5. Insérer/mettre à jour les données
     const supabase = createClient()
     const { data: result, error } = await supabase
       .from(table)
       .upsert(data, { onConflict: conflictColumn })
 
     if (error) {
-      console.error(`[/api/data/upsert] Erreur ${table}:`, error)
+      // Log complet côté serveur, message générique au client (évite les fuites d'info)
+      console.error(`[/api/data/upsert] Erreur sur ${table}:`, error.message, error.details)
       return NextResponse.json(
-        { error: error.message },
+        { error: "Opération échouée" },
         { status: 400 }
       )
     }

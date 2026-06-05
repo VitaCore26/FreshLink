@@ -922,119 +922,46 @@ export function getUserInterface(user: User): "mobile" | "backoffice" | "both" {
 }
 
 // ============================================================
-// DEFAULT DATA
-// Les mots de passe demo sont lus depuis NEXT_PUBLIC_DEMO_PWD.
-// Définissez cette variable dans .env.local (ne pas committer).
-// En production, utilisez Supabase Auth — ces comptes locaux
-// sont uniquement pour le développement et la démonstration.
+// DEFAULT DATA — DEVELOPMENT ONLY
+//
+// SECURITY: Default users are ONLY for development mode.
+// In production, Supabase Auth must be used exclusively.
+// No hardcoded accounts in production environments.
 // ============================================================
 
-const DEMO_PWD = process.env.NEXT_PUBLIC_DEMO_PWD ?? "1234"
+/**
+ * Load development-only users from environment
+ * Expected format in .env.local:
+ *
+ * DEV_USERS_JSON='[
+ *   {"id":"u1","name":"Admin","email":"admin@dev","password":"StrongPass123!","role":"super_admin",...},
+ *   ...
+ * ]'
+ */
+function loadDevelopmentUsers(): User[] {
+  // PRODUCTION: Always return empty array
+  if (process.env.NODE_ENV === 'production') {
+    return []
+  }
 
-const DEFAULT_USERS: User[] = [
-  // === BACKOFFICE ===
-  {
-    id: "u1", name: "Super Admin", email: "admin@freshlink.ma", password: DEMO_PWD,
-    role: "super_admin", actif: true,
-    canViewAchat: true, canViewCommercial: true, canViewLogistique: true,
-    canViewStock: true, canViewCash: true, canViewFinance: true, canViewRecap: true, canViewDatabase: true,
-    canViewExternal: true, canCreateCommandeBO: true,
-    notifAchat: true, notifCommercial: true, notifLivraison: true, notifRecap: true, notifBesoinAchat: true,
-  },
-  {
-    id: "u_admin", name: "Directeur", email: "directeur@freshlink.ma", password: DEMO_PWD,
-    role: "admin", actif: true,
-    canViewAchat: true, canViewCommercial: true, canViewLogistique: true,
-    canViewStock: true, canViewCash: true, canViewFinance: true, canViewRecap: true, canViewDatabase: true,
-    canViewExternal: true, canCreateCommandeBO: true,
-    notifAchat: true, notifRecap: true,
-  },
-  {
-    id: "u_rc", name: "Resp. Commercial", email: "responsable@freshlink.ma", password: DEMO_PWD,
-    role: "resp_commercial", actif: true,
-    canViewCommercial: true, canViewCash: true, canViewRecap: true,
-    canViewExternal: true, canCreateCommandeBO: true,
-    notifCommercial: true,
-  },
-  // === MOBILE — COMMERCIAL ===
-  {
-    id: "u2", name: "Demo Prevendeur", email: "prevendeur@freshlink.ma", password: DEMO_PWD,
-    role: "prevendeur", secteur: "Nord", actif: true,
-    objectifClients: 20, objectifTonnage: 500,
-    objectifJournalierCA: 2000, objectifHebdomadaireCA: 12000, objectifMensuelCA: 50000,
-    objectifJournalierClients: 5, objectifHebdomadaireClients: 25, objectifMensuelClients: 80,
-    notifCommercial: true,
-  },
-  // === MOBILE — LOGISTIQUE ===
-  {
-    id: "u3", name: "Demo Responsable Logistique", email: "logistique@freshlink.ma", password: DEMO_PWD,
-    role: "resp_logistique", actif: true,
-    canViewLogistique: true, canViewStock: true,
-    notifLivraison: true,
-  },
-  {
-    id: "u5", name: "Demo Dispatcheur", email: "dispatch@freshlink.ma", password: DEMO_PWD,
-    role: "dispatcheur", actif: true,
-    canViewLogistique: true,
-  },
-  {
-    id: "u6", name: "Demo Magasinier", email: "magasin@freshlink.ma", password: DEMO_PWD,
-    role: "magasinier", actif: true,
-    canViewStock: true,
-  },
-  // === BACKOFFICE — CASH MAN ===
-  {
-    id: "u_cash", name: "Demo Cash Man", email: "cashman@freshlink.ma", password: DEMO_PWD,
-    role: "cash_man", actif: true,
-    canViewCash: true, canViewCommercial: true,
-  },
-  // === BACKOFFICE — FINANCIER ===
-  {
-    id: "u_fin", name: "Demo Financier", email: "financier@freshlink.ma", password: DEMO_PWD,
-    role: "financier", actif: true,
-    canViewFinance: true, canViewCash: true, canViewRecap: true,
-  },
-  // === RH ===
-  {
-    id: "u_ourai", name: "Ourai", email: "ourai@freshlink.ma", password: DEMO_PWD,
-    role: "rh_manager", actif: true, accessType: "backoffice",
-    canViewRH: true,
-  },
-  // === DEMO — ACHETEUR ===
-  {
-    id: "u_acheteur", name: "Demo Acheteur", email: "acheteur@freshlink.ma", password: DEMO_PWD,
-    role: "acheteur", actif: true,
-    notifAchat: true,
-  },
-  // === DEMO — CONTROLEUR ACHAT ===
-  {
-    id: "u_ctrl_achat", name: "Demo Controleur Achat", email: "ctrl.achat@freshlink.ma", password: DEMO_PWD,
-    role: "ctrl_achat", actif: true,
-  },
-  // === DEMO — CONTROLEUR PREPARATION ===
-  {
-    id: "u_ctrl_prep", name: "Demo Controleur Prep", email: "ctrl.prep@freshlink.ma", password: DEMO_PWD,
-    role: "ctrl_prep", actif: true,
-  },
-  // === DEMO — LIVREUR ===
-  {
-    id: "u_liv_demo", name: "Demo Livreur", email: "livreur@freshlink.ma", password: DEMO_PWD,
-    role: "livreur", actif: true,
-  },
-  // === DEMO — CLIENT ===
-  {
-    id: "u_client", name: "Demo Client", email: "client.demo@freshlink.ma", password: DEMO_PWD,
-    role: "client", actif: true,
-    clientId: "c1",
-  },
-  // === DEMO — FOURNISSEUR ===
-  {
-    id: "u_four", name: "Demo Fournisseur", email: "fournisseur.demo@freshlink.ma", password: DEMO_PWD,
-    role: "fournisseur", actif: true,
-    fournisseurId: "f1",
-    telephone: "212600000001",
-  },
-]
+  // DEVELOPMENT: Load from environment (never hardcode!)
+  const devUsersJson = process.env.DEV_USERS_JSON
+  if (!devUsersJson) {
+    console.warn('[Auth] DEV_USERS_JSON not set, no demo users available')
+    return []
+  }
+
+  try {
+    const users = JSON.parse(devUsersJson) as User[]
+    console.log(`[Auth] Loaded ${users.length} development users from DEV_USERS_JSON`)
+    return users
+  } catch (err) {
+    console.error('[Auth] Failed to parse DEV_USERS_JSON:', err)
+    return []
+  }
+}
+
+const DEFAULT_USERS: User[] = loadDevelopmentUsers()
 
 const DEFAULT_CLIENTS: Client[] = [
   // --- Nord / Zone A ---

@@ -1,47 +1,103 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+import { getCurrentUser } from "@/lib/auth/supabaseAuth"
 
 /**
  * GET /api/health
  *
- * Endpoint de diagnostic pour vérifier la santé de l'app
- * Utilisé par les orchestrators (K8s, Vercel) et pour le debugging
+ * SECURITY [P1-007]: Public health check - no env var exposure
+ * Used by load balancers, orchestrators, monitoring
+ * Does NOT expose configuration details
  */
 export async function GET() {
   try {
-    const checks = {
+    // ✅ Only return basic operational status
+    const health = {
+      status: "healthy",
       timestamp: new Date().toISOString(),
-      status: "ok",
-      environment: {
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ? "✅ Set" : "❌ Missing",
-        supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "✅ Set" : "❌ Missing",
-        demoPwd: process.env.NEXT_PUBLIC_DEMO_PWD ? "✅ Set" : "❌ Missing",
-      },
       app: {
-        name: process.env.NEXT_PUBLIC_APP_NAME || "FreshLink Pro",
-        version: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
+        name: "FreshLink Pro",
+        version: "1.0.0",
       },
+      // Don't expose environment variable status
+      // Don't expose Supabase connectivity
+      // Just minimal status for monitors/load balancers
     }
 
-    // Vérifier que toutes les variables requises sont présentes
-    const hasMissingVars = Object.values(checks.environment).some(
-      (v) => typeof v === "string" && v.includes("Missing")
-    )
+    return NextResponse.json(health, { status: 200 })
 
-    if (hasMissingVars) {
+  } catch (error) {
+    console.error("[Health] Erreur:", error)
+    return NextResponse.json(
+      { status: "unhealthy", timestamp: new Date().toISOString() },
+      { status: 503 }
+    )
+  }
+}
+
+/**
+ * POST /api/health/diagnostics
+ *
+ * Admin-only diagnostic endpoint
+ * Returns detailed configuration and health information
+ * Requires authentication + admin role
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // ✅ Require authentication
+    const user = await getCurrentUser()
+
+    if (!user) {
       return NextResponse.json(
-        { ...checks, status: "degraded", message: "Missing environment variables" },
-        { status: 503 }
+        { error: "Non authentifié" },
+        { status: 401 }
       )
     }
 
-    return NextResponse.json(checks, { status: 200 })
-  } catch (error) {
-    return NextResponse.json(
-      {
-        status: "error",
-        message: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString(),
+    // ✅ Require admin role
+    if (user.role !== "super_admin" && user.role !== "admin") {
+      console.warn(`[Diagnostics] Unauthorized access attempt by ${user.id}`)
+      return NextResponse.json(
+        { error: "Permission insuffisante" },
+        { status: 403 }
+      )
+    }
+
+    // ✅ Now expose diagnostic information (admin only)
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      status: "ok",
+      admin: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
       },
+      environment: {
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ? "✅ Set" : "❌ Missing",
+        supabaseKeySet: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        demoModeEnabled: !!process.env.NEXT_PUBLIC_DEMO_PWD,
+        nodeEnv: process.env.NODE_ENV,
+      },
+      features: {
+        authEnabled: true,
+        rlsEnabled: true,
+        rateLimitingEnabled: !!process.env.UPSTASH_REDIS_REST_URL,
+      },
+    }
+
+    // Verify required env vars
+    const hasMissingVars = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+                           !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (hasMissingVars) {
+      diagnostics.status = "degraded"
+    }
+
+    return NextResponse.json(diagnostics)
+
+  } catch (err) {
+    console.error("[Diagnostics] Erreur:", err)
+    return NextResponse.json(
+      { error: "Diagnostic check failed" },
       { status: 500 }
     )
   }

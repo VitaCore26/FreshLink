@@ -114,27 +114,14 @@ export async function signInWithEmail(
 }
 
 /**
- * Signer avec email + password (fallback localStorage si Supabase indisponible)
- * Cela utilise l'ancien système comme fallback pour développement/offline
+ * REMOVED: signInWithEmailFallback
+ *
+ * SECURITY [P0-003]: Never fallback to weak auth if Supabase is unavailable.
+ * If Supabase is down, the app should be down (fail secure principle).
+ *
+ * Always use signInWithEmail() instead, which requires valid Supabase credentials.
+ * No fallback to localStorage - no downgrade attacks.
  */
-export async function signInWithEmailFallback(
-  email: string,
-  password: string
-): Promise<User | null> {
-  try {
-    // Essayer d'abord Supabase
-    const result = await signInWithEmail(email, password)
-    if ("user" in result) {
-      return result.user
-    }
-    // Fallback : localStorage (dev seulement)
-    console.warn("[Auth] Supabase échoué, fallback localStorage")
-    return store.login(email, password)
-  } catch {
-    // Double fallback
-    return store.login(email, password)
-  }
-}
 
 /**
  * Récupérer la session actuellement authentifiée
