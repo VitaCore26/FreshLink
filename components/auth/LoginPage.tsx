@@ -704,7 +704,7 @@ export default function LoginPage({ onLogin }: Props) {
                   <span className="text-xl">🌿</span>
                 </div>
                 <span className="text-[8px] font-bold text-green-700 uppercase tracking-wide">Ferme</span>
-                <span className="text-[8px] text-green-600 font-semibold" dir="rtl">الزرع</span>
+                <span className="text-[8px] text-green-600 font-semibold" dir="rtl">الحقل</span>
               </div>
 
               {/* Animated dots left */}
@@ -750,7 +750,7 @@ export default function LoginPage({ onLogin }: Props) {
                 ✨ Fraîcheur garantie — de la récolte à votre table
               </p>
               <p className="text-[10px] font-semibold text-green-600 opacity-70" dir="rtl">
-                🌟 طازج ومضمون — من الزرع حتى لعندكم
+                🌟 طازج ومضمون — من الحقل حتى لعندكم
               </p>
             </div>
           </div>
