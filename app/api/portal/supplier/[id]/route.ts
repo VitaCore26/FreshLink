@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 
 // ══════════════════════════════════════════════════════════════
 // GET /api/portal/supplier/[id] — Supplier portal dashboard
-// Returns: fournisseur profile, POs received, recent receptions, payments
+// Returns FULL payloads (the portal + its cross-doc feature need the
+// complete PurchaseOrder / Reception / BonAchat objects), plus payments
+// and computed stats. Uses the service-role key (bypasses RLS).
 // ══════════════════════════════════════════════════════════════
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://jwdrwapuetqoqnankgma.supabase.co"
@@ -17,6 +19,9 @@ async function sbQuery(table: string, filter: string): Promise<any[]> {
   return (await res.json()).map((r: any) => ({ id: r.id, ...(r.payload ?? {}) }))
 }
 
+const belongsToSupplier = (id: string) => (x: any) =>
+  x.fournisseurId === id || x.fournisseur_id === id
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,51 +32,38 @@ export async function GET(
   }
 
   try {
-    // Fournisseur profile
+    // Fournisseur profile (full payload)
     const fournisseurs = await sbQuery("fl_fournisseurs", `id=eq.${encodeURIComponent(id)}`)
     const fournisseur = fournisseurs[0]
     if (!fournisseur) return NextResponse.json({ error: "Fournisseur introuvable" }, { status: 404 })
 
-    // Purchase orders (bons d'achat) for this supplier
-    const allPOs = await sbQuery("fl_bons_achat", "order=updated_at.desc&limit=200")
-    const myPOs = allPOs.filter((po: any) => po.fournisseurId === id || po.fournisseur_id === id)
+    // Pull the supplier-scoped collections in parallel
+    const [allPOs, allBonsAchat, allReceptions, payments] = await Promise.all([
+      sbQuery("fl_purchase_orders", "order=updated_at.desc&limit=500"),
+      sbQuery("fl_bons_achat", "order=updated_at.desc&limit=500"),
+      sbQuery("fl_receptions", "order=updated_at.desc&limit=300"),
+      sbQuery("fl_paiements", `payload->>fournisseurId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=100`),
+    ])
 
-    // Receptions linked to this supplier
-    const allReceptions = await sbQuery("fl_receptions", "order=updated_at.desc&limit=100")
-    const myReceptions = allReceptions.filter((r: any) => r.fournisseurId === id || r.fournisseur_id === id)
+    const myPOs = allPOs.filter(belongsToSupplier(id))
+    const myBonsAchat = allBonsAchat.filter(belongsToSupplier(id))
 
-    // Payments to this supplier
-    const allPayments = await sbQuery("fl_paiements", `payload->>fournisseurId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=50`)
-
-    // Articles supplied (from bons d'achat)
-    const articleIds = new Set<string>()
-    for (const po of myPOs) {
-      if (Array.isArray(po.lignes)) {
-        for (const l of po.lignes) if (l.articleId) articleIds.add(l.articleId)
-      }
-    }
+    // Receptions linked either directly to the supplier, or via one of its bons d'achat
+    const myBonIds = new Set(myBonsAchat.map((b: any) => b.id))
+    const myReceptions = allReceptions.filter((r: any) =>
+      belongsToSupplier(id)(r) || (r.bonAchatId && myBonIds.has(r.bonAchatId))
+    )
 
     return NextResponse.json({
-      fournisseur: {
-        id: fournisseur.id, nom: fournisseur.nom, telephone: fournisseur.telephone,
-        email: fournisseur.email, produits: fournisseur.produits,
-        ville: fournisseur.ville, origineProduction: fournisseur.origineProduction,
-      },
-      purchaseOrders: myPOs.slice(0, 50).map((po: any) => ({
-        id: po.id, date: po.date ?? po.createdAt, statut: po.statut ?? "en_attente",
-        montant: po.montantTotal ?? po.montant ?? 0,
-        nbArticles: Array.isArray(po.lignes) ? po.lignes.length : 0,
-      })),
-      receptions: myReceptions.slice(0, 20).map((r: any) => ({
-        id: r.id, date: r.date ?? r.createdAt, bonAchatId: r.bonAchatId,
-        statut: r.statut ?? "recue", montant: r.montant ?? 0,
-      })),
-      payments: allPayments.slice(0, 20),
+      fournisseur,                 // full payload
+      purchaseOrders: myPOs,       // full PurchaseOrder objects
+      bonsAchat: myBonsAchat,      // full BonAchat objects (cross-doc matching)
+      receptions: myReceptions,    // full Reception objects (with lignes)
+      payments,
       stats: {
         totalPOs: myPOs.length,
         totalReceptions: myReceptions.length,
-        totalMontant: myPOs.reduce((s: number, po: any) => s + (Number(po.montantTotal ?? po.montant) || 0), 0),
-        articlesCount: articleIds.size,
+        totalMontant: myPOs.reduce((s: number, po: any) => s + (Number(po.total ?? po.montantTotal ?? po.montant) || 0), 0),
       },
     })
   } catch (e: any) {

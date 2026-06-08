@@ -278,46 +278,79 @@ export default function PortailFournisseur({ user, onLogout }: Props) {
 
   useEffect(() => {
     refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const refresh = () => {
-    const allOrders = store.getPurchaseOrders()
-    const allArticles = store.getArticles()
-    const allFournisseurs = store.getFournisseurs()
-
+  // Supabase-first via the service-role supplier API; localStorage fallback.
+  // (On a fresh supplier login, localStorage is empty because anon reads are
+  // blocked by RLS — the service-role API is what actually returns data.)
+  const refresh = async () => {
     const myFournisseurId = user.fournisseurId
-    const myFournisseur = allFournisseurs.find(f => f.id === myFournisseurId) ?? null
-    setFournisseur(myFournisseur)
+    if (!myFournisseurId) {
+      setFournisseur(null); setOrders([]); setArticles(store.getArticles())
+      return
+    }
 
-    const myOrders = myFournisseurId
-      ? allOrders.filter(o => o.fournisseurId === myFournisseurId)
-      : []
-    setOrders(myOrders.sort((a, b) => b.date.localeCompare(a.date)))
-    setArticles(allArticles)
+    // 1. Articles (anon-readable table, served through service-role sync-read)
+    try {
+      const res = await fetch(`/api/sync-read?table=fl_articles`, { cache: "no-store" })
+      const json = await res.json()
+      if (json.ok && Array.isArray(json.data) && json.data.length > 0) {
+        const arts = json.data.map((r: { id: string; payload: Record<string, unknown> }) => ({ id: r.id, ...(r.payload ?? {}) }) as Article)
+        store.saveArticles(arts)
+        setArticles(arts)
+      } else {
+        setArticles(store.getArticles())
+      }
+    } catch {
+      setArticles(store.getArticles())
+    }
+
+    // 2. Supplier dashboard — full PO/reception/bonAchat payloads
+    let myOrders: PurchaseOrder[] = []
+    try {
+      const res = await fetch(`/api/portal/supplier/${encodeURIComponent(myFournisseurId)}`, { cache: "no-store" })
+      if (res.ok) {
+        const d = await res.json()
+        setFournisseur(d.fournisseur ?? null)
+        myOrders = (d.purchaseOrders ?? []) as PurchaseOrder[]
+        // Hydrate the store so the Cross-Doc tab (which reads store.*) works
+        if (Array.isArray(d.purchaseOrders)) store.savePurchaseOrders(d.purchaseOrders)
+        if (Array.isArray(d.receptions)) store.saveReceptions(d.receptions)
+        if (Array.isArray(d.bonsAchat)) store.saveBonsAchat(d.bonsAchat)
+      } else {
+        setFournisseur(store.getFournisseurs().find(f => f.id === myFournisseurId) ?? null)
+        myOrders = store.getPurchaseOrders().filter(o => o.fournisseurId === myFournisseurId)
+      }
+    } catch {
+      setFournisseur(store.getFournisseurs().find(f => f.id === myFournisseurId) ?? null)
+      myOrders = store.getPurchaseOrders().filter(o => o.fournisseurId === myFournisseurId)
+    }
+
+    myOrders = myOrders.filter(o => o.fournisseurId === myFournisseurId)
+    setOrders([...myOrders].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")))
 
     // Sync paiements: auto-create a record for each receptionné PO that doesn't have one
-    if (myFournisseurId) {
-      const existing = loadPaiements(myFournisseurId)
-      const receptionnes = myOrders.filter(o => o.statut === "receptionné")
-      let changed = false
-      for (const po of receptionnes) {
-        if (!existing.find(p => p.poId === po.id)) {
-          existing.push({
-            id: Math.random().toString(36).slice(2, 10),
-            poId: po.id,
-            articleNom: po.articleNom,
-            montantTotal: po.total,
-            montantPaye: 0,
-            datePaiement: "",
-            statut: "impaye",
-            notes: "",
-          })
-          changed = true
-        }
+    const existing = loadPaiements(myFournisseurId)
+    const receptionnes = myOrders.filter(o => o.statut === "receptionné")
+    let changed = false
+    for (const po of receptionnes) {
+      if (!existing.find(p => p.poId === po.id)) {
+        existing.push({
+          id: Math.random().toString(36).slice(2, 10),
+          poId: po.id,
+          articleNom: po.articleNom,
+          montantTotal: po.total,
+          montantPaye: 0,
+          datePaiement: "",
+          statut: "impaye",
+          notes: "",
+        })
+        changed = true
       }
-      if (changed) savePaiements(myFournisseurId, existing)
-      setPaiements(existing)
     }
+    if (changed) savePaiements(myFournisseurId, existing)
+    setPaiements(existing)
   }
 
   const filtered = orders.filter(o => {
@@ -777,8 +810,8 @@ export default function PortailFournisseur({ user, onLogout }: Props) {
 
       <footer className="border-t border-border bg-card px-4 py-3 flex items-center justify-center">
         <p className="text-[11px] text-muted-foreground text-center">
-          &copy; 2026 <span className="font-semibold text-foreground">FreshLink Pro</span> By{" "}
-          <span className="font-bold text-primary">Jawad</span>
+          &copy; 2026 <span className="font-semibold text-foreground">Vita Fresh</span> — By{" "}
+          <span className="font-bold text-primary">VitaCore Group</span>
           {" "}&mdash; Tous droits reserves / جميع الحقوق محفوظة
         </p>
       </footer>
