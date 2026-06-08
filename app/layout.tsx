@@ -83,7 +83,9 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="FreshLink Pro" />
+        <meta name="apple-mobile-web-app-title" content="Vita Fresh ERP" />
+        {/* No-flash dark mode init — runs before hydration */}
+        <script dangerouslySetInnerHTML={{ __html: "(function(){try{var m=localStorage.getItem('vita-theme');var d=m==='dark'||(m==='system'||!m)&&matchMedia('(prefers-color-scheme: dark)').matches;if(d){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark'}}catch(_){}})()" }} />
 
         {/* iOS home-screen icon */}
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

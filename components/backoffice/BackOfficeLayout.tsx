@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, Component } from "react"
 import dynamic from "next/dynamic"
 import LangSwitcher from "@/components/ui/LangSwitcher"
+import ThemeToggle from "@/components/ui/ThemeToggle"
 import type { User } from "@/lib/store"
 import { store, ROLE_LABELS, ROLE_COLORS, isDemoUser, isSuperSuperAdmin, JAWAD_ID } from "@/lib/store"
 import { useLang, T } from "@/lib/i18n"
@@ -778,6 +779,9 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
                 <p className="text-[10px] text-slate-400">{ROLE_LABELS[user.role]}</p>
               </div>
             </button>
+
+            {/* Theme toggle (Phase 9) */}
+            <ThemeToggle compact />
 
             {/* Logout */}
             <button

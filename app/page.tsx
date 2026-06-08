@@ -17,7 +17,7 @@ function Spinner() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-3">
         <div className="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-500 text-sm font-sans">Chargement FreshLink Pro...</p>
+        <p className="text-slate-500 text-sm font-sans">Chargement Vita Fresh ERP…</p>
       </div>
     </div>
   )
@@ -125,11 +125,14 @@ export default function App() {
     return <PortailFournisseur user={user} onLogout={handleLogout} />
   }
 
-  // ── Portail Client CHR / Marchand ─────────────────────────────────────────
-  // Les particuliers restent sur vitafresh.vercel.app
-  if (user.role === "client") {
+  // ── Portail Client CHR / Marchand + hiérarchie Propriétaire / Gérant ─────
+  // Les particuliers restent sur shop.vita-core.org
+  if (user.role === "client" || user.role === "client_proprietaire" || user.role === "client_gerant") {
     const sousType = (user as any).sousType ?? (user as any).categorie ?? ""
-    if (["chr", "marchand", "professionnel"].includes(String(sousType).toLowerCase())) {
+    const isPro = ["chr", "marchand", "professionnel"].includes(String(sousType).toLowerCase())
+                  || user.role === "client_proprietaire"
+                  || user.role === "client_gerant"
+    if (isPro) {
       return <PortailClient user={user} onLogout={handleLogout} />
     }
     // Particulier connecté sur l'ERP → message de redirection vers le site web
@@ -143,10 +146,10 @@ export default function App() {
               Votre espace commande est sur notre site web.
             </p>
           </div>
-          <a href="https://vitafresh.vercel.app"
+          <a href="https://shop.vita-core.org"
             className="w-full py-2.5 rounded-xl text-sm font-bold text-white text-center"
             style={{ background: "linear-gradient(135deg,#1a4f2a,#2d7a46)" }}>
-            Ouvrir vitafresh.vercel.app →
+            Ouvrir shop.vita-core.org →
           </a>
           <button onClick={handleLogout}
             className="w-full py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">

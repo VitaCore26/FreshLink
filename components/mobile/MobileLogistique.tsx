@@ -648,7 +648,7 @@ export default function MobileLogistique({ user }: Props) {
               const clientRecord = store.getClients().find(cl => cl.id === nextClient.clientId)
               const phone = clientRecord?.telephone ?? ""
               const totalHT = nextClient.lignes.reduce((s, l) => s + l.quantite * (l.prixVente ?? 0), 0)
-              const msgText = `Bonjour ${nextClient.clientNom},\nVotre livraison FreshLink Pro est en route !\nMontant: ${totalHT.toLocaleString("fr-MA")} DH HT\nLivreur: ${user.name}\nMerci.`
+              const msgText = `Bonjour ${nextClient.clientNom},\nVotre livraison Vita Fresh est en route !\nMontant: ${totalHT.toLocaleString("fr-MA")} DH HT\nLivreur: ${user.name}\nMerci.`
               const encodedMsg = encodeURIComponent(msgText)
               const cleanPhone = phone.replace(/\D/g, "")
               return (

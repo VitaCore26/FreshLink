@@ -210,12 +210,12 @@ export default function MobileAlertes({ user }: Props) {
     const nom  = alert.clientNom ?? "Client"
     const prv  = user.name
     if (alert.type === "inactivity")
-      return `Bonjour ${nom} 👋\n\nVotre commercial *${prv}* vous contacte de la part de *Vita Fresh*.\n\nNous avons remarqué que vous n'avez pas passé de commande récemment. Avez-vous besoin de quelque chose ?\n\n🌿 FreshLink Pro`
+      return `Bonjour ${nom} 👋\n\nVotre commercial *${prv}* vous contacte de la part de *Vita Fresh*.\n\nNous avons remarqué que vous n'avez pas passé de commande récemment. Avez-vous besoin de quelque chose ?\n\n🌿 Vita Fresh`
     if (alert.type === "credit" || alert.type === "retard_paiement")
-      return `Bonjour ${nom},\n\nUn rappel concernant votre solde en cours chez *Vita Fresh* (${alert.value}).\n\nMerci de régulariser au plus tôt ou de contacter votre commercial *${prv}*.\n\n🌿 FreshLink Pro`
+      return `Bonjour ${nom},\n\nUn rappel concernant votre solde en cours chez *Vita Fresh* (${alert.value}).\n\nMerci de régulariser au plus tôt ou de contacter votre commercial *${prv}*.\n\n🌿 Vita Fresh`
     if (alert.type === "visite_sans_commande")
-      return `Bonjour ${nom} 👋\n\nVotre commercial *${prv}* de *Vita Fresh* vous relance suite à ses dernières visites.\n\nNous avons de belles arrivages cette semaine ! Intéressé ?\n\n🌿 FreshLink Pro`
-    return `Bonjour ${nom},\n\nMessage de votre commercial *${prv}* — *Vita Fresh*.\n\n🌿 FreshLink Pro`
+      return `Bonjour ${nom} 👋\n\nVotre commercial *${prv}* de *Vita Fresh* vous relance suite à ses dernières visites.\n\nNous avons de belles arrivages cette semaine ! Intéressé ?\n\n🌿 Vita Fresh`
+    return `Bonjour ${nom},\n\nMessage de votre commercial *${prv}* — *Vita Fresh*.\n\n🌿 Vita Fresh`
   }
 
   // ── Computed ─────────────────────────────────────────────────────────────────

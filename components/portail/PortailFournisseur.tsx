@@ -379,7 +379,7 @@ export default function PortailFournisseur({ user, onLogout }: Props) {
       return
     }
     const msg = encodeURIComponent(
-      `Confirmation commande FreshLink Pro\n\n` +
+      `Confirmation commande Vita Fresh\n\n` +
       `Ref: ${po.id}\n` +
       `Article: ${po.articleNom}\n` +
       `Quantite: ${po.quantite} ${po.articleUnite}\n` +

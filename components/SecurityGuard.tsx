@@ -300,7 +300,7 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
               <LeafIcon />
             </div>
             <div>
-              <h1 className="font-bold text-xl mb-1" style={{ color: "oklch(0.96 0.006 100)" }}>FreshLink Pro</h1>
+              <h1 className="font-bold text-xl mb-1" style={{ color: "oklch(0.96 0.006 100)" }}>Vita Fresh</h1>
               <p className="text-sm" style={{ color: "oklch(0.52 0.010 145)" }}>
                 Distribution Fruits &amp; Legumes
               </p>

@@ -177,3 +177,11 @@ html {
   outline: 2px solid #4ADE80;
   outline-offset: 2px;
 }
+
+/* ── Print styles for invoice modal (Phase 4 PDF) ───────────────────────────── */
+@media print {
+  body * { visibility: hidden; }
+  .invoice-sheet, .invoice-sheet * { visibility: visible; }
+  .invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; }
+  .print\:hidden { display: none !important; }
+}

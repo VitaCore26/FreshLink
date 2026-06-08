@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { store, type User, type Commande, type Article, type Client, type LigneCommande, DELAI_RECOUVREMENT_LABELS } from "@/lib/store"
 import { upsertCommande } from "@/lib/supabase/db"
+import { createClient as createSbClient } from "@/lib/supabase/client"
 import FreshLinkLogo from "@/components/ui/FreshLinkLogo"
 
 // Returns tomorrow's date as YYYY-MM-DD (J+1 default)
@@ -16,7 +17,9 @@ interface Props { user: User; onLogout: () => void }
 
 // ── API response shapes ───────────────────────────────────────────────────────
 interface WalletTx { id: string; date?: string; type?: string; montant?: number; soldeApres?: number; motif?: string }
-interface Invoice { id: string; date?: string; numero?: string; montantTTC?: number; montant?: number; statut?: string; echeance?: string }
+interface Invoice { id: string; date?: string; numero?: string; montantTTC?: number; montantHT?: number; tva?: number; montant?: number; statut?: string; echeance?: string; lignes?: { articleNom: string; quantite: number; unite?: string; prixUnitaire: number }[]; clientNom?: string; clientAdresse?: string; clientICE?: string }
+interface Avoir { id: string; date?: string; numero?: string; montant?: number; motif?: string; statut?: string }
+interface BonLivraison { id: string; date?: string; numero?: string; commandeId?: string; statut?: string; lignes?: { articleNom: string; quantite: number; unite?: string }[] }
 interface Promo { id: string; titre?: string; nom?: string; description?: string; valeur?: number; type?: string; dateFin?: string }
 interface DashboardData {
   client: Client
@@ -25,9 +28,30 @@ interface DashboardData {
   contrat: Record<string, unknown> | null
   organisation: Record<string, unknown> | null
   invoices: Invoice[]
+  avoirs?: Avoir[]
+  bonsLivraison?: BonLivraison[]
   referrals: { total: number; converted: number }
 }
-interface OrderTracking { statut?: string; chauffeur?: string; eta?: string; gpsLat?: number; gpsLng?: number; position?: string }
+interface OrderTracking { statut?: string; chauffeur?: string; eta?: string; gpsLat?: number; gpsLng?: number; position?: string; etape?: string; pipeline?: { step: TrackingStep; at: string }[] }
+
+// ── Phase 7 — 5-stage tracking pipeline ───────────────────────────────────────
+export type TrackingStep = "recue" | "preparation" | "chargement" | "route" | "livree"
+const PIPELINE: { step: TrackingStep; label: string; icon: string }[] = [
+  { step: "recue",       label: "Commande reçue", icon: "📦" },
+  { step: "preparation", label: "Préparation",    icon: "👨‍🍳" },
+  { step: "chargement",  label: "Chargement",     icon: "🚚" },
+  { step: "route",       label: "En route",       icon: "📍" },
+  { step: "livree",      label: "Livrée",         icon: "✅" },
+]
+const PIPELINE_INDEX: Record<TrackingStep, number> = { recue: 0, preparation: 1, chargement: 2, route: 3, livree: 4 }
+// Fallback when no fl_tracking row exists yet: map order statut → pipeline step
+function deriveStepFromStatut(statut: string): TrackingStep | null {
+  if (statut === "livre")      return "livree"
+  if (statut === "en_transit") return "route"
+  if (statut === "valide")     return "preparation"
+  if (statut === "en_attente" || statut === "en_attente_approbation") return "recue"
+  return null
+}
 interface PortalOrder {
   id: string
   date?: string
@@ -66,17 +90,32 @@ const FAMILLE_ICON: Record<string, string> = {
   "Fruits rouges": "🍓", "Fruits secs": "🌰",
 }
 
-type Tab = "dashboard" | "commandes" | "commande" | "catalogue" | "factures" | "wallet" | "parrainage"
+type Tab = "dashboard" | "commandes" | "commande" | "catalogue" | "bl" | "factures" | "avoirs" | "wallet" | "parrainage" | "tracking"
 
-const TABS: { id: Tab; label: string; labelAr: string }[] = [
-  { id: "dashboard",  label: "Tableau de bord", labelAr: "لوحة القيادة" },
-  { id: "commandes",  label: "Mes commandes",   labelAr: "طلبياتي" },
-  { id: "commande",   label: "Passer commande", labelAr: "طلب جديد" },
-  { id: "catalogue",  label: "Catalogue",       labelAr: "الكتالوج" },
-  { id: "factures",   label: "Factures",        labelAr: "الفواتير" },
-  { id: "wallet",     label: "Wallet",          labelAr: "المحفظة" },
-  { id: "parrainage", label: "Parrainage",      labelAr: "الإحالة" },
+// RBAC matrix — see [[freshlink-portals]]:
+//   - propriétaire : tout (finance + opérationnel)
+//   - gérant       : opérationnel uniquement (pas de factures, wallet, parrainage)
+//   - client legacy : assimilé propriétaire
+type PortalRole = "proprietaire" | "gerant" | "default"
+
+const ALL_TABS: { id: Tab; label: string; labelAr: string; allow: PortalRole[] }[] = [
+  { id: "dashboard",  label: "Tableau de bord", labelAr: "لوحة القيادة", allow: ["proprietaire", "gerant", "default"] },
+  { id: "commandes",  label: "Mes commandes",   labelAr: "طلبياتي",      allow: ["proprietaire", "gerant", "default"] },
+  { id: "commande",   label: "Passer commande", labelAr: "طلب جديد",     allow: ["proprietaire", "gerant", "default"] },
+  { id: "catalogue",  label: "Catalogue",       labelAr: "الكتالوج",     allow: ["proprietaire", "gerant", "default"] },
+  { id: "tracking",   label: "Tracking",        labelAr: "تتبع",         allow: ["proprietaire", "gerant", "default"] },
+  { id: "bl",         label: "Bons livraison",  labelAr: "سندات التسليم", allow: ["proprietaire", "gerant", "default"] },
+  { id: "factures",   label: "Factures",        labelAr: "الفواتير",     allow: ["proprietaire", "default"] },
+  { id: "avoirs",     label: "Avoirs",          labelAr: "أرصدة دائنة",  allow: ["proprietaire", "default"] },
+  { id: "wallet",     label: "Wallet",          labelAr: "المحفظة",      allow: ["proprietaire", "default"] },
+  { id: "parrainage", label: "Parrainage",      labelAr: "الإحالة",      allow: ["proprietaire", "default"] },
 ]
+
+function roleFromUser(user: User): PortalRole {
+  if (user.role === "client_proprietaire") return "proprietaire"
+  if (user.role === "client_gerant")       return "gerant"
+  return "default"
+}
 
 interface LigneForm {
   articleId: string
@@ -86,6 +125,9 @@ interface LigneForm {
 const money = (n: number) => `${(n ?? 0).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
 
 export default function PortailClient({ user, onLogout }: Props) {
+  const portalRole = roleFromUser(user)
+  const TABS = ALL_TABS.filter(t => t.allow.includes(portalRole))
+
   const [tab, setTab] = useState<Tab>("dashboard")
   const [loading, setLoading] = useState(true)
   const [dataError, setDataError] = useState("")
@@ -109,6 +151,9 @@ export default function PortailClient({ user, onLogout }: Props) {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [submitError, setSubmitError] = useState("")
   const [submitting, setSubmitting] = useState(false)
+
+  // PDF facture state
+  const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null)
 
   const clientId = user.clientId ?? ""
 
@@ -793,6 +838,7 @@ export default function PortailClient({ user, onLogout }: Props) {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">N° / Date</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Montant</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Statut</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">PDF</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -806,6 +852,13 @@ export default function PortailClient({ user, onLogout }: Props) {
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-foreground">{money(inv.montantTTC ?? inv.montant ?? 0)}</td>
                           <td className="px-4 py-3 text-right"><span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${cfg.cls}`}>{cfg.label}</span></td>
+                          <td className="px-4 py-3 text-right">
+                            <button onClick={() => setPrintInvoice(inv)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-muted transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" /></svg>
+                              PDF
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
@@ -857,6 +910,21 @@ export default function PortailClient({ user, onLogout }: Props) {
           </div>
         )}
 
+        {/* ═══════════════ BONS DE LIVRAISON ═══════════════ */}
+        {tab === "bl" && (
+          <BonsLivraisonTab bons={dashboard?.bonsLivraison ?? []} />
+        )}
+
+        {/* ═══════════════ AVOIRS ═══════════════ */}
+        {tab === "avoirs" && (
+          <AvoirsTab avoirs={dashboard?.avoirs ?? []} />
+        )}
+
+        {/* ═══════════════ TRACKING TEMPS REEL ═══════════════ */}
+        {tab === "tracking" && (
+          <TrackingTab clientId={clientId} orders={orders} />
+        )}
+
         {/* ═══════════════ PARRAINAGE ═══════════════ */}
         {tab === "parrainage" && (
           <ParrainageTab clientId={clientId} referrals={dashboard?.referrals ?? { total: 0, converted: 0 }} />
@@ -864,6 +932,15 @@ export default function PortailClient({ user, onLogout }: Props) {
         </>
         )}
       </main>
+
+      {/* Printable invoice modal */}
+      {printInvoice && (
+        <FactureModal
+          invoice={printInvoice}
+          client={client}
+          onClose={() => setPrintInvoice(null)}
+        />
+      )}
 
       <footer className="border-t border-border bg-card px-4 py-3 flex items-center justify-center">
         <p className="text-[11px] text-muted-foreground text-center">
@@ -939,6 +1016,331 @@ function ParrainageTab({ clientId, referrals }: { clientId: string; referrals: {
           <li>Il crée son compte et passe sa première commande.</li>
           <li>Vous recevez tous les deux une récompense créditée sur votre Wallet.</li>
         </ol>
+      </div>
+    </div>
+  )
+}
+
+// ── Bons de livraison tab ─────────────────────────────────────────────────────
+function BonsLivraisonTab({ bons }: { bons: BonLivraison[] }) {
+  if (bons.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2a4 4 0 014-4h4M5 7h14M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7M5 7L7 4h10l2 3" />
+        </svg>
+        <p className="font-semibold">Aucun bon de livraison</p>
+        <p className="text-sm">لا توجد سندات تسليم</p>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted">
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">N° BL / Date</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Commande liée</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Articles</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bons.map(bl => (
+            <tr key={bl.id} className="border-t border-border">
+              <td className="px-4 py-3">
+                <p className="font-semibold text-foreground">{bl.numero ?? bl.id.slice(0, 12)}</p>
+                <p className="text-xs text-muted-foreground">{bl.date ?? ""}</p>
+              </td>
+              <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{bl.commandeId ?? "—"}</td>
+              <td className="px-4 py-3 text-right">{bl.lignes?.length ?? 0}</td>
+              <td className="px-4 py-3 text-right">
+                <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                  {bl.statut ?? "émis"}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Avoirs tab ────────────────────────────────────────────────────────────────
+function AvoirsTab({ avoirs }: { avoirs: Avoir[] }) {
+  const total = avoirs.reduce((s, a) => s + (a.montant ?? 0), 0)
+  if (avoirs.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+        <p className="font-semibold">Aucun avoir</p>
+        <p className="text-sm">لا توجد أرصدة دائنة</p>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 to-primary/5 p-5 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total avoirs en attente</p>
+          <p className="text-2xl font-black text-primary">{total.toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH</p>
+        </div>
+        <span className="text-3xl">💳</span>
+      </div>
+      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">N° / Date</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Motif</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Montant</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            {avoirs.map(a => (
+              <tr key={a.id} className="border-t border-border">
+                <td className="px-4 py-3">
+                  <p className="font-semibold text-foreground">{a.numero ?? a.id.slice(0, 12)}</p>
+                  <p className="text-xs text-muted-foreground">{a.date ?? ""}</p>
+                </td>
+                <td className="px-4 py-3 text-xs text-foreground">{a.motif ?? "—"}</td>
+                <td className="px-4 py-3 text-right font-bold text-primary">{(a.montant ?? 0).toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH</td>
+                <td className="px-4 py-3 text-right">
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                    {a.statut ?? "en attente"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Tracking tab (Phase 7) — Realtime pipeline ────────────────────────────────
+function TrackingTab({ clientId, orders }: { clientId: string; orders: PortalOrder[] }) {
+  const [liveOrders, setLiveOrders] = useState(orders)
+  const [updatedAt, setUpdatedAt] = useState<string>("")
+
+  // Keep in sync when parent reloads
+  useEffect(() => { setLiveOrders(orders) }, [orders])
+
+  // Subscribe to fl_tracking + fl_commandes for this client.
+  // fl_tracking is RLS-protected so anon won't get rows; the subscription is
+  // mostly a heartbeat — when we get a change notification we ping the API to
+  // refresh the orders payload (which goes through service-role).
+  useEffect(() => {
+    if (!clientId) return
+    let cancelled = false
+    let channel: ReturnType<ReturnType<typeof createSbClient>["channel"]> | null = null
+
+    ;(async () => {
+      try {
+        const sb = createSbClient()
+        channel = sb
+          .channel(`portal-tracking-${clientId}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "fl_tracking" }, () => refresh())
+          .on("postgres_changes", { event: "*", schema: "public", table: "fl_commandes" }, () => refresh())
+          .subscribe()
+      } catch { /* realtime disabled */ }
+    })()
+
+    async function refresh() {
+      if (cancelled) return
+      try {
+        const res = await fetch(`/api/portal/client/${encodeURIComponent(clientId)}/orders`, { cache: "no-store" })
+        if (!res.ok) return
+        const { orders: o } = await res.json()
+        if (!cancelled && Array.isArray(o)) {
+          setLiveOrders(o)
+          setUpdatedAt(new Date().toLocaleTimeString("fr-MA"))
+        }
+      } catch { /* offline */ }
+    }
+
+    return () => {
+      cancelled = true
+      try { channel?.unsubscribe() } catch { /* no-op */ }
+    }
+  }, [clientId])
+
+  const active = liveOrders.filter(o => o.statut !== "livre" && o.statut !== "refuse" && o.statut !== "retour")
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Suivi en temps réel</h2>
+          <p className="text-xs text-muted-foreground">{active.length} commande{active.length > 1 ? "s" : ""} en cours · تتبع مباشر</p>
+        </div>
+        {updatedAt && (
+          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            Synchronisé · {updatedAt}
+          </span>
+        )}
+      </div>
+
+      {active.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <span className="text-4xl block mb-3">📦</span>
+          <p className="font-semibold">Aucune commande en cours</p>
+          <p className="text-sm">لا توجد طلبيات قيد التتبع</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {active.map(o => {
+            const current: TrackingStep = (o.tracking?.etape as TrackingStep) ?? deriveStepFromStatut(o.statut) ?? "recue"
+            const currentIdx = PIPELINE_INDEX[current]
+            return (
+              <div key={o.id} className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <p className="font-mono text-xs font-bold text-foreground">{o.id.slice(0, 14)}</p>
+                    <p className="text-xs text-muted-foreground">{o.date ?? ""} · {money(orderTotal(o))}</p>
+                  </div>
+                  {o.tracking?.eta && (
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">ETA</p>
+                      <p className="font-bold text-cyan-700">{o.tracking.eta}</p>
+                    </div>
+                  )}
+                </div>
+                <Pipeline currentIdx={currentIdx} />
+                {(o.tracking?.chauffeur || o.tracking?.position) && (
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    {o.tracking?.chauffeur && <span className="chip">🚚 {o.tracking.chauffeur}</span>}
+                    {o.tracking?.position && <span className="chip">📍 {o.tracking.position}</span>}
+                  </div>
+                )}
+                {/* Map placeholder — Leaflet integration deferred */}
+                {o.tracking?.gpsLat && o.tracking?.gpsLng && (
+                  <a
+                    href={`https://www.google.com/maps?q=${o.tracking.gpsLat},${o.tracking.gpsLng}`}
+                    target="_blank" rel="noreferrer"
+                    className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-xs font-semibold text-foreground hover:bg-muted transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    Voir le véhicule sur la carte
+                  </a>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Pipeline({ currentIdx }: { currentIdx: number }) {
+  return (
+    <div className="flex items-center justify-between gap-1 relative">
+      {PIPELINE.map((step, i) => {
+        const done = i < currentIdx
+        const here = i === currentIdx
+        return (
+          <div key={step.step} className="flex-1 flex flex-col items-center gap-1.5 relative">
+            {/* Connector line to next */}
+            {i < PIPELINE.length - 1 && (
+              <div className={`absolute top-4 left-1/2 right-[-50%] h-0.5 ${done ? "bg-primary" : "bg-border"}`} />
+            )}
+            <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all ${
+              done ? "bg-primary text-primary-foreground" :
+              here ? "bg-primary text-primary-foreground ring-4 ring-primary/20 animate-pulse" :
+              "bg-muted text-muted-foreground"
+            }`}>
+              {done ? "✓" : step.icon}
+            </div>
+            <p className={`text-[10px] font-semibold text-center leading-tight ${here ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"}`}>
+              {step.label}
+            </p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Printable facture modal (Phase 4) ─────────────────────────────────────────
+function FactureModal({ invoice, client, onClose }: { invoice: Invoice; client: Client | null; onClose: () => void }) {
+  const ttc = invoice.montantTTC ?? invoice.montant ?? 0
+  const ht = invoice.montantHT ?? (invoice.tva ? ttc / (1 + invoice.tva / 100) : ttc / 1.2)
+  const tva = invoice.tva ?? 20
+  const print = () => {
+    document.body.classList.add("printing-invoice")
+    window.print()
+    setTimeout(() => document.body.classList.remove("printing-invoice"), 1000)
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:bg-white print:p-0">
+      <div className="invoice-sheet bg-white text-slate-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-auto p-8 print:rounded-none print:max-h-none print:overflow-visible print:shadow-none">
+        <div className="flex justify-between items-start mb-8">
+          <div>
+            <h1 className="text-3xl font-black text-[#1a4d2e]">FACTURE</h1>
+            <p className="text-sm text-slate-500 mt-1">N° {invoice.numero ?? invoice.id.slice(0, 12)}</p>
+            <p className="text-sm text-slate-500">{invoice.date ?? ""}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-black text-[#1a4d2e]">VITA FRESH</p>
+            <p className="text-xs text-slate-500">VitaCore Group</p>
+            <p className="text-xs text-slate-500">Casablanca, Maroc</p>
+            <p className="text-xs text-slate-500">contact@vita-core.org</p>
+          </div>
+        </div>
+
+        <div className="border-y border-slate-200 py-4 mb-6">
+          <p className="text-xs uppercase tracking-widest text-slate-500 mb-1">Facturé à</p>
+          <p className="font-bold">{invoice.clientNom ?? client?.nom ?? "—"}</p>
+          {(invoice.clientAdresse ?? client?.adresse) && <p className="text-sm text-slate-600">{invoice.clientAdresse ?? client?.adresse}</p>}
+          {(invoice.clientICE ?? (client as unknown as { ice?: string })?.ice) && <p className="text-sm text-slate-600">ICE : {invoice.clientICE ?? (client as unknown as { ice?: string })?.ice}</p>}
+        </div>
+
+        <table className="w-full text-sm mb-6">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="text-left px-3 py-2">Article</th>
+              <th className="text-right px-3 py-2">Qté</th>
+              <th className="text-right px-3 py-2">PU HT</th>
+              <th className="text-right px-3 py-2">Total HT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(invoice.lignes ?? []).map((l, i) => (
+              <tr key={i} className="border-b border-slate-100">
+                <td className="px-3 py-2">{l.articleNom}</td>
+                <td className="px-3 py-2 text-right">{l.quantite} {l.unite ?? ""}</td>
+                <td className="px-3 py-2 text-right">{l.prixUnitaire.toFixed(2)} DH</td>
+                <td className="px-3 py-2 text-right font-semibold">{(l.quantite * l.prixUnitaire).toFixed(2)} DH</td>
+              </tr>
+            ))}
+            {(invoice.lignes?.length ?? 0) === 0 && (
+              <tr><td colSpan={4} className="px-3 py-2 text-center text-slate-400 italic">Détails des lignes non disponibles</td></tr>
+            )}
+          </tbody>
+        </table>
+
+        <div className="flex justify-end">
+          <table className="text-sm w-72">
+            <tbody>
+              <tr><td className="py-1 text-slate-500">Sous-total HT</td><td className="py-1 text-right">{ht.toFixed(2)} DH</td></tr>
+              <tr><td className="py-1 text-slate-500">TVA {tva}%</td><td className="py-1 text-right">{(ttc - ht).toFixed(2)} DH</td></tr>
+              <tr className="border-t-2 border-[#1a4d2e]"><td className="py-2 font-bold">Total TTC</td><td className="py-2 text-right font-black text-[#1a4d2e] text-lg">{ttc.toFixed(2)} DH</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-[10px] text-slate-400 mt-8 text-center">VITA FRESH — VitaCore Group · Casablanca, Maroc · Tous montants en MAD</p>
+
+        <div className="mt-6 flex gap-2 justify-end print:hidden">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-100">Fermer</button>
+          <button onClick={print} className="px-4 py-2 rounded-xl bg-[#1a4d2e] text-white text-sm font-semibold hover:opacity-90">
+            🖨 Imprimer / Enregistrer PDF
+          </button>
+        </div>
       </div>
     </div>
   )

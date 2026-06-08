@@ -50,7 +50,13 @@ export async function GET(
     const orgs = await sbQuery("fl_organisations", `payload->>clientId=eq.${encodeURIComponent(id)}&limit=1`)
 
     // Recent invoices
-    const invoices = await sbQuery("fl_invoices", `payload->>clientId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=5`)
+    const invoices = await sbQuery("fl_invoices", `payload->>clientId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=20`)
+
+    // Credit notes (avoirs)
+    const avoirs = await sbQuery("fl_avoirs", `payload->>clientId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=20`)
+
+    // Delivery notes (bons de livraison) — match by clientId OR via commandes
+    const bonsLivraison = await sbQuery("fl_bons_livraison", `payload->>clientId=eq.${encodeURIComponent(id)}&order=updated_at.desc&limit=30`)
 
     // Referral stats
     const referrals = await sbQuery("fl_referrals", `payload->>parrain_id=eq.${encodeURIComponent(id)}&limit=50`)
@@ -69,6 +75,8 @@ export async function GET(
       contrat: contrats[0] ?? null,
       organisation: orgs[0] ?? null,
       invoices,
+      avoirs,
+      bonsLivraison,
       referrals: { total: referrals.length, converted: convertedRefs },
     })
   } catch (e: any) {

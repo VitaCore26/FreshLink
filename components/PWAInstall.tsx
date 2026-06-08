@@ -91,12 +91,12 @@ export default function PWAInstall() {
           {/* App Icon */}
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden border border-slate-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/vita-fresh-logo.png" alt="FreshLink Pro" className="w-full h-full object-cover" />
+            <img src="/vita-fresh-logo.png" alt="Vita Fresh" className="w-full h-full object-cover" />
           </div>
 
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-slate-800 leading-tight">
-              Installer FreshLink Pro
+              Installer Vita Fresh
             </p>
             <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
               {mode === "ios"

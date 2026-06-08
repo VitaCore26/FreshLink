@@ -25,7 +25,7 @@ function buildMessage(type: ModeleType, ctx: MsgContext): string {
   const { cible, nom, extra, numeroBL, montantBL, retardHeures } = ctx
   const grFR = `Bonjour ${nom},`
   const grAR = cible === "equipe" ? `مرحبا ${nom}،` : `السلام عليكم ${nom}،`
-  const sig = "— FreshLink Pro"
+  const sig = "— Vita Fresh"
 
   // Build BL reference string
   const blRef = numeroBL ? ` (BL N° ${numeroBL}${montantBL ? ` — ${montantBL.toLocaleString("fr-MA")} DH` : ""})` : ""
@@ -509,7 +509,7 @@ export default function BOWhatsApp({ user }: Props) {
                   </label>
                   <textarea value={texteCustom} onChange={e => setTexteCustom(e.target.value)}
                     rows={6}
-                    placeholder={"Bonjour {nom},\n\nVotre message ici (FR + AR)...\n\n— FreshLink Pro"}
+                    placeholder={"Bonjour {nom},\n\nVotre message ici (FR + AR)...\n\n— Vita Fresh"}
                     className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-sans focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
                 </div>
               )}

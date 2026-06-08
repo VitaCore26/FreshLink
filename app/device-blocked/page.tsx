@@ -301,7 +301,7 @@ function AccessGateContent() {
           }}
         />
         <p className="text-xs font-bold tracking-widest uppercase" style={{ color: "#4ade80" }}>
-          FreshLink Pro — Espace sécurisé
+          Vita Fresh ERP — Espace sécurisé
         </p>
       </div>
 
@@ -377,7 +377,7 @@ function AccessGateContent() {
             </div>
 
             <p className="text-sm mb-6 leading-relaxed" style={{ color: "#94a3b8" }}>
-              FreshLink Pro est réservé aux membres de l&apos;équipe.
+              Vita Fresh ERP est réservé aux membres de l&apos;équipe.
               Entrez vos informations pour soumettre une demande d&apos;accès à{" "}
               <strong style={{ color: "#4ade80" }}>Jawad — Super Administrateur</strong>.
             </p>
@@ -536,7 +536,7 @@ function AccessGateContent() {
             </div>
             <h2 className="text-lg font-black mb-2" style={{ color: "#4ade80" }}>Accès autorisé !</h2>
             <p className="text-sm" style={{ color: "#94a3b8" }}>
-              Bienvenue sur FreshLink Pro.<br />
+              Bienvenue sur Vita Fresh ERP.<br />
               Redirection en cours...
             </p>
             <div className="mt-5">
@@ -551,7 +551,7 @@ function AccessGateContent() {
 
       {/* Footer */}
       <p className="mt-6 text-[10px] font-semibold tracking-wider" style={{ color: "#1e293b" }}>
-        ⚡ FreshLink Pro · Vita Fresh · Powered by Vita Tech
+        ⚡ Vita Fresh ERP · Powered by VitaCore Group
       </p>
 
       <style>{`
