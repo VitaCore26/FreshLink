@@ -52,6 +52,12 @@ export async function POST(req: NextRequest) {
       "fl_bons_achat", "fl_purchase_orders", "fl_receptions",
       "fl_caisses_vides", "fl_charges", "fl_caisse_entries",
       "fl_salaries", "fl_actionnaires", "fl_livreurs",
+      "fl_feedbacks", "fl_gift_materials", "fl_pa_historique",
+      // V2 ecosystem tables
+      "fl_invoices", "fl_avoirs", "fl_wallet_transactions", "fl_paiements",
+      "fl_referrals", "fl_referral_config", "fl_tracking",
+      "fl_promotions", "fl_coupons", "fl_notifications",
+      "fl_contrats", "fl_organisations",
     ]
     if (!ALLOWED_TABLES.includes(body.table)) {
       return NextResponse.json({ ok: false, errors: [`Table non autorisée: ${body.table}`] }, { status: 403 })

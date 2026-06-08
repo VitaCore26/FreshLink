@@ -133,6 +133,15 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewCommercial: true,
     accessType: "mobile",
   },
+  // CHR hierarchique: proprietaire = acces complet portail, gerant = commandes/livraison
+  client_proprietaire: {
+    canViewCommercial: true, canViewFinance: true, canViewRecap: true,
+    accessType: "both",
+  },
+  client_gerant: {
+    canViewCommercial: true, canViewLogistique: true,
+    accessType: "mobile",
+  },
   fournisseur: {
     canViewAchat: true,
     accessType: "mobile",
@@ -243,6 +252,8 @@ export const ROLE_LABELS_FR: Record<UserRole, string> = {
   rh_manager:          "RH Manager",
   comptable:           "Comptable",
   client:              "Client",
+  client_proprietaire: "Propriétaire CHR",
+  client_gerant:       "Gérant CHR",
   fournisseur:         "Fournisseur",
   investisseur:        "Investisseur",
   auditeur:            "Auditeur",

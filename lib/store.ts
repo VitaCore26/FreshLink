@@ -12,7 +12,7 @@ export type UserRole =
   | "acheteur" | "ctrl_achat" | "ctrl_prep"
   | "cash_man" | "financier"
   | "rh_manager" | "comptable"
-  | "client" | "fournisseur"
+  | "client" | "client_proprietaire" | "client_gerant" | "fournisseur"
   | "investisseur" | "qualite" | "it_admin" | "auditeur"
   | "chef_depot" | "resp_achat" | "suivi_commande" | "charge_recouvrement"
 
@@ -1444,6 +1444,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   rh_manager: "Responsable RH",
   comptable: "Comptable",
   client: "Client",
+  client_proprietaire: "Propriétaire CHR",
+  client_gerant: "Gérant CHR",
   fournisseur: "Fournisseur",
   investisseur: "Investisseur",
   qualite: "Responsable Qualité",
@@ -1474,6 +1476,8 @@ export const ROLE_LABELS_AR: Record<UserRole, string> = {
   rh_manager: "مسؤول الموارد البشرية",
   comptable: "المحاسب",
   client: "الزبون",
+  client_proprietaire: "مالك المؤسسة",
+  client_gerant: "مدير المؤسسة",
   fournisseur: "المورد",
   investisseur: "المستثمر",
   qualite: "مسؤول الجودة",
@@ -1504,6 +1508,8 @@ export const ROLE_COLORS: Record<UserRole, string> = {
   rh_manager: "bg-fuchsia-600",
   comptable: "bg-indigo-700",
   client: "bg-teal-600",
+  client_proprietaire: "bg-teal-700",
+  client_gerant: "bg-teal-500",
   fournisseur: "bg-slate-600",
   investisseur: "bg-yellow-600",
   qualite: "bg-red-600",

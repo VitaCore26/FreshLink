@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createHmac } from "crypto"
+import bcrypt from "bcryptjs"
 
 // ══════════════════════════════════════════════════════════════
 // POST /api/ext/demande-compte — Création automatique de compte client
@@ -197,14 +198,15 @@ export async function POST(req: NextRequest) {
     // 2. Générer identifiants séquentiels (compteur sur Supabase)
     const userId   = await nextSequentialId("fl_users",                            "VFU")
     const clientId = await nextSequentialId(isFournisseur ? "fl_fournisseurs" : "fl_clients", isFournisseur ? "VFS" : "VFC")
-    const password = genPassword(telNorm)
+    const password     = genPassword(telNorm)
+    const passwordHash = await bcrypt.hash(password, 10)
 
-    // 3. Créer fl_users
+    // 3. Créer fl_users (mot de passe hashé — le plaintext est retourné au client UNE SEULE FOIS)
     const userPayload = {
       name:      nomTrimmed,
       telephone: telNorm,
       email:     email?.trim()?.toLowerCase() || null,
-      password,
+      password:  passwordHash,
       role:      roleUser,
       clientId,
       actif:     autoApproved,   // auto-approuvé → actif ; sinon en attente de validation

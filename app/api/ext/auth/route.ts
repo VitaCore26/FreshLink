@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createHmac } from "crypto"
+import bcrypt from "bcryptjs"
 
 // ══════════════════════════════════════════════════════════════
 // POST /api/ext/auth — Authentification par numéro de téléphone
@@ -236,16 +237,51 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Vérification mot de passe ─────────────────────────────────────────────
+    // ── Vérification mot de passe (bcrypt ou plaintext legacy) ─────────────────
     const storedPwd       = String(user.password ?? "")
     const storedPwdMobile = String(user.passwordMobile ?? "")
     const inputPwd        = String(password)
 
-    if (inputPwd !== storedPwd && inputPwd !== storedPwdMobile) {
+    // Support bcrypt hashed passwords ($2a$/$2b$ prefix) AND legacy plaintext
+    const isBcrypt     = storedPwd.startsWith("$2")
+    const isBcryptMob  = storedPwdMobile.startsWith("$2")
+    let pwdOk = false
+    if (isBcrypt) {
+      pwdOk = await bcrypt.compare(inputPwd, storedPwd)
+    } else {
+      pwdOk = inputPwd === storedPwd
+    }
+    if (!pwdOk && storedPwdMobile) {
+      if (isBcryptMob) {
+        pwdOk = await bcrypt.compare(inputPwd, storedPwdMobile)
+      } else {
+        pwdOk = inputPwd === storedPwdMobile
+      }
+    }
+
+    if (!pwdOk) {
       return NextResponse.json(
         { error: "Numéro ou mot de passe incorrect." },
         { status: 401, headers: cors(origin) }
       )
+    }
+
+    // ── Auto-upgrade: hash plaintext password on successful login ───────────
+    if (!isBcrypt && storedPwd && user.id) {
+      try {
+        const hashed = await bcrypt.hash(storedPwd, 10)
+        const updPayload = { ...user }
+        delete updPayload.id
+        updPayload.password = hashed
+        await fetch(`${SB_URL}/rest/v1/fl_users?id=eq.${encodeURIComponent(user.id)}`, {
+          method: "PATCH",
+          headers: {
+            apikey: SB_SERVER_KEY, Authorization: `Bearer ${SB_SERVER_KEY}`,
+            "Content-Type": "application/json", Prefer: "return=minimal",
+          },
+          body: JSON.stringify({ payload: updPayload, updated_at: new Date().toISOString() }),
+        })
+      } catch { /* best-effort upgrade */ }
     }
 
     if (user.actif === false) {
