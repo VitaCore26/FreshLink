@@ -86,7 +86,6 @@ const ShelfLifePanel         = dynamic(() => import("./ShelfLifePanel"),        
 const ForecastPanel          = dynamic(() => import("./ForecastPanel"),          { ssr: false, loading: L("Chargement forecast...") })
 const ASHELMarketPanel       = dynamic(() => import("./ASHELMarketPanel"),       { ssr: false, loading: L("Chargement ASHEL...") })
 const CameraPermissionsPanel = dynamic(() => import("./CameraPermissionsPanel"), { ssr: false, loading: L("Chargement permissions...") })
-// (CutoffNotificationsPanel retiré — doublon ; le menu « Cutoffs » pointe désormais vers BOCutoffs, plus complet)
 const CaissesVidesPanel      = dynamic(() => import("./CaissesVidesPanel"),      { ssr: false, loading: L("Chargement caisses vides...") })
 const DeployGuidePanel       = dynamic(() => import("./DeployGuidePanel"),       { ssr: false, loading: L("Chargement guide...") })
 const BODepots               = dynamic(() => import("./BODepots"),               { ssr: false, loading: L("Chargement depots...") })
@@ -110,13 +109,10 @@ const BOPermissionsMatrix    = dynamic(() => import("./BOPermissionsMatrix"),   
 const BOMarketplace          = dynamic(() => import("./BOMarketplace"),          { ssr: false, loading: L("Chargement marketplace...") })
 const BODocuments            = dynamic(() => import("./BODocuments"),            { ssr: false, loading: L("Chargement documents...") })
 const BOCategoryPricing      = dynamic(() => import("./BOCategoryPricing"),      { ssr: false, loading: L("Chargement tarifs catégories...") })
-const BOFirebaseArchive      = dynamic(() => import("./BOFirebaseArchive"),      { ssr: false, loading: L("Chargement archivage Firebase...") })
 const BOExternalLinks        = dynamic(() => import("./BOExternalLinks"),         { ssr: false, loading: L("Chargement liens...") })
 const BODeviceAccess         = dynamic(() => import("./BODeviceAccess"),          { ssr: false, loading: L("Chargement accès appareils...") })
-// (BOCommandesWeb retiré — doublon de Commandes ; les commandes web s'affichent dans BOCommandesUnifiees)
 const BOCommandesUnifiees    = dynamic(() => import("./BOCommandesUnifiees"),      { ssr: false, loading: L("Chargement commandes...") })
 // ── Modules V3 (moteur commercial, cadeaux, cutoffs, feedbacks, PA) ──
-// (BOFeedbacks/feedbacks_v3 retiré — doublon ; on garde FeedbackPanel « Feedbacks & Avis », plus complet)
 const BOCutoffsV3            = dynamic(() => import("./BOCutoffs"),               { ssr: false, loading: L("Chargement cutoffs...") })
 const BOGiftsV3              = dynamic(() => import("./BOGifts"),                 { ssr: false, loading: L("Chargement cadeaux...") })
 const BOMoteurCommercialV3   = dynamic(() => import("./BOMoteurCommercial"),      { ssr: false, loading: L("Chargement moteur commercial...") })
@@ -351,7 +347,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "camera_perms",      label: "Droits Camera",         labelAr: "صلاحيات الكاميرا",  permKey: "canViewDatabase", icon: <Icon d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z M15 13a3 3 0 11-6 0 3 3 0 016 0z" /> },
       { id: "cutoffs",           label: "Notifications Cut-off", labelAr: "إشعارات الإيقاف",   permKey: "canViewDatabase", icon: <Icon d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /> },
       { id: "database",          label: "Base de donnees",       labelAr: "قاعدة البيانات",    permKey: "canViewDatabase", icon: <Icon d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /> },
-      { id: "firebase_archive",  label: "Archivage Firebase",    labelAr: "أرشفة Firebase",    permKey: "canViewDatabase", icon: <Icon d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /> },
       { id: "liens_externes",    label: "Liens Partenaires",     labelAr: "روابط الشركاء",     permKey: "canViewDatabase", icon: <Icon d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /> },
       { id: "settings",          label: "Parametres",            labelAr: "الإعدادات",         permKey: "canViewDatabase", icon: <Icon d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /> },
       { id: "gsheets",           label: "Google Sheets",         labelAr: "جوجل شيتس",        permKey: "canViewDatabase" as keyof User, icon: (
@@ -401,7 +396,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   commandes_unifiees:  (u) => <BOCommandesUnifiees user={u} />,
   category_pricing:  (_u) => <BOCategoryPricing />,
   documents:         (u) => <BODocuments user={u} />,
-  firebase_archive:  (_u) => <BOFirebaseArchive />,
+  firebase_archive:  (_u) => <div className="p-8 text-center text-slate-400">Module retiré</div>,
   liens_externes:    (u)  => <BOExternalLinks user={u} />,
   demandes_comptes:  (u) => <BODemandesComptes user={u} />,
   web_integration:   (u) => <BOWebIntegration user={u} />,
