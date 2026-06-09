@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS public.fl_gift_attributions (
 CREATE INDEX IF NOT EXISTS idx_gift_attr_client  ON public.fl_gift_attributions (client_id);
 CREATE INDEX IF NOT EXISTS idx_gift_attr_statut  ON public.fl_gift_attributions (statut);
 
--- ── 3. PA Historique / Prédit + Config globale (schéma JSONB) ─────────────
-CREATE TABLE IF NOT EXISTS public.fl_pa_historique  (id TEXT PRIMARY KEY, payload JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+-- ── 3. PA Prédit + Config globale (schéma JSONB) ──────────────────────────
+-- NOTE : fl_pa_historique a un schéma PLAT (voir FIX-FLAT-TABLES.sql), pas JSONB.
 CREATE TABLE IF NOT EXISTS public.fl_pa_predit      (id TEXT PRIMARY KEY, payload JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS public.fl_config_globale (id TEXT PRIMARY KEY, payload JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 
