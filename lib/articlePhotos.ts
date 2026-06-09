@@ -142,6 +142,29 @@ export const ARTICLE_PHOTOS: Record<string, string> = {
   "noisette":          U("photo-1599058917765-a780eda07a3e"),
   "pistache":          U("photo-1599058917765-a780eda07a3e"),
   "raisin sec":        U("photo-1599058917765-a780eda07a3e"),
+
+  // ── Ajouts SKU (photos vérifiées 2026-06-09) ────────────────────────────
+  "pasteque":          U("photo-1587049352851-8d4e89133924"),
+  "melon":             U("photo-1571575173700-afb9492e6a50"),
+  "asperge":           U("photo-1459411552884-841db9b3cc2a"),
+  "celeri-rave":       U("photo-1606923829579-0cb981a83e2e"),
+  "celeri":            U("photo-1606923829579-0cb981a83e2e"),
+  "laurier":           U("photo-1600788907416-456578634209"),
+  "haricot vert":      U("photo-1567375698348-5d9d5ae99de0"),
+  "haricot":           U("photo-1567375698348-5d9d5ae99de0"),
+  "petit pois":        U("photo-1587735243615-c03f25aaff15"),
+  "pois":              U("photo-1587735243615-c03f25aaff15"),
+  "ciboulette":        U("photo-1581281863883-2469417a1668"),
+  "panais":            U("photo-1635774855536-9728f2610245"),
+  "sauge":             U("photo-1600857544200-b2f666a9a2ec"),
+  "origan":            U("photo-1515586000433-45406d8e6662"),
+  "aneth":             U("photo-1597714026720-8f74c62310ba"),
+  "artichaud":         U("photo-1558818498-28c1e002b655"),
+  "artichaut":         U("photo-1558818498-28c1e002b655"),
+  "cumin":             U("photo-1596040033229-a9821ebd058d"),
+  "fenouil":           U("photo-1633380110125-f6e685676160"),
+  "taro":              U("photo-1518977956812-cd3dbadaaf31"),
+  "zaatar":            U("photo-1465014925804-7b9ede58d0d7"),
 }
 
 /**
