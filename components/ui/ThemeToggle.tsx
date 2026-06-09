@@ -78,14 +78,18 @@ export default function ThemeToggle({ compact = false }: { compact?: boolean }) 
   }
 
   if (compact) {
-    const isDark = document.documentElement.classList.contains("dark")
+    // Cycle : auto → clair → sombre → auto (l'icône reflète le mode choisi)
+    const order: Mode[] = ["auto", "light", "dark"]
+    const icon: Record<Mode, string> = { auto: "🕑", light: "☀️", dark: "🌙", system: "🖥" }
+    const label: Record<Mode, string> = { auto: "Auto (sombre la nuit)", light: "Mode clair", dark: "Mode sombre", system: "Système" }
+    const next = order[(order.indexOf(mode) + 1) % order.length] ?? "auto"
     return (
       <button
-        onClick={() => setAndApply(isDark ? "light" : "dark")}
-        title={isDark ? "Mode clair" : "Mode sombre"}
+        onClick={() => setAndApply(next)}
+        title={`${label[mode] ?? "Auto"} — cliquer pour : ${label[next]}`}
         aria-label="Basculer le thème"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted">
-        {isDark ? "☀️" : "🌙"}
+        {icon[mode] ?? "🕑"}
       </button>
     )
   }
