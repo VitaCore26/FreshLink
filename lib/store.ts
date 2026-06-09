@@ -95,6 +95,9 @@ export interface User {
   activeRole?: UserRole
 }
 
+// Matrice RBAC + assignation automatique des droits : voir lib/rolePermissions.ts
+// (autoAssignPermissions / mergeRolePermissions, appelées à la création de compte).
+
 export type ModalitePaiement = "cash" | "cheque" | "virement" | "traite_30" | "traite_60" | "traite_90" | "credit_7" | "credit_15" | "credit_30"
 
 export const MODALITE_LABELS: Record<ModalitePaiement, string> = {
