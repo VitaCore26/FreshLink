@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   "/api/admin-session",
   "/api/test-sync",
   "/api/ext/",
+  "/api/portal/",
   "/_next/",
   "/favicon",
   "/icon",

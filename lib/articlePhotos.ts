@@ -149,27 +149,42 @@ export const ARTICLE_PHOTOS: Record<string, string> = {
  * Retourne une URL Unsplash ou un placeholder coloré si aucun match.
  */
 export function getArticlePhoto(nom: string, famille = ""): string {
-  if (!nom) return getPlaceholderPhoto("Article", famille)
-  const norm = nom.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  if (!nom) return getFamilyPhoto(famille)
+  const norm = nom.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()
+  // Variante "racine" : enlève les pluriels et le contenu entre parenthèses
+  // ex: "pommes de terre (frite)" → "pomme de terre"
+  const root = norm.replace(/\([^)]*\)/g, "").trim().replace(/s\b/g, "")
 
-  // 1. Match exact d'abord
+  // 1. Match exact
   if (ARTICLE_PHOTOS[norm]) return ARTICLE_PHOTOS[norm]
+  if (ARTICLE_PHOTOS[root]) return ARTICLE_PHOTOS[root]
 
-  // 2. Partial match — clé la plus longue contenue dans le nom (préférence aux noms spécifiques)
+  // 2. Partial match — clé la plus longue contenue dans le nom OU sa racine
   const keys = Object.keys(ARTICLE_PHOTOS).sort((a, b) => b.length - a.length)
   for (const k of keys) {
-    if (norm.includes(k)) return ARTICLE_PHOTOS[k]
+    if (norm.includes(k) || root.includes(k) || k.includes(root)) return ARTICLE_PHOTOS[k]
   }
 
-  // 3. Fallback : placeholder coloré
-  return getPlaceholderPhoto(nom, famille)
+  // 3. Fallback : VRAIE photo générique par famille (jamais de placehold)
+  return getFamilyPhoto(famille)
 }
 
-function getPlaceholderPhoto(nom: string, famille: string): string {
-  const f = famille.toLowerCase()
-  const color = f.includes("fruit") || f.includes("agrume") ? "e74c3c"
-              : f.includes("légume") || f.includes("legume") ? "27ae60"
-              : f.includes("herbe") || f.includes("champign") ? "16a34a"
-              : "94a3b8"
-  return `https://placehold.co/400x300/${color}/fff?text=${encodeURIComponent(nom)}`
+// Photos génériques réelles par famille — garantit qu'aucun produit n'affiche un placeholder
+const FAMILY_PHOTOS: Record<string, string> = {
+  fruit:   U("photo-1610832958506-aa56368176cf"), // panier de fruits
+  agrume:  U("photo-1557800636-894a64c1696f"),    // agrumes
+  legume:  U("photo-1540420773420-3366772f4999"), // légumes variés
+  herbe:   U("photo-1466637574441-749b8f19452f"), // herbes aromatiques
+  champignon: U("photo-1504545102780-26774c1bb073"),
+  racine:  U("photo-1598170845058-32b9d6a5da37"), // carottes/racines
+}
+function getFamilyPhoto(famille: string): string {
+  const f = (famille || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  if (f.includes("agrume")) return FAMILY_PHOTOS.agrume
+  if (f.includes("herbe")) return FAMILY_PHOTOS.herbe
+  if (f.includes("champign")) return FAMILY_PHOTOS.champignon
+  if (f.includes("racine")) return FAMILY_PHOTOS.racine
+  if (f.includes("fruit")) return FAMILY_PHOTOS.fruit
+  if (f.includes("legume")) return FAMILY_PHOTOS.legume
+  return FAMILY_PHOTOS.legume // défaut = légumes (cœur du catalogue)
 }

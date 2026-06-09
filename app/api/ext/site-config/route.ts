@@ -38,7 +38,7 @@ const DEFAULT_CONFIG = {
     wa: "212681736910",
     email: "commercial@vita-core.org",
     addr: "Zone Industrielle, Casablanca, Maroc",
-    appUrl: "https://vitafresh.vitacore.ma/",
+    appUrl: "https://erp.vita-core.org/",
     fb: "",
     ig: "",
   },
