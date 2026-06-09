@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { CATALOGUE_SEED } from "@/lib/catalogueSeed"
 import { ERP_DEFAULT_ARTICLES } from "@/lib/defaultArticles"
 import { getArticlePhoto } from "@/lib/articlePhotos"
+import { darijaName } from "@/lib/darijaNames"
 
 // Résout une vraie photo : si la photo est absente ou un placeholder (placehold.co,
 // via.placeholder, data:svg…), on retombe sur la vraie photo Unsplash mappée par nom/famille.
@@ -151,7 +152,7 @@ function byOrdre(a: Record<string, unknown>, b: Record<string, unknown>) {
 function normalize(a: Record<string, unknown>): Record<string, unknown> {
   return {
     ...a,
-    nomAr:           a.nomAr ?? a.nom_ar ?? "",
+    nomAr:           darijaName(String(a.nom ?? "")) ?? a.nomAr ?? a.nom_ar ?? "",
     prix:            a.prix_public ?? a.marketplace_prix_public ?? a.prix ?? 0,
     prixVente:       a.prix_public ?? a.prix ?? 0,
     stockDisponible: Number(a.stockDisponible ?? a.stock_disponible ?? a.qte ?? 0),
@@ -216,7 +217,7 @@ function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
     ...a,
     // Champs snake_case attendus par mapERPArticle côté website
     nom:              a.nom ?? "",
-    nom_ar:           a.nomAr ?? a.nom_ar ?? "",
+    nom_ar:           darijaName(String(a.nom ?? "")) ?? a.nomAr ?? a.nom_ar ?? "",
     unite:            a.unite ?? "kg",
     photo:            resolvePhoto(a.photo ?? (Array.isArray(a.photos) ? (a.photos as string[])[0] : ""), a.nom ?? "", a.famille ?? ""),
     famille:          a.famille ?? "",
