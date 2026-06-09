@@ -18,19 +18,11 @@ interface SiteEntry {
 const DEFAULT_SITES: SiteEntry[] = [
   {
     id: "vita_fresh", name: "Vita Fresh", nameAr: "فيتا فريش",
-    url: "https://vitafresh.vercel.app/",
+    url: "https://shop.vita-core.org/",
     description: "Site vitrine et catalogue en ligne — présentez vos produits à vos clients",
     descriptionAr: "موقع العرض والكتالوج الإلكتروني",
     color: "bg-emerald-600", bgCard: "from-emerald-50 to-green-50",
     border: "border-emerald-200", badgeColor: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  },
-  {
-    id: "neo_space", name: "Neo Space", nameAr: "نيو سبيس",
-    url: "https://www.neo.space/fr",
-    description: "Plateforme Neo Space — gestion intelligente et outils de collaboration",
-    descriptionAr: "منصة نيو سبيس — الإدارة الذكية",
-    color: "bg-violet-600", bgCard: "from-violet-50 to-purple-50",
-    border: "border-violet-200", badgeColor: "bg-violet-100 text-violet-800 border-violet-300",
   },
 ]
 

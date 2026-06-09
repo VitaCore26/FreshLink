@@ -85,7 +85,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Vita Fresh ERP" />
         {/* No-flash dark mode init — runs before hydration */}
-        <script dangerouslySetInnerHTML={{ __html: "(function(){try{var m=localStorage.getItem('vita-theme');var d=m==='dark'||(m==='system'||!m)&&matchMedia('(prefers-color-scheme: dark)').matches;if(d){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark'}}catch(_){}})()" }} />
+        <script dangerouslySetInnerHTML={{ __html: "(function(){try{var m=localStorage.getItem('vita-theme');var h=new Date().getHours();var night=h>=19||h<7;var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)||((m==='auto'||!m)&&night);if(d){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark'}}catch(_){}})()" }} />
 
         {/* iOS home-screen icon */}
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

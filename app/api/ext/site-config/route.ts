@@ -42,6 +42,17 @@ const DEFAULT_CONFIG = {
     fb: "",
     ig: "",
   },
+  // Réseaux sociaux — affichés sur le site client ET l'ERP (vide = masqué).
+  // Inclut les réseaux tendance 2026.
+  socials: {
+    instagram: "",
+    tiktok: "",
+    facebook: "",
+    youtube: "",
+    linkedin: "",
+    whatsapp: "",   // numéro ou lien wa.me
+    x: "",          // ex-Twitter
+  },
   maintenance: { active: false, msg: "Site en maintenance — de retour très bientôt 🌿" },
 }
 
@@ -65,6 +76,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         contact: { ...DEFAULT_CONFIG.contact, ...(payload.contact ?? {}) },
+        socials: { ...DEFAULT_CONFIG.socials, ...(payload.socials ?? {}) },
         maintenance: { ...DEFAULT_CONFIG.maintenance, ...(payload.maintenance ?? {}) },
         updatedAt: payload.updatedAt ?? null,
       },
@@ -85,7 +97,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: cors(origin) })
   }
 
-  let body: { contact?: Record<string, unknown>; maintenance?: Record<string, unknown> }
+  let body: { contact?: Record<string, unknown>; socials?: Record<string, unknown>; maintenance?: Record<string, unknown> }
   try { body = await req.json() } catch { return NextResponse.json({ error: "invalid JSON" }, { status: 400, headers: cors(origin) }) }
 
   const prev = (await readRow()) ?? {}
@@ -93,6 +105,7 @@ export async function POST(req: NextRequest) {
   const payload = {
     ...prev,
     contact: { ...DEFAULT_CONFIG.contact, ...(prev as any).contact, ...(body.contact ?? {}) },
+    socials: { ...DEFAULT_CONFIG.socials, ...(prev as any).socials, ...(body.socials ?? {}) },
     maintenance: { ...DEFAULT_CONFIG.maintenance, ...(prev as any).maintenance, ...(body.maintenance ?? {}) },
     updatedAt: now,
   }
