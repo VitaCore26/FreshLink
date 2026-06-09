@@ -158,6 +158,7 @@ function normalize(a: Record<string, unknown>): Record<string, unknown> {
     marketplaceActif: a.marketplace_actif ?? true,
     unite:           a.unite ?? "kg",
     conditionnement: a.conditionnement ?? a.pack_info ?? null,
+    photo:           resolvePhoto(a.photo as string | undefined, String(a.nom ?? ""), String(a.famille ?? "")),
   }
 }
 
