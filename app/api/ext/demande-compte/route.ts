@@ -292,6 +292,7 @@ export async function POST(req: NextRequest) {
     if (userOk) {
       return NextResponse.json({
         statut:       autoApproved ? "actif" : "en_attente",
+        clientId,
         autoApproved,
         password,
         message:      autoApproved
