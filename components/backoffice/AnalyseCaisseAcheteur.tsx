@@ -46,10 +46,25 @@ const STATUT_CFG: Record<Statut, { label: string; cls: string }> = {
   transmis_rh:        { label: "Transmis RH",          cls: "bg-green-100 text-green-800 border-green-200" },
 }
 
+// Entrée de caisse créée manuellement en BO (flux d'argent direct)
+interface ManualEntry {
+  id: string
+  acheteurNom: string
+  date: string
+  fondPris: number
+  depenses: number      // (quantité × prix achat) saisi directement
+  charges: number
+  montantRendu: number
+}
+const LS_MANUAL = "vf_caisse_manual_v1"
+
 export default function AnalyseCaisseAcheteur() {
   const [dateFrom, setDateFrom] = useState(monthAgoISO())
   const [dateTo, setDateTo] = useState(todayISO())
   const [saisies, setSaisies] = useState<SaisieMap>({})
+  const [manual, setManual] = useState<ManualEntry[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ acheteurNom: "", date: todayISO(), fondPris: "", depenses: "", charges: "", montantRendu: "" })
   const me: User | null = (() => { try { return store.getSession() } catch { return null } })()
   const myName = me?.name ?? "—"
   const myRole = String(me?.role ?? "")
@@ -59,11 +74,31 @@ export default function AnalyseCaisseAcheteur() {
 
   useEffect(() => {
     try { setSaisies(JSON.parse(localStorage.getItem(LS_KEY) || "{}")) } catch { /* noop */ }
+    try { setManual(JSON.parse(localStorage.getItem(LS_MANUAL) || "[]")) } catch { /* noop */ }
   }, [])
 
   const persist = (next: SaisieMap) => {
     setSaisies(next)
     try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch { /* noop */ }
+  }
+  const persistManual = (next: ManualEntry[]) => {
+    setManual(next)
+    try { localStorage.setItem(LS_MANUAL, JSON.stringify(next)) } catch { /* noop */ }
+  }
+  const addManual = () => {
+    if (!form.acheteurNom.trim()) return
+    const e: ManualEntry = {
+      id: `CME-${Date.now()}`,
+      acheteurNom: form.acheteurNom.trim(),
+      date: form.date || todayISO(),
+      fondPris: parseFloat(form.fondPris) || 0,
+      depenses: parseFloat(form.depenses) || 0,
+      charges: parseFloat(form.charges) || 0,
+      montantRendu: parseFloat(form.montantRendu) || 0,
+    }
+    persistManual([e, ...manual])
+    setForm({ acheteurNom: "", date: todayISO(), fondPris: "", depenses: "", charges: "", montantRendu: "" })
+    setShowForm(false)
   }
 
   const rows = useMemo(() => {
@@ -90,7 +125,7 @@ export default function AnalyseCaisseAcheteur() {
 
     const noms = Array.from(new Set([...Object.keys(acheteurAchat), ...Object.keys(acheteurReception)])).filter(Boolean)
 
-    return noms.map(nom => {
+    const base = noms.map(nom => {
       const key = `${nom}|${dateFrom}|${dateTo}`
       const s = saisies[key] || {}
       // Quantité × prix : priorité réception si elle existe, sinon achat mobile
@@ -102,9 +137,22 @@ export default function AnalyseCaisseAcheteur() {
       const montantRendu = s.montantRendu != null ? s.montantRendu : Math.max(0, fondPris - depenses - charges)
       const ecart = fondPris - depenses - charges - montantRendu
       const statut: Statut = s.statut ?? "brouillon"
-      return { nom, key, depenses, sourceQte, fondPris, charges, montantRendu, ecart, statut, s }
-    }).sort((a, b) => Math.abs(b.ecart) - Math.abs(a.ecart))
-  }, [dateFrom, dateTo, saisies])
+      return { nom, key, depenses, sourceQte, fondPris, charges, montantRendu, ecart, statut, s, manualId: undefined as string | undefined }
+    })
+
+    // Entrées manuelles (flux créés en BO) sur la période
+    const manualRows = manual
+      .filter(m => m.date >= dateFrom && m.date <= dateTo)
+      .map(m => {
+        const key = `MANUAL|${m.id}`
+        const s = saisies[key] || {}
+        const statut: Statut = s.statut ?? "brouillon"
+        const ecart = m.fondPris - m.depenses - m.charges - m.montantRendu
+        return { nom: m.acheteurNom, key, depenses: m.depenses, sourceQte: "Saisie manuelle", fondPris: m.fondPris, charges: m.charges, montantRendu: m.montantRendu, ecart, statut, s, manualId: m.id }
+      })
+
+    return [...base, ...manualRows].sort((a, b) => Math.abs(b.ecart) - Math.abs(a.ecart))
+  }, [dateFrom, dateTo, saisies, manual])
 
   const totals = useMemo(() => rows.reduce((acc, r) => ({
     fondPris: acc.fondPris + r.fondPris,
@@ -153,6 +201,59 @@ export default function AnalyseCaisseAcheteur() {
         {isFinance && " · peut valider (Finance)"}{isAcheteur && " · peut approuver (Acheteur)"}{isRH && " · accès RH"}
       </p>
 
+      {/* Créer un flux de caisse (manuel) */}
+      <div className="mb-5">
+        <button onClick={() => setShowForm(v => !v)}
+          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90">
+          {showForm ? "✕ Fermer" : "➕ Créer un flux de caisse"}
+        </button>
+        {showForm && (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <p className="text-xs text-slate-500 mb-3">Saisie directe d'un flux d'argent acheteur (hors bons d'achat/réceptions).</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Acheteur *</label>
+                <input value={form.acheteurNom} onChange={e => setForm({ ...form, acheteurNom: e.target.value })}
+                  placeholder="Nom acheteur" className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Date</label>
+                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Fond pris</label>
+                <input type="number" step="0.01" value={form.fondPris} onChange={e => setForm({ ...form, fondPris: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Qté × Prix</label>
+                <input type="number" step="0.01" value={form.depenses} onChange={e => setForm({ ...form, depenses: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Charges</label>
+                <input type="number" step="0.01" value={form.charges} onChange={e => setForm({ ...form, charges: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Montant rendu</label>
+                <input type="number" step="0.01" value={form.montantRendu} onChange={e => setForm({ ...form, montantRendu: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button onClick={addManual} className="px-4 py-2 rounded-xl bg-green-600 text-white font-semibold text-sm hover:bg-green-700">
+                ✓ Enregistrer le flux
+              </button>
+              <span className="text-xs text-slate-400">
+                Écart prévu : {money((parseFloat(form.fondPris) || 0) - (parseFloat(form.depenses) || 0) - (parseFloat(form.charges) || 0) - (parseFloat(form.montantRendu) || 0))}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <Kpi label="Fond total" value={money(totals.fondPris)} icon="🏦" />
@@ -188,6 +289,10 @@ export default function AnalyseCaisseAcheteur() {
                   <td className="px-3 py-3">
                     <p className="font-semibold text-slate-900">{r.nom}</p>
                     <p className="text-[11px] text-slate-400">source : {r.sourceQte}</p>
+                    {r.manualId && (
+                      <button onClick={() => persistManual(manual.filter(m => m.id !== r.manualId))}
+                        className="mt-1 text-[10px] text-red-600 hover:underline">✕ Supprimer</button>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right">
                     <input type="number" step="0.01" value={r.fondPris} disabled={!isFinance || r.statut === "transmis_rh"}
