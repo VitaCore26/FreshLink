@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { CATALOGUE_SEED } from "@/lib/catalogueSeed"
 import { ERP_DEFAULT_ARTICLES } from "@/lib/defaultArticles"
+import { getArticlePhoto } from "@/lib/articlePhotos"
+
+// Résout une vraie photo : si la photo est absente ou un placeholder (placehold.co,
+// via.placeholder, data:svg…), on retombe sur la vraie photo Unsplash mappée par nom/famille.
+function resolvePhoto(photo: string | undefined, nom: string, famille: string): string {
+  const p = (photo ?? "").trim()
+  const isPlaceholder = !p || /placehold|placeholder|dummyimage|data:image\/svg/i.test(p)
+  return isPlaceholder ? getArticlePhoto(nom, famille) : p
+}
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 function cors(origin: string | null): HeadersInit {
@@ -208,7 +217,7 @@ function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
     nom:              a.nom ?? "",
     nom_ar:           a.nomAr ?? a.nom_ar ?? "",
     unite:            a.unite ?? "kg",
-    photo:            a.photo ?? (Array.isArray(a.photos) ? (a.photos as string[])[0] : "") ?? "",
+    photo:            resolvePhoto(a.photo ?? (Array.isArray(a.photos) ? (a.photos as string[])[0] : ""), a.nom ?? "", a.famille ?? ""),
     famille:          a.famille ?? "",
     description:      a.marketplaceDescription ?? a.marketplaceCommentaire ?? a.famille ?? "Maroc",
     prix_public:      prixBase,

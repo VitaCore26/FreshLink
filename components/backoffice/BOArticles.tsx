@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { store, type Article, type HistoriquePrixAchat, FAMILLES_ARTICLES, FAMILLE_GROUPES } from "@/lib/store"
 import { createClient, uploadToStorage, getStorageUrl } from "@/lib/supabase/client"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
+import { getArticlePhoto } from "@/lib/articlePhotos"
 
 const DH = (n: number) => `${n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
 
@@ -145,14 +146,12 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
           cleanId = "VFP" + String(counter).padStart(5, "0")
         }
         counter++
-        // 2. Photo : placeholder si manquante (utilise le nom + famille)
+        // 2. Photo : vraie photo Unsplash mappée par nom + famille si manquante
         const nom = String(payload.nom ?? "Article")
         const famille = String(payload.famille ?? "")
-        if (!payload.photo || String(payload.photo).trim() === "") {
-          const color = famille.toLowerCase().includes("fruit") ? "e74c3c" :
-                        famille.toLowerCase().includes("légume") ? "27ae60" :
-                        famille.toLowerCase().includes("herbe") ? "16a34a" : "94a3b8"
-          payload.photo = `https://placehold.co/400x300/${color}/fff?text=${encodeURIComponent(nom)}`
+        const photoStr = String(payload.photo ?? "").trim()
+        if (!photoStr || /placehold|placeholder|dummyimage/i.test(photoStr)) {
+          payload.photo = getArticlePhoto(nom, famille)
         }
         // 3. marketplaceActif = catalogueVisible !== false
         const catalogueVisible = payload.catalogueVisible !== false

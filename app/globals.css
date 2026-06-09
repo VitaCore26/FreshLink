@@ -185,3 +185,78 @@ html {
   .invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; }
   .print\:hidden { display: none !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   DARK MODE LEGIBILITY SHIM (Phase 9)
+   L'ERP a été codé en clair (66 fichiers en bg-white / text-slate, 0 variante dark:).
+   Plutôt que d'éditer chaque fichier, on remappe ici les classes Tailwind figées
+   pour qu'elles s'adaptent en mode sombre. Le print n'est pas affecté (au-dessus).
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.dark .bg-white            { background-color: #1e1e1e !important; }
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-neutral-50,
+.dark .bg-neutral-100      { background-color: #262626 !important; }
+.dark .bg-slate-200,
+.dark .bg-gray-200         { background-color: #2f2f2f !important; }
+
+/* Textes sombres → clairs */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-neutral-900,
+.dark .text-neutral-800,
+.dark .text-black          { color: #ededed !important; }
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-neutral-500    { color: #b4b4b4 !important; }
+.dark .text-slate-400,
+.dark .text-gray-400       { color: #8a8a8a !important; }
+
+/* Bordures */
+.dark .border-slate-200,
+.dark .border-slate-100,
+.dark .border-gray-200,
+.dark .border-gray-100,
+.dark .border-neutral-200  { border-color: #333 !important; }
+
+/* Surfaces translucides claires → sombres */
+.dark .bg-white\/80,
+.dark .bg-white\/90,
+.dark .bg-white\/95        { background-color: rgba(30,30,30,.92) !important; }
+
+/* Badges/pills pastel : on garde la teinte mais on assombrit le fond et on éclaircit le texte */
+.dark .bg-green-50,  .dark .bg-emerald-50  { background-color: rgba(34,197,94,.15)  !important; }
+.dark .bg-blue-50,   .dark .bg-sky-50      { background-color: rgba(59,130,246,.15) !important; }
+.dark .bg-amber-50,  .dark .bg-yellow-50   { background-color: rgba(245,158,11,.15) !important; }
+.dark .bg-red-50,    .dark .bg-rose-50     { background-color: rgba(239,68,68,.15)  !important; }
+.dark .bg-orange-50                        { background-color: rgba(249,115,22,.15) !important; }
+.dark .bg-purple-50, .dark .bg-violet-50   { background-color: rgba(139,92,246,.15) !important; }
+.dark .text-green-800,  .dark .text-emerald-800 { color: #86efac !important; }
+.dark .text-blue-800,   .dark .text-sky-800     { color: #93c5fd !important; }
+.dark .text-amber-800,  .dark .text-yellow-800  { color: #fcd34d !important; }
+.dark .text-red-800,    .dark .text-rose-800    { color: #fca5a5 !important; }
+.dark .text-orange-800                          { color: #fdba74 !important; }
+.dark .text-purple-800, .dark .text-violet-800  { color: #c4b5fd !important; }
+
+/* Inputs / selects figés en blanc */
+.dark input:not([type=checkbox]):not([type=radio]),
+.dark textarea,
+.dark select {
+  background-color: #1e1e1e !important;
+  color: #ededed !important;
+  border-color: #3a3a3a !important;
+}
+.dark input::placeholder, .dark textarea::placeholder { color: #777 !important; }
+
+/* Ombres trop visibles sur fond sombre */
+.dark .shadow-sm, .dark .shadow, .dark .shadow-md, .dark .shadow-lg {
+  --tw-shadow-color: rgba(0,0,0,.6);
+}
