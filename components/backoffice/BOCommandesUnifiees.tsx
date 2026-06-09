@@ -118,9 +118,9 @@ function canAccess(u: User): boolean {
   return ["super_super_admin","super_admin","admin","resp_commercial","resp_logistique","livreur","prevendeur"].includes(u.role)
 }
 
-/** Peut supprimer ou modifier une commande */
+/** Peut supprimer ou modifier une commande (admin + responsable commercial) */
 function canDeleteModify(u: User): boolean {
-  return ["super_super_admin","super_admin","admin"].includes(u.role)
+  return ["super_super_admin","super_admin","admin","resp_commercial"].includes(u.role)
 }
 
 function fmt(iso: string) {
