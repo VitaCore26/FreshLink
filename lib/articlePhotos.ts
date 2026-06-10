@@ -165,6 +165,13 @@ export const ARTICLE_PHOTOS: Record<string, string> = {
   "fenouil":           U("photo-1633380110125-f6e685676160"),
   "taro":              U("photo-1518977956812-cd3dbadaaf31"),
   "zaatar":            U("photo-1465014925804-7b9ede58d0d7"),
+  "coing":             U("photo-1568569350062-ebfa3cb195df"),
+  "coco":              U("photo-1580984969071-a8da5656c2fb"),
+  "noix de coco":      U("photo-1580984969071-a8da5656c2fb"),
+  "poireau":           U("photo-1635774855536-9728f2610245"),
+  "echalote":          U("photo-1508747703725-719777637510"),
+  "curcuma":           U("photo-1615485925600-97237c4fc1ec"),
+  "marjolaine":        U("photo-1515586000433-45406d8e6662"),
 }
 
 /**

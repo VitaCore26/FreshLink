@@ -822,8 +822,8 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
 
 
         {/* ── Content ────────────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto bg-slate-50">
-          <div className="p-4 lg:p-6 min-h-full">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50">
+          <div className="p-4 lg:p-6 min-h-full max-w-full">
             <PanelErrorBoundary key={activeTab} label={allItems.find(i => i.id === activeTab)?.label ?? activeTab}>
               {PANELS[activeTab]?.(user) ?? (
                 <div className="flex items-center justify-center h-64 text-slate-400 text-sm">

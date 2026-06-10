@@ -109,6 +109,14 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ── Anti-débordement horizontal (corrige le besoin de zoomer à 90 %) ──────────
+   Aucun élément ne doit pousser la page au-delà de la fenêtre. Les contenus
+   larges (tableaux denses) scrollent dans leur propre conteneur. */
+html, body { max-width: 100%; overflow-x: hidden; }
+table { max-width: 100%; }
+.overflow-x-auto, .table-scroll { -webkit-overflow-scrolling: touch; }
+img, video, iframe, canvas { max-width: 100%; }
+
 /* Safe area padding utilities for iPhone notch / Dynamic Island */
 .pb-safe  { padding-bottom: env(safe-area-inset-bottom); }
 .pt-safe  { padding-top:    env(safe-area-inset-top); }

@@ -99,6 +99,28 @@ const DARIJA: Record<string, string> = {
   "aneth":             "شبت",
   "ciboulette":        "بصيلة",
   "cumin":             "كمون",
+  // ── Ajouts (nouveaux produits) ─────────────────────────────────────────
+  "papaye":            "بابايا",
+  "coco":              "جوز الهند",
+  "noix de coco":      "جوز الهند",
+  "litchi":            "ليتشي",
+  "mure":              "توت",
+  "cassis":            "كاسيس",
+  "fruit de la passion":"ماراكوجا",
+  "pamplemousse":      "بانبلموس",
+  "brocoli":           "بروكلي",
+  "poireau":           "بورو",
+  "echalote":          "بصلة صغيرة",
+  "gingembre":         "سكنجبير",
+  "curcuma":           "خرقوم",
+  "pleurote":          "فقع",
+  "marjolaine":        "مردقوش",
+  "estragon":          "طرخون",
+  "roquette":          "روكا",
+  "cresson":           "قرة",
+  "blette":            "سلق",
+  "endive":            "أنديف",
+  "poireau vert":      "بورو",
 }
 
 export function darijaName(nom: string): string | null {
