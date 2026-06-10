@@ -109,13 +109,24 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ── Anti-débordement horizontal (corrige le besoin de zoomer à 90 %) ──────────
-   Aucun élément ne doit pousser la page au-delà de la fenêtre. Les contenus
-   larges (tableaux denses) scrollent dans leur propre conteneur. */
+/* ── Anti-débordement horizontal ──────────────────────────────────────────────
+   Aucun élément ne doit pousser la page au-delà de la fenêtre. */
 html, body { max-width: 100%; overflow-x: hidden; }
 table { max-width: 100%; }
 .overflow-x-auto, .table-scroll { -webkit-overflow-scrolling: touch; }
 img, video, iframe, canvas { max-width: 100%; }
+
+/* ── Densité back-office (corrige le besoin de zoomer à 90 %) ──────────────────
+   Sur écran ≥1024px, on réduit la base rem → TOUT le contenu Tailwind
+   (texte, espacements, tableaux) se met à l'échelle ~90%. Résultat : les
+   écrans denses tiennent et sont visibles SANS zoom ni défilement horizontal.
+   Le mobile (<1024px) garde 16px pour rester lisible. */
+@media (min-width: 1024px) {
+  html { font-size: 14.5px; }
+}
+@media (min-width: 1600px) {
+  html { font-size: 15.5px; }  /* très grand écran : un peu plus confortable */
+}
 
 /* Safe area padding utilities for iPhone notch / Dynamic Island */
 .pb-safe  { padding-bottom: env(safe-area-inset-bottom); }
