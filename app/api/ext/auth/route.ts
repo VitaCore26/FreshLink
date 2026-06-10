@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs"
 
 // ══════════════════════════════════════════════════════════════
 // POST /api/ext/auth — Authentification par numéro de téléphone
-// Utilisé par vitafresh.vercel.app
+// Utilisé par shop.vita-core.org
 // Accepte: { phone, password }  OU  { email, password } (fallback)
 //
 // IMPORTANT: fl_users et fl_clients sont stockés en {id, payload} dans Supabase.
@@ -326,7 +326,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Séparation website / application professionnelle ──────────────────────
-    // Particuliers → website vitafresh.vercel.app
+    // Particuliers → website shop.vita-core.org
     // CHR / Marchands → application FreshLink Pro (f-l.vercel.app)
     if (isWebsite && user.role === "client") {
       const st = String(user.sousType ?? user.sous_type ?? user.categorie ?? "")

@@ -157,8 +157,11 @@ export async function POST(req: NextRequest) {
   // ── Règles d'auto-approbation (configurables dans le BO « Demandes Comptes ») ──
   //    Config = ligne __autoapprove de fl_account_requests, payload :
   //    { enabled, autoTypes:[], phonePrefixes:[], gpsZones:[{lat,lng,radiusKm}] }
-  //    Désactivée/absente → tous auto-approuvés (comportement par défaut, non bloquant).
-  let autoApproved = true
+  //    DÉFAUT (config absente) : seuls les PARTICULIERS sont auto-approuvés.
+  //    Les pros (CHR/marchand) et fournisseurs nécessitent une validation manuelle.
+  //    La config peut élargir l'auto-approbation (autoTypes/prefixes/zones).
+  const PARTICULIER_TYPES = ["particulier", "client"]
+  let autoApproved = PARTICULIER_TYPES.includes(String(sousType).toLowerCase()) && !isFournisseur
   try {
     const cfgRes = await fetch(`${SB_URL}/rest/v1/fl_account_requests?id=eq.__autoapprove&select=payload`,
       { headers: { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}` }, cache: "no-store" })
