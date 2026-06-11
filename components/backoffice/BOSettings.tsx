@@ -712,7 +712,6 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     { id: "process" as const,     label: "Process",                   labelAr: "اختيار العملية" },
     { id: "workflow" as const,    label: "Validation commandes",      labelAr: "الموافقة على الطلبيات" },
     { id: "emails" as const,      label: "Emails & Notifications",    labelAr: "البريد الإلكتروني" },
-    { id: "emailjs" as const,     label: "EmailJS (SMTP)",            labelAr: "إعداد البريد" },
     { id: "motifs" as const,      label: "Motifs retour",             labelAr: "أسباب الإرجاع" },
     { id: "contenants" as const,  label: "Poids contenants",          labelAr: "أوزان الحاويات" },
     { id: "dataguard" as const,   label: "DataGuard",                 labelAr: "حماية البيانات" },
