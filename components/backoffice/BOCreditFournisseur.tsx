@@ -27,7 +27,17 @@ function genId() { return Math.random().toString(36).slice(2, 10) }
 function loadCredits(): CreditLigne[] {
   try { return JSON.parse(localStorage.getItem("fl_credits_fournisseurs") ?? "[]") } catch { return [] }
 }
-function saveCredits(c: CreditLigne[]) { localStorage.setItem("fl_credits_fournisseurs", JSON.stringify(c)) }
+function saveCredits(c: CreditLigne[]) {
+  localStorage.setItem("fl_credits_fournisseurs", JSON.stringify(c))
+  // Sync Supabase (service-role) — alimente le rapport crédit quotidien
+  try {
+    const now = new Date().toISOString()
+    fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_credits_fournisseurs", upserts: c.map(l => ({ id: l.id, payload: l, updated_at: now })) }),
+    }).catch(() => {})
+  } catch { /* offline */ }
+}
 
 function Icon({ d }: { d: string }) {
   return (
@@ -67,6 +77,20 @@ export default function BOCreditFournisseur({ user }: { user: User }) {
     const frs = store.getFournisseurs()
     setFournisseurs(frs.map(f => ({ id: f.id, nom: f.nom })))
     setUsers(store.getUsers().map(u => ({ id: u.id, name: u.name })))
+    // Merge des crédits Supabase (saisis sur d'autres appareils)
+    fetch("/api/sync-read?table=fl_credits_fournisseurs", { cache: "no-store" })
+      .then(r => r.json())
+      .then((j: { data?: { id: string; payload?: Partial<CreditLigne> }[] }) => {
+        const remote = (j?.data ?? []).map(r => ({ ...(r.payload ?? {}), id: r.id } as CreditLigne))
+        if (!remote.length) return
+        setCredits(prev => {
+          const ids = new Set(prev.map(p => p.id))
+          const merged = [...prev, ...remote.filter(r => !ids.has(r.id))]
+          localStorage.setItem("fl_credits_fournisseurs", JSON.stringify(merged))
+          return merged
+        })
+      })
+      .catch(() => {})
   }, [])
 
   const blank = (): Omit<CreditLigne, "id"> => ({

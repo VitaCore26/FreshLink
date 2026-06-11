@@ -83,6 +83,7 @@ const FeedbackPanel          = dynamic(() => import("./FeedbackPanel"),         
 const TripChargesPanel       = dynamic(() => import("./TripChargesPanel"),       { ssr: false, loading: L("Chargement charges...") })
 const AnalyseAchatPanel      = dynamic(() => import("./AnalyseAchatPanel"),      { ssr: false, loading: L("Chargement analyse achat...") })
 const AnalyseCaisseAcheteur  = dynamic(() => import("./AnalyseCaisseAcheteur"),  { ssr: false, loading: L("Chargement caisse acheteur...") })
+const BOAnalyseCredit        = dynamic(() => import("./BOAnalyseCredit"),        { ssr: false, loading: L("Chargement analyse crédit...") })
 const AnalyseReceptionPanel  = dynamic(() => import("./AnalyseReceptionPanel"),  { ssr: false, loading: L("Chargement analyse reception...") })
 const ShelfLifePanel         = dynamic(() => import("./ShelfLifePanel"),         { ssr: false, loading: L("Chargement shelf life...") })
 const ForecastPanel          = dynamic(() => import("./ForecastPanel"),          { ssr: false, loading: L("Chargement forecast...") })
@@ -135,7 +136,7 @@ export type Tab =
   | "comptes_externes"
   | "prospection" | "credit_fournisseur" | "agents_ia"
   | "gps_tracker"
-  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur"
+  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit"
   | "caisses_vides" | "shelf_life" | "forecast" | "ashel_market"
   | "camera_perms" | "cutoffs" | "deploy_guide"
   | "azmi_agent" | "hicham_agent" | "ourai_agent"
@@ -321,6 +322,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "finance",               label: "Finance & Caisse",       labelAr: "المالية والصندوق",  permKey: "canViewFinance",                    icon: <Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 11v-1m0-8h.01M20 12a8 8 0 11-16 0 8 8 0 0116 0z" /> },
       { id: "caisse_acheteur",       label: "Caisse Acheteur",        labelAr: "صندوق المشتري",     permKey: "canViewFinance",                    icon: <Icon d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /> },
+      { id: "analyse_credit",        label: "Analyse Crédit",         labelAr: "تحليل الائتمان",    permKey: "canViewFinance",                    icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "finance_cdg",           label: "Controle de Gestion",    labelAr: "مراقبة التسيير",    permKey: "canViewFinance" as keyof User,      icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "performance_incentives", label: "Primes & Actionnaires", labelAr: "العلاوات والمساهمون",permKey: "canViewFinance" as keyof User,      icon: <Icon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /> },
       { id: "investissement",         label: "Dashboard Investisseur", labelAr: "ملف المستثمر",      permKey: "canViewInvestisseur" as keyof User, icon: <Icon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /> },
@@ -419,6 +421,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   caisses_vides:     (_u) => <CaissesVidesPanel />,
   analyse_achat:       (_u) => <AnalyseAchatPanel />,
   caisse_acheteur:     (_u) => <AnalyseCaisseAcheteur />,
+  analyse_credit:      (_u) => <BOAnalyseCredit />,
   analyse_reception:   (_u) => <AnalyseReceptionPanel />,
   shelf_life:          (_u) => <ShelfLifePanel />,
   forecast:            (_u) => <ForecastPanel />,
