@@ -154,6 +154,46 @@ export default function AnalyseCaisseAcheteur() {
     return [...base, ...manualRows].sort((a, b) => Math.abs(b.ecart) - Math.abs(a.ecart))
   }, [dateFrom, dateTo, saisies, manual])
 
+  // Liste des acheteurs (rôle acheteur) + leurs totaux VALIDÉS sur la période
+  // (Qté×Prix depuis bons d'achat, charges depuis fl_charges si dispo).
+  const buyers = useMemo(() => {
+    try {
+      return store.getUsers()
+        .filter(u => u.role === "acheteur" || (u.roles || []).includes("acheteur"))
+        .map(u => u.name)
+    } catch { return [] }
+  }, [])
+  const buyerTotals = useMemo(() => {
+    const map: Record<string, { depenses: number; charges: number }> = {}
+    const bons = store.getBonsAchat().filter(b => b.date >= dateFrom && b.date <= dateTo)
+    bons.forEach(b => {
+      const tot = (b.lignes || []).reduce((s, l) => s + (l.quantite || 0) * (l.prixAchat || 0), 0)
+      const k = b.acheteurNom || "—"
+      if (!map[k]) map[k] = { depenses: 0, charges: 0 }
+      map[k].depenses += tot
+    })
+    // Charges terrain depuis fl_charges (si la table existe dans le store)
+    try {
+      const charges = (store as unknown as { getCharges?: () => { acheteurNom?: string; date?: string; montant?: number }[] }).getCharges?.() ?? []
+      charges.filter(c => (c.date ?? "") >= dateFrom && (c.date ?? "") <= dateTo).forEach(c => {
+        const k = c.acheteurNom || "—"
+        if (!map[k]) map[k] = { depenses: 0, charges: 0 }
+        map[k].charges += Number(c.montant || 0)
+      })
+    } catch { /* pas de charges */ }
+    return map
+  }, [dateFrom, dateTo])
+  // Sélection d'un acheteur → auto-remplit Qté×Prix et charges depuis ses achats validés
+  const onSelectBuyer = (nom: string) => {
+    const t = buyerTotals[nom]
+    setForm(f => ({
+      ...f,
+      acheteurNom: nom,
+      depenses: t ? String(t.depenses) : f.depenses,
+      charges:  t && t.charges ? String(t.charges) : f.charges,
+    }))
+  }
+
   const totals = useMemo(() => rows.reduce((acc, r) => ({
     fondPris: acc.fondPris + r.fondPris,
     depenses: acc.depenses + r.depenses,
@@ -213,8 +253,12 @@ export default function AnalyseCaisseAcheteur() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 mb-1">Acheteur *</label>
-                <input value={form.acheteurNom} onChange={e => setForm({ ...form, acheteurNom: e.target.value })}
-                  placeholder="Nom acheteur" className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
+                <select value={form.acheteurNom} onChange={e => onSelectBuyer(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm bg-white">
+                  <option value="">— Choisir —</option>
+                  {buyers.map(b => <option key={b} value={b}>{b}</option>)}
+                  {form.acheteurNom && !buyers.includes(form.acheteurNom) && <option value={form.acheteurNom}>{form.acheteurNom}</option>}
+                </select>
               </div>
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 mb-1">Date</label>
@@ -227,14 +271,16 @@ export default function AnalyseCaisseAcheteur() {
                   className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Qté × Prix</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Qté × Prix <span className="text-emerald-600">(auto)</span></label>
                 <input type="number" step="0.01" value={form.depenses} onChange={e => setForm({ ...form, depenses: e.target.value })}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+                  title="Calculé depuis les achats validés de l'acheteur — modifiable"
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right bg-emerald-50/40" />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Charges</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Charges <span className="text-emerald-600">(auto)</span></label>
                 <input type="number" step="0.01" value={form.charges} onChange={e => setForm({ ...form, charges: e.target.value })}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right" />
+                  title="Calculé depuis les charges terrain de l'acheteur — modifiable"
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-right bg-emerald-50/40" />
               </div>
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 mb-1">Montant rendu</label>

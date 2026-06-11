@@ -326,24 +326,15 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Séparation website / application professionnelle ──────────────────────
-    // Particuliers → website shop.vita-core.org
-    // CHR / Marchands → application FreshLink Pro (f-l.vercel.app)
-    if (isWebsite && user.role === "client") {
-      const st = String(user.sousType ?? user.sous_type ?? user.categorie ?? "")
-      if (["chr", "marchand"].includes(st.toLowerCase())) {
-        return NextResponse.json(
-          {
-            error: "Votre compte professionnel (CHR/Marchand) est accessible via l'application FreshLink Pro.",
-            redirect_app: true,
-          },
-          { status: 403, headers: cors(origin) }
-        )
-      }
-    }
-
     // ── Récupérer le profil client si lié ─────────────────────────────────────
     let client: any = null
     if (user.clientId) client = await getClientById(user.clientId)
+
+    // CHR / Marchand : compte PRO → on les connecte sur le shop avec un
+    // espace pro enrichi (commandes, paiements, livraison, historique).
+    // Plus de redirection vers une app externe (fin de la boucle ERP↔shop).
+    const sousType = String(user.sousType ?? user.sous_type ?? client?.categorie ?? "").toLowerCase()
+    const isPro = ["chr", "marchand"].includes(sousType)
 
     const exp   = Date.now() + 86_400_000
     const token = signToken({
@@ -356,6 +347,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       token,
+      isPro,
       user: {
         id:            user.id,
         name:          user.name,
@@ -363,7 +355,7 @@ export async function POST(req: NextRequest) {
         role:          user.role,
         phone:         user.telephone ?? user.phone ?? null,
         clientId:      user.clientId ?? null,
-        categorie:     client?.categorie ?? null,
+        categorie:     client?.categorie ?? sousType ?? null,
         loyaltyPoints: client?.loyaltyPoints ?? 0,
         remisePct:     client?.remisePct ?? 0,
         remiseActive:  client?.remiseActive ?? false,
