@@ -84,6 +84,7 @@ const TripChargesPanel       = dynamic(() => import("./TripChargesPanel"),      
 const AnalyseAchatPanel      = dynamic(() => import("./AnalyseAchatPanel"),      { ssr: false, loading: L("Chargement analyse achat...") })
 const AnalyseCaisseAcheteur  = dynamic(() => import("./AnalyseCaisseAcheteur"),  { ssr: false, loading: L("Chargement caisse acheteur...") })
 const BOAnalyseCredit        = dynamic(() => import("./BOAnalyseCredit"),        { ssr: false, loading: L("Chargement analyse crédit...") })
+const BORolesPermissions     = dynamic(() => import("./BORolesPermissions"),     { ssr: false, loading: L("Chargement rôles...") })
 const AnalyseReceptionPanel  = dynamic(() => import("./AnalyseReceptionPanel"),  { ssr: false, loading: L("Chargement analyse reception...") })
 const ShelfLifePanel         = dynamic(() => import("./ShelfLifePanel"),         { ssr: false, loading: L("Chargement shelf life...") })
 const ForecastPanel          = dynamic(() => import("./ForecastPanel"),          { ssr: false, loading: L("Chargement forecast...") })
@@ -136,7 +137,7 @@ export type Tab =
   | "comptes_externes"
   | "prospection" | "credit_fournisseur" | "agents_ia"
   | "gps_tracker"
-  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit"
+  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit" | "roles_permissions"
   | "caisses_vides" | "shelf_life" | "forecast" | "ashel_market"
   | "camera_perms" | "cutoffs" | "deploy_guide"
   | "azmi_agent" | "hicham_agent" | "ourai_agent"
@@ -193,7 +194,7 @@ const NAV_GROUP_I18N: Record<string, { fr: string; ar: string; en: string }> = {
   "Vue d'ensemble":       { fr: "Vue d'ensemble",        ar: "نظرة عامة",           en: "Overview" },
   "Achats":               { fr: "Achats",                 ar: "المشتريات",           en: "Purchases" },
   "Commercial":           { fr: "Commercial",             ar: "التجاري",             en: "Sales" },
-  "Clients & Web":        { fr: "Clients & Web",          ar: "الزبائن والويب",       en: "Clients & Web" },
+  "Clients & Fournisseurs": { fr: "Clients & Fournisseurs", ar: "الزبائن والموردون",   en: "Clients & Suppliers" },
   "Stock & Catalogue":    { fr: "Stock & Catalogue",      ar: "المخزون والفهرس",     en: "Stock & Catalog" },
   "Logistique":           { fr: "Logistique",             ar: "اللوجستيك",           en: "Logistics" },
   "Finance & Contrôle":   { fr: "Finance & Contrôle",     ar: "المالية والرقابة",    en: "Finance & Control" },
@@ -249,9 +250,8 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "achat",             label: "Bons d'achat",           labelAr: "وصولات الشراء",      permKey: "canViewAchat", icon: <Icon d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /> },
       { id: "po",                label: "Commandes Fournisseurs", labelAr: "أوامر الشراء",       permKey: "canViewAchat", icon: <Icon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
       { id: "reception",         label: "Reception Achat",        labelAr: "الاستلام",           permKey: "canViewAchat", icon: <Icon d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /> },
-      { id: "fournisseurs",      label: "Fournisseurs",           labelAr: "الموردون",           permKey: "canViewAchat", icon: <Icon d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /> },
-      { id: "credit_fournisseur",label: "Credit Fournisseur",     labelAr: "ائتمان الموردين",    permKey: "canViewAchat", icon: <Icon d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /> },
       { id: "sourcing",          label: "Sourcing Marche",        labelAr: "تحديد المصادر",      permKey: "canViewAchat", icon: <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /> },
+      { id: "pa_historique",     label: "PA Historique",          labelAr: "تاريخ سعر الشراء",   permKey: "canViewAchat", icon: <Icon d="M3 3v18h18M7 14l3-3 3 3 5-5" /> },
       { id: "pricing",           label: "Releve de Prix",         labelAr: "رصد الأسعار",        permKey: "canViewAchat", icon: <Icon d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /> },
       { id: "analyse_achat",     label: "Analyse Achat",          labelAr: "تحليل المشتريات",    permKey: "canViewAchat", icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "analyse_reception", label: "Analyse Reception",      labelAr: "تحليل الاستلام",     permKey: "canViewAchat", icon: <Icon d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
@@ -275,17 +275,18 @@ const NAV_GROUPS: NavGroup[] = [
       )},
     ],
   },
-  // ── 4. CLIENTS & WEB ─────────────────────────────────────────────────────
+  // ── 4. CLIENTS & FOURNISSEURS (tiers externes — distinct des employés) ───
   {
-    label: "Clients & Web", labelAr: "الزبائن والويب",
+    label: "Clients & Fournisseurs", labelAr: "الزبائن والموردون",
     items: [
       { id: "comptes_externes",   label: "Gestion Clients",        labelAr: "إدارة الزبائن",     permKey: "canViewExternal",   icon: <Icon d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /> },
+      { id: "fournisseurs",       label: "Fournisseurs",           labelAr: "الموردون",          permKey: "canViewAchat",      icon: <Icon d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /> },
+      { id: "credit_fournisseur", label: "Credit Fournisseur",     labelAr: "ائتمان الموردين",   permKey: "canViewAchat",      icon: <Icon d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /> },
       { id: "demandes_comptes",   label: "Demandes Comptes Web",   labelAr: "طلبات الحسابات",    permKey: "canViewExternal",   icon: <Icon d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /> },
       { id: "loyalty",            label: "Promotions & Fidelite",  labelAr: "العروض والولاء",    permKey: "canViewCommercial" as keyof User, icon: <Icon d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /> },
       { id: "marketplace",        label: "Marketplace & Web",      labelAr: "المتجر الإلكتروني", permKey: "canViewCommercial", icon: <Icon d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /> },
       { id: "moteur_commercial",  label: "Moteur commercial",      labelAr: "محرك تجاري",       permKey: "canViewCommercial", icon: <Icon d="M9 7h6m0 0v6m0-6l-6 6" /> },
       { id: "gifts_v3",           label: "Cadeaux incentives",     labelAr: "هدايا تحفيزية",    permKey: "canViewCommercial", icon: <Icon d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" /> },
-      { id: "pa_historique",      label: "PA Historique",          labelAr: "تاريخ سعر الشراء",  permKey: "canViewAchat",      icon: <Icon d="M3 3v18h18M7 14l3-3 3 3 5-5" /> },
     ],
   },
   // ── 5. STOCK & CATALOGUE ─────────────────────────────────────────────────
@@ -344,7 +345,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Administration", labelAr: "الإدارة والإعدادات",
     items: [
-      { id: "users",             label: "Utilisateurs & Roles",  labelAr: "المستخدمون",        permKey: "canViewDatabase", icon: <Icon d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /> },
+      { id: "users",             label: "Utilisateurs",          labelAr: "المستخدمون",        permKey: "canViewDatabase", icon: <Icon d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /> },
+      { id: "roles_permissions", label: "Roles & Permissions",   labelAr: "الأدوار والصلاحيات", permKey: "canViewDatabase", icon: <Icon d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /> },
       { id: "device_access",     label: "Acces Appareils",       labelAr: "أجهزة الوصول",     permKey: "canViewDatabase", icon: <Icon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /> },
       { id: "permissions_matrix",label: "Permissions & Roles",   labelAr: "الصلاحيات والأدوار",permKey: "canViewDatabase", icon: <Icon d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /> },
       { id: "depots",            label: "Multi-Depots",          labelAr: "المستودعات",        permKey: "canViewDatabase", icon: <Icon d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /> },
@@ -422,6 +424,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   analyse_achat:       (_u) => <AnalyseAchatPanel />,
   caisse_acheteur:     (_u) => <AnalyseCaisseAcheteur />,
   analyse_credit:      (_u) => <BOAnalyseCredit />,
+  roles_permissions:   (_u) => <BORolesPermissions />,
   analyse_reception:   (_u) => <AnalyseReceptionPanel />,
   shelf_life:          (_u) => <ShelfLifePanel />,
   forecast:            (_u) => <ForecastPanel />,
@@ -582,7 +585,7 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
     "Vue d'ensemble":        "text-emerald-600",
     "Achats":                "text-amber-600",
     "Commercial":            "text-lime-600",
-    "Clients & Web":         "text-rose-600",
+    "Clients & Fournisseurs": "text-rose-600",
     "Stock & Catalogue":     "text-orange-600",
     "Logistique":            "text-sky-600",
     "Finance & Contrôle":    "text-violet-600",
