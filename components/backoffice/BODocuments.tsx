@@ -656,19 +656,23 @@ export default function BODocuments({ user }: { user: { id: string; name: string
       try { return JSON.parse(localStorage.getItem("fl_documents_local") ?? "[]") } catch { return [] }
     })()
 
+    const byDate = (a: Document, b: Document) => (b.created_at ?? "").localeCompare(a.created_at ?? "")
     try {
-      const { data, error } = await sb.from("fl_documents").select("*").order("created_at", { ascending: false })
-      if (!error && data) {
-        // Merge : Supabase + local (local en dernier = complément si absent de Supabase)
-        const sbIds = new Set((data as Document[]).map(d => d.id))
+      // Pattern JSONB service-role {id,payload} — fl_documents n'a PAS de
+      // colonnes plates (client_nom…). On lit/écrit via /api/sync-* .
+      const res = await fetch("/api/sync-read?table=fl_documents", { cache: "no-store" })
+      const j = res.ok ? await res.json() as { data?: { id: string; payload?: Document }[] } : null
+      const rows = j?.data ?? []
+      if (rows.length) {
+        const sbDocs = rows.map(r => ({ ...(r.payload as Document), id: r.id }))
+        const sbIds = new Set(sbDocs.map(d => d.id))
         const extra = localDocs.filter(d => !sbIds.has(d.id))
-        setDocs([...(data as Document[]), ...extra])
+        setDocs([...sbDocs, ...extra].sort(byDate))
       } else {
-        // Table inexistante ou offline → afficher uniquement le local
-        setDocs(localDocs.sort((a, b) => b.created_at.localeCompare(a.created_at)))
+        setDocs(localDocs.sort(byDate))
       }
     } catch {
-      setDocs(localDocs.sort((a, b) => b.created_at.localeCompare(a.created_at)))
+      setDocs(localDocs.sort(byDate))
     }
 
     // Load ALL clients (not just CHR) — show all in ComboBox with CHR badge
@@ -753,20 +757,17 @@ export default function BODocuments({ user }: { user: { id: string; name: string
       }
       const saveDoc = { ...doc, numero }
 
-      // 2. Sauvegarder dans Supabase
-      const { error } = await sb.from("fl_documents").upsert(saveDoc as any)
-      if (error) {
-        // Table inexistante ou erreur réseau → fallback localStorage
-        const code = (error as Record<string,unknown>)?.code as string
-        const isTableMissing = code === "42P01" || code === "PGRST116"
-        saveDocLocal(saveDoc)
-        if (isTableMissing) {
-          setMsg({ ok: true, text: `✅ Document ${saveDoc.numero} sauvegardé localement. (Table Supabase fl_documents à créer — voir SQL ci-dessous)` })
-        } else {
-          throw error
-        }
-      } else {
+      // 2. Sauvegarder via service-role (JSONB {id,payload})
+      saveDocLocal(saveDoc)   // copie locale dans tous les cas
+      const res = await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_documents", upserts: [{ id: saveDoc.id, payload: saveDoc, updated_at: new Date().toISOString() }] }),
+      })
+      const data = await res.json().catch(() => ({ ok: false }))
+      if (data.ok) {
         setMsg({ ok: true, text: `✅ Document ${saveDoc.numero} enregistré.` })
+      } else {
+        setMsg({ ok: true, text: `✅ Document ${saveDoc.numero} sauvegardé localement. (Sync Supabase indisponible — créez la table via sql/CREATE-fl_documents.sql)` })
       }
 
       // 3. Recharger liste (inclut localStorage)
@@ -792,17 +793,64 @@ export default function BODocuments({ user }: { user: { id: string; name: string
       date_fin: new Date(Date.now() + 365 * 86400000).toISOString().split("T")[0],
       created_at: new Date().toISOString(),
     }
-    // Marquer l'original comme transformé
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (sb as any).from("fl_documents").update({ statut: "transforme", transforme_en: newDoc.id }).eq("id", doc.id)
+    // Marquer l'original comme transformé (JSONB service-role)
+    const updatedOriginal = { ...doc, statut: "transforme" as DocStatut, transforme_en: newDoc.id }
+    saveDocLocal(updatedOriginal)
+    await fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_documents", upserts: [{ id: doc.id, payload: updatedOriginal, updated_at: new Date().toISOString() }] }),
+    }).catch(() => {})
     setEditing(newDoc)
     setView("form")
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer ce document ?")) return
-    await sb.from("fl_documents").delete().eq("id", id)
+    // Supprime côté Supabase (service-role) + local
+    await fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_documents", deletes: [id] }),
+    }).catch(() => {})
+    try {
+      const stored: Document[] = JSON.parse(localStorage.getItem("fl_documents_local") ?? "[]")
+      localStorage.setItem("fl_documents_local", JSON.stringify(stored.filter(d => d.id !== id)))
+    } catch { /* ignore */ }
     setDocs(d => d.filter(x => x.id !== id))
+  }
+
+  // ── Export / Import (sauvegarde, migration, partage de devis) ──
+  const handleExportAll = () => {
+    const exportSet = filter === "all" ? docs : docs.filter(d => d.type_doc === filter)
+    const blob = new Blob([JSON.stringify(exportSet, null, 2)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `vitafresh-documents-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setMsg({ ok: true, text: `✅ ${exportSet.length} document(s) exporté(s).` })
+    setTimeout(() => setMsg(null), 4000)
+  }
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      const arr: Document[] = Array.isArray(parsed) ? parsed : [parsed]
+      const valid = arr.filter(d => d && d.id && d.type_doc)
+      if (!valid.length) { setMsg({ ok: false, text: "Fichier invalide : aucun document reconnu." }); return }
+      const now = new Date().toISOString()
+      valid.forEach(saveDocLocal)
+      await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_documents", upserts: valid.map(d => ({ id: d.id, payload: d, updated_at: now })) }),
+      }).catch(() => {})
+      await load()
+      setMsg({ ok: true, text: `✅ ${valid.length} document(s) importé(s).` })
+    } catch {
+      setMsg({ ok: false, text: "Échec de l'import (JSON illisible)." })
+    }
+    setTimeout(() => setMsg(null), 5000)
   }
 
   const handleUpload = async (docId: string, file: File) => {
@@ -851,10 +899,24 @@ export default function BODocuments({ user }: { user: { id: string; name: string
           <h2 className="text-xl font-bold text-foreground">Documents Commerciaux</h2>
           <p className="text-sm text-muted-foreground">Devis, Contrats CHR/HORECA, Factures</p>
         </div>
-        <button onClick={() => { setEditing(undefined); setView("form") }} className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 transition-colors flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Nouveau document
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input id="doc-import-input" type="file" accept="application/json,.json" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.currentTarget.value = "" }} />
+          <button onClick={() => document.getElementById("doc-import-input")?.click()}
+            className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-semibold hover:bg-muted transition-colors flex items-center gap-1.5" title="Importer des devis/contrats (JSON)">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+            Importer
+          </button>
+          <button onClick={handleExportAll}
+            className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-semibold hover:bg-muted transition-colors flex items-center gap-1.5" title="Exporter les documents (JSON)">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" /></svg>
+            Exporter
+          </button>
+          <button onClick={() => { setEditing(undefined); setView("form") }} className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 transition-colors flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Nouveau document
+          </button>
+        </div>
       </div>
 
       {msg && (
