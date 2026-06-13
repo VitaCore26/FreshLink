@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 // GET /api/portal/client/[id] — Client profile + dashboard data
 // ══════════════════════════════════════════════════════════════
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SB_SRV = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY || ""
 
 async function sbQuery(table: string, filter: string): Promise<any[]> {
