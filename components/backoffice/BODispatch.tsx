@@ -121,6 +121,14 @@ export default function BODispatch({ user }: Props) {
   const prevendeurs = [...new Set(availableCommandes.map(c => c.commercialNom))]
   const activeLivreurs = livreurs.filter(l => l.actif)
 
+  // Démarrage / fin de tournée = action du LIVREUR assigné (ou d'un manager
+  // logistique en secours). Un autre livreur ne peut pas démarrer la tournée
+  // de quelqu'un d'autre.
+  const TRIP_MANAGERS = ["super_super_admin", "super_admin", "admin", "resp_logistique", "dispatcheur"]
+  const canManageTrips = TRIP_MANAGERS.includes(user.role)
+  const ownsTrip = (t: Trip) => user.role === "livreur" && (t.livreurId === user.id || t.livreurNom === user.name)
+  const canRunTrip = (t: Trip) => canManageTrips || ownsTrip(t)
+
   const toggleCmd = (id: string) =>
     setSelectedCmds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
 
@@ -463,12 +471,18 @@ export default function BODispatch({ user }: Props) {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {trip.statut === "planifié" && (
-                    <button onClick={() => updateTripStatus(trip.id, "en_cours")}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-orange-500 hover:opacity-90">
-                      Démarrer
-                    </button>
+                    canRunTrip(trip) ? (
+                      <button onClick={() => updateTripStatus(trip.id, "en_cours")}
+                        className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-orange-500 hover:opacity-90">
+                        Démarrer
+                      </button>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl text-xs font-medium text-muted-foreground bg-muted" title="Seul le livreur assigné démarre sa tournée">
+                        En attente du livreur
+                      </span>
+                    )
                   )}
-                  {trip.statut === "en_cours" && (
+                  {trip.statut === "en_cours" && canRunTrip(trip) && (
                     <button onClick={() => updateTripStatus(trip.id, "terminé")}
                       className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-green-600 hover:opacity-90">
                       Terminer
