@@ -80,7 +80,7 @@ export default function BOCategoryPricing() {
   }, [])
 
   const filtered = articles.filter(a => {
-    const matchSearch = a.nom.toLowerCase().includes(search.toLowerCase()) ||
+    const matchSearch = (a.nom ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (a.famille ?? "").toLowerCase().includes(search.toLowerCase())
     const matchActive = showInactive || a.actif
     return matchSearch && matchActive

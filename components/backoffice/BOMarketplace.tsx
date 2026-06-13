@@ -5,6 +5,17 @@ import { store, type Article, type User } from "@/lib/store"
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+// Message d'erreur sync diagnostique. La cause #1 = fl_articles en schéma
+// plat dans Supabase (erreur "column payload does not exist", code 42703) →
+// corrigé en lançant sql/FIX-CORE-TABLES-SCHEMA.sql.
+function sbSyncErr(errors: string[]): string {
+  const first = errors[0] ?? ""
+  if (/payload|42703|column .* does not exist|schema cache/i.test(first)) {
+    return "⚠️ Table fl_articles en mauvais schéma sur Supabase. Lancez sql/FIX-CORE-TABLES-SCHEMA.sql (SQL Editor) puis réessayez."
+  }
+  return `⚠️ Erreur synchronisation Supabase${first ? " : " + first.slice(0, 120) : ""}`
+}
+
 function computePV(a: Article): number {
   // ⚠️ Coercition Number obligatoire : les valeurs venant de Supabase/localStorage
   // peuvent être des strings, ce qui casse .toFixed() ("E.toFixed is not a function")
@@ -643,7 +654,7 @@ export default function BOMarketplace({ user }: Props) {
     setEditing(null)
     // ✅ Push immédiat vers Supabase pour que le site web voit le changement
     setSyncingToSb(true)
-    const { ok } = await pushToSupabase([updated])
+    const { ok, errors } = await pushToSupabase([updated])
     setSyncingToSb(false)
     if (ok) {
       setSyncMsg({
@@ -653,7 +664,7 @@ export default function BOMarketplace({ user }: Props) {
           : `✅ "${updated.nom}" retiré du site web`,
       })
     } else {
-      setSyncMsg({ ok: false, text: `⚠️ Sauvegardé localement, erreur Supabase` })
+      setSyncMsg({ ok: false, text: `Sauvegardé localement. ${sbSyncErr(errors)}` })
     }
     setTimeout(() => setSyncMsg(null), 4000)
   }
@@ -674,11 +685,11 @@ export default function BOMarketplace({ user }: Props) {
     store.saveArticles(all)
     setArticles(all)
     setSyncingToSb(true)
-    const { ok, pushed } = await pushToSupabase(toPublish)
+    const { ok, pushed, errors } = await pushToSupabase(toPublish)
     setSyncingToSb(false)
     setSyncMsg(ok
       ? { ok: true, text: `✅ ${pushed} articles publiés sur le site web !` }
-      : { ok: false, text: `⚠️ Erreur lors de la synchronisation Supabase` })
+      : { ok: false, text: sbSyncErr(errors) })
     setBulkSaved(true)
     setTimeout(() => { setBulkSaved(false); setSyncMsg(null) }, 4000)
   }
@@ -697,11 +708,11 @@ export default function BOMarketplace({ user }: Props) {
     store.saveArticles(all)
     setArticles(all)
     setSyncingToSb(true)
-    const { ok, pushed } = await pushToSupabase(toUnpublish)
+    const { ok, pushed, errors } = await pushToSupabase(toUnpublish)
     setSyncingToSb(false)
     setSyncMsg(ok
       ? { ok: true, text: `✅ ${pushed} articles retirés du site web` }
-      : { ok: false, text: `⚠️ Erreur lors de la synchronisation Supabase` })
+      : { ok: false, text: sbSyncErr(errors) })
     setBulkSaved(true)
     setTimeout(() => { setBulkSaved(false); setSyncMsg(null) }, 4000)
   }
@@ -721,11 +732,11 @@ export default function BOMarketplace({ user }: Props) {
     store.saveArticles(all)
     setArticles(all)
     setSyncingToSb(true)
-    const { ok, pushed } = await pushToSupabase(toSync)
+    const { ok, pushed, errors } = await pushToSupabase(toSync)
     setSyncingToSb(false)
     setSyncMsg(ok
       ? { ok: true, text: `✅ Stock web aligné sur le stock réel (${pushed} articles)` }
-      : { ok: false, text: `⚠️ Erreur synchronisation Supabase` })
+      : { ok: false, text: sbSyncErr(errors) })
     setTimeout(() => setSyncMsg(null), 4000)
   }
 

@@ -2195,7 +2195,26 @@ export const store = {
   deleteClient: (id: string) => { store.saveClients(store.getClients().filter(c => c.id !== id)) },
 
   // --- Articles ---
-  getArticles: (): Article[] => getLS("fl_articles", DEFAULT_ARTICLES),
+  // Normalisation défensive : un article importé/synchronisé peut arriver
+  // sans nom/famille/unité (schéma plat, payload partiel) → garantit des
+  // string/number pour que .toLowerCase()/.split()/.toLocaleString() ne
+  // crashent plus les écrans (Catalogue, Stock, Tarifs, Marketplace).
+  getArticles: (): Article[] => {
+    const raw = getLS<Article[]>("fl_articles", DEFAULT_ARTICLES)
+    if (!Array.isArray(raw)) return DEFAULT_ARTICLES
+    return raw
+      .filter(a => a && (a.id != null))
+      .map(a => ({
+        ...a,
+        nom: String(a.nom ?? a.id ?? ""),
+        nomAr: String(a.nomAr ?? ""),
+        famille: String(a.famille ?? ""),
+        unite: String(a.unite ?? "kg"),
+        stockDisponible: Number(a.stockDisponible) || 0,
+        stockDefect: Number(a.stockDefect) || 0,
+        prixAchat: Number(a.prixAchat) || 0,
+      }))
+  },
   saveArticles: (a: Article[]) => setLS("fl_articles", a),
 
   // Enregistrer un historique de prix d'achat pour un article

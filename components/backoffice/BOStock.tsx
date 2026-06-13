@@ -184,7 +184,7 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
   useEffect(() => { reload() }, [])
 
   const filtered = articles.filter(a => {
-    const matchSearch = a.nom.toLowerCase().includes(search.toLowerCase()) || a.nomAr.includes(search)
+    const matchSearch = (a.nom ?? "").toLowerCase().includes(search.toLowerCase()) || (a.nomAr ?? "").includes(search)
     const matchFam = famille === "" || a.famille === famille
     return matchSearch && matchFam
   })

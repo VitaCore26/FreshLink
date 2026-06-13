@@ -12,8 +12,8 @@ import {
 } from "@/lib/store"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const fmt = (n: number) => n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtMois = (s: string) => { const d = new Date(s + "-01"); return d.toLocaleDateString("fr-MA", { month: "long", year: "numeric" }) }
+const fmt = (n: number) => (Number(n) || 0).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtMois = (s: string) => { const d = new Date((s ?? "") + "-01"); return isNaN(d.getTime()) ? String(s ?? "") : d.toLocaleDateString("fr-MA", { month: "long", year: "numeric" }) }
 
 function KpiCard({ label, labelAr, value, sub, color }: { label: string; labelAr?: string; value: string; sub?: string; color: string }) {
   return (
