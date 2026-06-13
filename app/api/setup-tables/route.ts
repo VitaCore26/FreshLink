@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
 const SETUP_SQL = `-- FreshLink Pro — Setup Supabase v6 (RLS sécurisé)
--- Paste this in: https://supabase.com/dashboard/project/jwdrwapuetqoqnankgma/sql/new
+-- Paste this in: https://supabase.com/dashboard/project/wnuilvamhygkzupvfnxz/sql/new
 
 -- ── 1. Supprimer les anciennes tables ─────────────────────────────────────────
 DO $$ DECLARE t TEXT;
@@ -182,6 +182,6 @@ export async function GET() {
     missing,
     ready: existCount === ERP_TABLES.length,
     setup_sql: SETUP_SQL,
-    supabase_sql_editor: `https://supabase.com/dashboard/project/jwdrwapuetqoqnankgma/sql/new`,
+    supabase_sql_editor: `https://supabase.com/dashboard/project/wnuilvamhygkzupvfnxz/sql/new`,
   })
 }

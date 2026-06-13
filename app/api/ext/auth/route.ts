@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs"
 // problèmes de colonnes JSONB imbriquées dans PostgREST.
 // ══════════════════════════════════════════════════════════════
 
-const SB_URL        = process.env.NEXT_PUBLIC_SUPABASE_URL     ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SB_URL        = process.env.NEXT_PUBLIC_SUPABASE_URL     ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SB_ANON       = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 // Service role bypass RLS — obligatoire pour lire fl_users
 const SB_SERVER_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY)    ?? SB_ANON

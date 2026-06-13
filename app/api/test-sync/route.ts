@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const ANON_KEY     = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ANON_KEY
 
@@ -16,7 +16,7 @@ const EXPECTED_TABLES = [
 
 export async function GET() {
   // ── 1. Vérifier que l'URL Supabase est configurée ─────────────────────────
-  if (!SUPABASE_URL || SUPABASE_URL === "https://jwdrwapuetqoqnankgma.supabase.co" && !SERVICE_KEY && !ANON_KEY) {
+  if (!SUPABASE_URL || SUPABASE_URL === "https://wnuilvamhygkzupvfnxz.supabase.co" && !SERVICE_KEY && !ANON_KEY) {
     return NextResponse.json({
       status: "error",
       error: "Variables NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY manquantes",

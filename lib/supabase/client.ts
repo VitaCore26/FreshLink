@@ -2,11 +2,11 @@
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-// ── Supabase Project: jwdrwapuetqoqnankgma ─────────────────────────────────
-// Get your keys at: https://supabase.com/dashboard/project/jwdrwapuetqoqnankgma/settings/api
+// ── Supabase Project: wnuilvamhygkzupvfnxz ─────────────────────────────────
+// Get your keys at: https://supabase.com/dashboard/project/wnuilvamhygkzupvfnxz/settings/api
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  "https://jwdrwapuetqoqnankgma.supabase.co"
+  "https://wnuilvamhygkzupvfnxz.supabase.co"
 
 const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??

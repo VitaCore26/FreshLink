@@ -6,7 +6,7 @@
 // Enregistre dans fl_prospects — public, pas de clé requise
 // ══════════════════════════════════════════════════════════════
 
-const SB_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL  ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SB_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL  ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SB_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
 function cors(origin: string | null): HeadersInit {

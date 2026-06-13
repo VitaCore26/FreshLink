@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 //   PATCH { id, lu:true } → marquer lu
 // ══════════════════════════════════════════════════════════════════
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SB_SRV = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY) ?? ""
 
 const SERVICES = ["achats", "sales", "transport", "direction", "prevendeur", "client", "all"]

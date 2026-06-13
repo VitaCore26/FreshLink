@@ -10,7 +10,7 @@ function corsHeaders(origin: string | null): HeadersInit {
 
 const SUCCESS_MSG = "Commande enregistrée avec succès."
 
-const SB_URL        = process.env.NEXT_PUBLIC_SUPABASE_URL     ?? "https://jwdrwapuetqoqnankgma.supabase.co"
+const SB_URL        = process.env.NEXT_PUBLIC_SUPABASE_URL     ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 // Service role — contourne RLS, obligatoire pour écrire dans fl_commandes
 const SB_SERVER_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY)    ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
