@@ -325,6 +325,22 @@ const STATUT_STYLE: Record<string, { bg: string; text: string; dot: string }> = 
   encaissé:  { bg: "bg-green-50",  text: "text-green-700",  dot: "bg-green-500" },
 }
 
+// Facture regroupant un ou plusieurs BL — payload V2 service-role {id,payload}
+interface FactLigne { articleNom: string; quantite: number; unite?: string; prixUnitaire: number; total: number; blId: string }
+interface FactInvoice {
+  id: string
+  numero: string
+  clientId?: string
+  clientNom: string
+  date: string
+  montantHT: number
+  tva: number
+  montantTTC: number
+  statut: "impayee" | "payee"
+  blIds: string[]
+  lignes?: FactLigne[]
+}
+
 export default function BOCash() {
   const [bls, setBls] = useState<BonLivraison[]>([])
   const [filter, setFilter] = useState({ date: store.today(), livreur: "", secteur: "", prevendeur: "", client: "" })
@@ -339,6 +355,14 @@ export default function BOCash() {
   })
   const [printFraisId, setPrintFraisId] = useState<string | null>(null) // BL id being configured for print
 
+  // ── Facturation (regroupement de BL en une facture) ──────────────────────
+  const [view, setView] = useState<"cash" | "facturation">("cash")
+  const [factClient, setFactClient] = useState("")              // clé client sélectionnée (clientId || clientNom)
+  const [factSelected, setFactSelected] = useState<Set<string>>(new Set())
+  const [invoices, setInvoices] = useState<FactInvoice[]>([])   // factures existantes (numérotation + récap)
+  const [factBusy, setFactBusy] = useState(false)
+  const [factMsg, setFactMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
   const saveFraisConfig = (cfg: FraisBlConfig) => {
     setFraisConfig(cfg)
     try { localStorage.setItem("fl_frais_bl", JSON.stringify(cfg)) } catch { /* noop */ }
@@ -347,6 +371,15 @@ export default function BOCash() {
   useEffect(() => {
     setBls(store.getBonsLivraison())
     setCaissePricing(store.getCaissePricing())
+    // Charger les factures existantes (numérotation FAC-YY-XXXX + récap).
+    // Si Supabase est indisponible, la numérotation repart de la séquence locale.
+    ;(async () => {
+      try {
+        const res = await fetch("/api/sync-read?table=fl_invoices", { cache: "no-store" })
+        const j = res.ok ? (await res.json()) as { data?: { id: string; payload?: Partial<FactInvoice> }[] } : null
+        if (j?.data) setInvoices(j.data.map(r => ({ id: r.id, ...(r.payload ?? {}) }) as FactInvoice))
+      } catch { /* offline — numérotation locale */ }
+    })()
   }, [])
 
   const saveCaisseOnBL = (id: string, gros: number, demi: number) => {
@@ -416,8 +449,119 @@ export default function BOCash() {
     return acc
   }, {} as Record<string, { total: number; count: number }>)
 
+  // ── Facturation — données dérivées ───────────────────────────────────────
+  const clientKey = (bl: BonLivraison) => bl.clientId || bl.clientNom
+  // TTC effectif d'un BL (fallback sur le total HT si le TTC n'est pas renseigné)
+  const blTTC = (bl: BonLivraison) => (bl.montantTTC && bl.montantTTC > 0 ? bl.montantTTC : bl.montantTotal)
+  // BL facturables : émis|encaissé et pas encore rattachés à une facture
+  const facturables = bls.filter(b => (b.statut === "émis" || b.statut === "encaissé") && !b.factureId)
+  // Clients ayant au moins un BL facturable (dédupliqués par clientId || clientNom)
+  const factClients = (() => {
+    const map = new Map<string, { nom: string; count: number; total: number }>()
+    facturables.forEach(b => {
+      const k = clientKey(b)
+      const cur = map.get(k) ?? { nom: b.clientNom, count: 0, total: 0 }
+      cur.count++; cur.total += blTTC(b)
+      map.set(k, cur)
+    })
+    return [...map.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => a.nom.localeCompare(b.nom))
+  })()
+  const factClientBLs = factClient ? facturables.filter(b => clientKey(b) === factClient) : []
+  const selectedBLs = factClientBLs.filter(b => factSelected.has(b.id))
+  const selectedTotal = selectedBLs.reduce((s, b) => s + blTTC(b), 0)
+
+  const toggleFactBL = (id: string) =>
+    setFactSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+
+  // Prochain numéro FAC-YY-XXXX (séquence par année, à partir des factures connues)
+  const nextFacNumero = () => {
+    const yy = new Date().getFullYear().toString().slice(-2)
+    const prefix = `FAC-${yy}-`
+    let max = 0
+    for (const inv of invoices) {
+      const m = /^FAC-\d{2}-(\d+)$/.exec(inv?.numero ?? "")
+      if (m) max = Math.max(max, Number(m[1]))
+    }
+    return `${prefix}${String(max + 1).padStart(4, "0")}`
+  }
+
+  const handleRegrouper = async () => {
+    if (selectedBLs.length === 0 || factBusy) return
+    setFactBusy(true)
+    setFactMsg(null)
+    const first = selectedBLs[0]
+    const id = store.genId("FAC")
+    const numero = nextFacNumero()
+    const montantHT  = selectedBLs.reduce((s, b) => s + b.montantTotal, 0)
+    const tvaTotal   = selectedBLs.reduce((s, b) => s + (b.tva ?? 0), 0)
+    const montantTTC = selectedBLs.reduce((s, b) => s + blTTC(b), 0)
+    const lignes: FactLigne[] = selectedBLs.flatMap(b => b.lignes.map(l => ({
+      articleNom: l.articleNom, quantite: l.quantite, unite: (l as { unite?: string }).unite,
+      prixUnitaire: l.prixUnitaire, total: l.total, blId: b.id,
+    })))
+    const payload: FactInvoice = {
+      id, numero, clientId: first.clientId, clientNom: first.clientNom, date: store.today(),
+      montantHT, tva: tvaTotal, montantTTC, statut: "impayee", blIds: selectedBLs.map(b => b.id), lignes,
+    }
+    const now = new Date().toISOString()
+    try {
+      // 1. Créer la facture (fl_invoices — schéma V2 service-role {id,payload})
+      const res = await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_invoices", upserts: [{ id, payload, updated_at: now }] }),
+      })
+      const data = await res.json().catch(() => ({ ok: false, errors: ["réponse invalide"] }))
+      if (!data.ok) {
+        setFactMsg({ ok: false, text: `Erreur facture : ${(data.errors ?? []).join(", ") || "sync indisponible"}` })
+        setFactBusy(false); return
+      }
+
+      // 2. Marquer chaque BL comme facturé (local + sync fl_bons_livraison)
+      const blUpserts = selectedBLs.map(b => {
+        store.updateBonLivraison(b.id, { factureId: id })
+        return { id: b.id, payload: { ...b, factureId: id }, updated_at: now }
+      })
+      await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_bons_livraison", upserts: blUpserts }),
+      }).catch(() => { /* BL local-only : le factureId reste posé en localStorage */ })
+
+      // 3. Rafraîchir l'état local
+      setBls(store.getBonsLivraison())
+      setInvoices(prev => [payload, ...prev])
+      setFactSelected(new Set())
+      setFactMsg({ ok: true, text: `Facture ${numero} créée — ${selectedBLs.length} BL regroupés (${fmtDH(montantTTC)}).` })
+    } catch (e) {
+      setFactMsg({ ok: false, text: `Erreur : ${String(e)}` })
+    } finally {
+      setFactBusy(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
+
+      {/* ── Sous-onglets : Cash & BL / Facturation ───────────────────────── */}
+      <div className="flex gap-1 p-1 rounded-2xl bg-muted/40 border border-border w-full sm:w-max">
+        {[
+          { id: "cash" as const, label: "Cash & BL" },
+          { id: "facturation" as const, label: "Facturation" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setView(t.id)}
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center justify-center gap-1.5"
+            style={view === t.id ? { background: "oklch(0.38 0.2 260)", color: "#fff" } : { color: "var(--muted-foreground)" }}>
+            {t.label}
+            {t.id === "facturation" && facturables.length > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold"
+                style={view === t.id ? { background: "rgba(255,255,255,0.25)", color: "#fff" } : { background: "oklch(0.38 0.2 260)", color: "#fff" }}>
+                {facturables.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {view === "cash" && (<>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -609,6 +753,163 @@ export default function BOCash() {
           </table>
         </div>
       </div>
+
+      </>)}
+
+      {/* ═══════════════════════════════════════════════ FACTURATION ═══════ */}
+      {view === "facturation" && (
+        <div className="flex flex-col gap-5">
+
+          {/* Intro */}
+          <div className="bg-card rounded-2xl border border-border p-5">
+            <h3 className="font-semibold text-foreground font-sans text-sm uppercase tracking-wide text-muted-foreground mb-1">
+              Regrouper des BL en facture
+            </h3>
+            <p className="text-sm text-muted-foreground font-sans">
+              Sélectionnez un client, cochez ses bons de livraison non encore facturés, puis générez une facture unique.
+            </p>
+          </div>
+
+          {/* Message */}
+          {factMsg && (
+            <div className={`rounded-xl border px-4 py-3 text-sm font-sans font-medium ${factMsg.ok ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+              {factMsg.text}
+            </div>
+          )}
+
+          {/* Sélecteur client */}
+          <div className="bg-card rounded-2xl border border-border p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide font-sans whitespace-nowrap">
+              Client à facturer
+            </label>
+            <select
+              value={factClient}
+              onChange={e => { setFactClient(e.target.value); setFactSelected(new Set()) }}
+              className="flex-1 px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-sans focus:outline-none focus:ring-2 focus:ring-primary">
+              <option value="">— Sélectionner un client —</option>
+              {factClients.map(c => (
+                <option key={c.key} value={c.key}>
+                  {c.nom} · {c.count} BL · {c.total.toLocaleString("fr-MA")} DH
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Liste des BL facturables du client */}
+          {factClient && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm font-sans">
+                  <thead>
+                    <tr style={{ background: "oklch(0.14 0.03 260)", color: "oklch(0.88 0.015 245)" }}>
+                      <th className="px-4 py-3 w-10">
+                        <input type="checkbox"
+                          aria-label="Tout sélectionner"
+                          checked={factClientBLs.length > 0 && factSelected.size === factClientBLs.length}
+                          onChange={e => setFactSelected(e.target.checked ? new Set(factClientBLs.map(b => b.id)) : new Set())}
+                          className="w-4 h-4 accent-primary cursor-pointer" />
+                      </th>
+                      {["Date", "Articles", "Caisses", "Statut", "Montant TTC"].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {factClientBLs.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground font-sans">
+                        Aucun BL à facturer pour ce client
+                      </td></tr>
+                    ) : factClientBLs.map(bl => {
+                      const st = STATUT_STYLE[bl.statut] || STATUT_STYLE["émis"]
+                      const checked = factSelected.has(bl.id)
+                      return (
+                        <tr key={bl.id}
+                          onClick={() => toggleFactBL(bl.id)}
+                          className={`border-t border-border cursor-pointer transition-colors ${checked ? "bg-primary/5" : "hover:bg-muted/30"}`}>
+                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={checked} onChange={() => toggleFactBL(bl.id)}
+                              className="w-4 h-4 accent-primary cursor-pointer" />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{bl.date}</td>
+                          <td className="px-4 py-3 text-muted-foreground max-w-[260px] truncate">
+                            {bl.lignes.map(l => `${l.articleNom} x${l.quantite}`).join(", ")}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                            {(bl.nbCaisseGros ?? 0) > 0 || (bl.nbCaisseDemi ?? 0) > 0
+                              ? <span className="text-amber-700 font-semibold">{bl.nbCaisseGros ?? 0}G + {bl.nbCaisseDemi ?? 0}D</span>
+                              : <span className="text-muted-foreground/50">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${st.bg} ${st.text}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                              {bl.statut}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-bold text-primary whitespace-nowrap">{blTTC(bl).toLocaleString("fr-MA")} DH</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Barre d'action */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-4 border-t border-border" style={{ background: "oklch(0.93 0.012 245)" }}>
+                <div className="text-sm font-sans">
+                  <span className="font-bold text-foreground">{selectedBLs.length}</span>
+                  <span className="text-muted-foreground"> BL sélectionné{selectedBLs.length > 1 ? "s" : ""} · Total facture </span>
+                  <span className="font-extrabold text-primary">{fmtDH(selectedTotal)}</span>
+                </div>
+                <button
+                  onClick={handleRegrouper}
+                  disabled={selectedBLs.length === 0 || factBusy}
+                  className="px-5 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+                  style={{ background: "oklch(0.38 0.2 260)" }}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {factBusy ? "Génération…" : "Regrouper en facture"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Factures récentes */}
+          {invoices.length > 0 && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <h3 className="px-4 py-3 font-semibold text-foreground font-sans text-sm uppercase tracking-wide text-muted-foreground border-b border-border">
+                Factures récentes
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm font-sans">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      {["N° Facture", "Client", "Date", "BL", "Montant TTC", "Statut"].map(h => (
+                        <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.slice(0, 12).map(inv => (
+                      <tr key={inv.id} className="border-t border-border">
+                        <td className="px-4 py-2.5 font-bold text-foreground whitespace-nowrap">{inv.numero}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{inv.clientNom}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{inv.date}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{inv.blIds?.length ?? 0}</td>
+                        <td className="px-4 py-2.5 font-bold text-primary whitespace-nowrap">{(inv.montantTTC ?? 0).toLocaleString("fr-MA")} DH</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${inv.statut === "payee" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${inv.statut === "payee" ? "bg-green-500" : "bg-amber-400"}`} />
+                            {inv.statut === "payee" ? "Payée" : "Impayée"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Frais BL Print Modal ─────────────────────────────────────────── */}
       {printFraisId && (() => {
