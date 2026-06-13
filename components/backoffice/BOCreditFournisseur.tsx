@@ -72,11 +72,13 @@ export default function BOCreditFournisseur({ user }: { user: User }) {
   // Load fournisseurs from store
   const [fournisseurs, setFournisseurs] = useState<Array<{ id: string; nom: string }>>([])
   const [users, setUsers]           = useState<Array<{ id: string; name: string }>>([])
+  const [articleNoms, setArticleNoms] = useState<string[]>([])
 
   useEffect(() => {
     const frs = store.getFournisseurs()
     setFournisseurs(frs.map(f => ({ id: f.id, nom: f.nom })))
     setUsers(store.getUsers().map(u => ({ id: u.id, name: u.name })))
+    setArticleNoms(Array.from(new Set(store.getArticles().map(a => a.nom).filter(Boolean))).sort())
     // Merge des crédits Supabase (saisis sur d'autres appareils)
     fetch("/api/sync-read?table=fl_credits_fournisseurs", { cache: "no-store" })
       .then(r => r.json())
@@ -471,9 +473,12 @@ export default function BOCreditFournisseur({ user }: { user: User }) {
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-muted-foreground mb-1 block">Article *</label>
-                <input value={form.articleNom} onChange={e => setForm(f => ({ ...f, articleNom: e.target.value }))}
+                <input list="credit-article-options" value={form.articleNom} onChange={e => setForm(f => ({ ...f, articleNom: e.target.value }))}
                   placeholder="Ex: Tomates 10kg, Oranges carton..."
                   className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <datalist id="credit-article-options">
+                  {articleNoms.map(n => <option key={n} value={n} />)}
+                </datalist>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Acheteur</label>

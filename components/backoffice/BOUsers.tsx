@@ -1169,6 +1169,12 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
   // Access check — computed AFTER hooks
   const canAccess = currentUser.role === "super_super_admin" || currentUser.role === "admin" || currentUser.role === "super_admin" || currentUser.role === "rh_manager"
 
+  // Secteurs proposés = ceux déjà utilisés par l'équipe + défauts (combobox : saisie libre conservée)
+  const secteurOptions = Array.from(new Set(
+    [...users.map(u => u.secteur), "Nord", "Centre", "Sud", "Est", "Ouest", "Casa-Anfa", "Ain Sebaa", "Sidi Maarouf"]
+      .filter((s): s is string => Boolean(s && s.trim()))
+  )).sort()
+
   useEffect(() => {
     if (canAccess) {
       const isCurrentJawad = currentUser.role === "super_super_admin"
@@ -2185,9 +2191,12 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-foreground">Secteur / Zone</label>
-                    <input type="text" value={form.secteur} onChange={e => setForm({ ...form, secteur: e.target.value })}
+                    <input type="text" list="secteur-options" value={form.secteur} onChange={e => setForm({ ...form, secteur: e.target.value })}
                       className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       placeholder="Nord, Centre..." />
+                    <datalist id="secteur-options">
+                      {secteurOptions.map(s => <option key={s} value={s} />)}
+                    </datalist>
                   </div>
 
                   {/* Depot assignment — visible for roles that need depot access */}
