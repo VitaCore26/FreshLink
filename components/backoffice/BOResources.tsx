@@ -68,22 +68,59 @@ export interface FichePayroll {
 // STORE HELPERS — localStorage
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Write-through Supabase (service-role) — les réglages RH ne sont plus
+// localStorage-only : ils se partagent entre appareils/utilisateurs.
+function syncPush(table: string, rows: Array<Record<string, unknown>>, idOf: (x: never) => string) {
+  try {
+    const now = new Date().toISOString()
+    fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table, upserts: rows.map(r => ({ id: idOf(r as never), payload: r, updated_at: now })) }),
+    }).catch(() => {})
+  } catch { /* offline */ }
+}
+
 const LS = {
   getRegles: (): RegleBonus[] => {
     try { return JSON.parse(localStorage.getItem("fl_regles_bonus") ?? "[]") }
     catch { return [] }
   },
-  saveRegles: (r: RegleBonus[]) => localStorage.setItem("fl_regles_bonus", JSON.stringify(r)),
+  saveRegles: (r: RegleBonus[]) => { localStorage.setItem("fl_regles_bonus", JSON.stringify(r)); syncPush("fl_regles_bonus", r, x => (x as RegleBonus).id) },
   getGrilles: (): GrilleSalaire[] => {
     try { return JSON.parse(localStorage.getItem("fl_grilles_salaire") ?? "[]") }
     catch { return [] }
   },
-  saveGrilles: (g: GrilleSalaire[]) => localStorage.setItem("fl_grilles_salaire", JSON.stringify(g)),
+  saveGrilles: (g: GrilleSalaire[]) => { localStorage.setItem("fl_grilles_salaire", JSON.stringify(g)); syncPush("fl_grilles_salaire", g, x => (x as GrilleSalaire).userId) },
   getFiches: (): FichePayroll[] => {
     try { return JSON.parse(localStorage.getItem("fl_fiches_payroll") ?? "[]") }
     catch { return [] }
   },
-  saveFiches: (f: FichePayroll[]) => localStorage.setItem("fl_fiches_payroll", JSON.stringify(f)),
+  saveFiches: (f: FichePayroll[]) => { localStorage.setItem("fl_fiches_payroll", JSON.stringify(f)); syncPush("fl_fiches_payroll", f, x => { const o = x as FichePayroll; return o.id ?? `${o.userId}_${o.periode}` }) },
+}
+
+// Hydrate depuis Supabase au montage : fusionne les lignes distantes dans
+// localStorage avant que les onglets ne lisent (clé d'identité par table).
+async function hydrateRH(): Promise<void> {
+  const pulls: Array<[string, string, (r: { id: string; payload?: Record<string, unknown> }) => Record<string, unknown>]> = [
+    ["fl_regles_bonus",    "id",     r => ({ ...(r.payload ?? {}), id: r.id })],
+    ["fl_grilles_salaire", "userId", r => ({ ...(r.payload ?? {}), userId: r.id })],
+    ["fl_fiches_payroll",  "id",     r => ({ ...(r.payload ?? {}), id: r.id })],
+  ]
+  await Promise.all(pulls.map(async ([table, key, map]) => {
+    try {
+      const res = await fetch(`/api/sync-read?table=${table}`, { cache: "no-store" })
+      if (!res.ok) return
+      const j = await res.json() as { data?: { id: string; payload?: Record<string, unknown> }[] }
+      const remote = (j?.data ?? []).map(map)
+      if (!remote.length) return
+      const lsKey = table
+      let local: Record<string, unknown>[] = []
+      try { local = JSON.parse(localStorage.getItem(lsKey) ?? "[]") } catch { /* */ }
+      const ids = new Set(local.map(l => String(l[key])))
+      const merged = [...local, ...remote.filter(r => !ids.has(String(r[key])))]
+      localStorage.setItem(lsKey, JSON.stringify(merged))
+    } catch { /* offline */ }
+  }))
 }
 
 const GROUPES: { key: EmployeeGroup; label: string; color: string }[] = [
@@ -877,10 +914,13 @@ type SubTab = typeof TABS[number]["id"]
 export default function BOResources({ user }: { user: User }) {
   const [tab, setTab] = useState<SubTab>("productivite")
   const [users, setUsers] = useState<User[]>([])
+  const [rev, setRev] = useState(0)   // bump après hydratation Supabase → remonte les onglets
   const isAdmin = ["super_admin", "admin"].includes(user.role)
 
   useEffect(() => {
     setUsers(store.getUsers())
+    // Fusionne les réglages RH distants puis remonte les onglets
+    hydrateRH().then(() => setRev(r => r + 1))
   }, [])
 
   return (
@@ -926,12 +966,14 @@ export default function BOResources({ user }: { user: User }) {
         ))}
       </div>
 
-      {/* Content */}
-      {tab === "productivite" && <ProductiviteTab users={users} />}
-      {tab === "recrutement"  && <RecrutementTab  users={users} />}
-      {tab === "regles"       && <ReglesTab        isAdmin={isAdmin} />}
-      {tab === "grilles"      && <GrillesTab        users={users} isAdmin={isAdmin} />}
-      {tab === "salaires"     && <CalculSalaireTab  users={users} />}
+      {/* Content — keyé sur rev : remonte après l'hydratation Supabase */}
+      <div key={rev}>
+        {tab === "productivite" && <ProductiviteTab users={users} />}
+        {tab === "recrutement"  && <RecrutementTab  users={users} />}
+        {tab === "regles"       && <ReglesTab        isAdmin={isAdmin} />}
+        {tab === "grilles"      && <GrillesTab        users={users} isAdmin={isAdmin} />}
+        {tab === "salaires"     && <CalculSalaireTab  users={users} />}
+      </div>
     </div>
   )
 }

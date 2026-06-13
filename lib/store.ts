@@ -3208,9 +3208,23 @@ export interface CmdVsFacturation {
 
 // ─── Default data ─────────────────────────────────────────────────────────────
 export const DEFAULT_CUTOFFS: CutoffNotification[] = [
-  { id: "co1", time: "08:00", message: "Rappel: Finalisez vos achats avant 10h. Merci.", active: true, roles: ["acheteur"] },
-  { id: "co2", time: "12:00", message: "Coupure midi: Aucune nouvelle commande après 13h.", active: true, roles: ["acheteur"] },
-  { id: "co3", time: "17:00", message: "Fin de journée: Dernier appel pour les commandes de demain.", active: true, roles: ["acheteur"] },
+  // ── Achat ──
+  { id: "co1",  time: "06:00", message: "Marché ouvert : commencez vos achats. Cut-off POs à 10h.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co2",  time: "09:30", message: "⏰ Plus que 30 min : finalisez et envoyez vos bons d'achat avant 10h.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co3",  time: "10:00", message: "🔒 Cut-off achats atteint. Toute commande après 10h sera traitée demain.", active: true, roles: ["acheteur", "resp_achat", "ctrl_achat"] },
+  // ── Commercial / Prévente ──
+  { id: "co4",  time: "08:00", message: "Bonne tournée ! Saisissez vos commandes au fil des visites.", active: true, roles: ["prevendeur", "team_leader"] },
+  { id: "co5",  time: "16:00", message: "⏰ Cut-off prévente à 17h : transmettez les commandes de demain.", active: true, roles: ["prevendeur", "team_leader", "resp_commercial"] },
+  { id: "co6",  time: "17:00", message: "🔒 Clôture prévente. Dernier appel pour les commandes du lendemain.", active: true, roles: ["prevendeur", "team_leader"] },
+  // ── Logistique / Préparation ──
+  { id: "co7",  time: "14:00", message: "Préparation de demain : vérifiez le stock et lancez le picking.", active: true, roles: ["magasinier", "ctrl_prep", "chef_depot"] },
+  { id: "co8",  time: "18:00", message: "Clôture préparation : contrôlez les caisses et chargez les véhicules.", active: true, roles: ["magasinier", "ctrl_prep"] },
+  // ── Dispatch / Livraison ──
+  { id: "co9",  time: "07:00", message: "Tournées prêtes : récupérez votre feuille de route et partez.", active: true, roles: ["livreur", "dispatcheur"] },
+  { id: "co10", time: "19:00", message: "Retour dépôt : déposez caisses, retours et encaissements du jour.", active: true, roles: ["livreur", "dispatcheur", "resp_logistique"] },
+  // ── Caisse / Finance ──
+  { id: "co11", time: "18:30", message: "Cut-off caisse : transmettez les encaissements pour clôture.", active: true, roles: ["cash_man"] },
+  { id: "co12", time: "19:30", message: "Clôture financière du jour : rapprochez caisse, BL et crédits.", active: true, roles: ["financier", "comptable"] },
 ]
 
 export const DEFAULT_FEEDBACKS: Feedback[] = [
