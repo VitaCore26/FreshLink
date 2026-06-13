@@ -273,9 +273,14 @@ export default function BOCommandesUnifiees({ user }: Props) {
       total:        l.total ?? (l.prixUnitaire ?? 0) * l.quantite,
     }))
 
-    // Créer la commande ERP
+    // Créer la commande ERP pour la logistique.
+    // ⚠️ On RÉUTILISE cmd.id (et non store.genId()) : sinon la commande web
+    // restait + une nouvelle commande ERP était créée → DOUBLON, et la copie
+    // (id non-WEB) était comptée comme commande terrain. Avec le même id, la
+    // ligne logistique remplace l'enregistrement web (un seul), et l'id
+    // "WEB-…" la garde classée « web » (jamais terrain).
     const newCmd: Commande = {
-      id:               store.genId(),
+      id:               cmd.id,
       date:             cmd.date ? cmd.date.split("T")[0] : new Date().toISOString().split("T")[0],
       commercialId:     "site_web",
       commercialNom:    "Site Web",
@@ -292,15 +297,21 @@ export default function BOCommandesUnifiees({ user }: Props) {
       notes:            `[Web] Réf: ${cmd.numero}${cmd.notes ? " — " + cmd.notes : ""}`,
     }
 
-    store.saveCommandes([...store.getCommandes(), newCmd])
+    // Upsert localStorage par id (jamais deux fois la même commande)
+    const existingCmds = store.getCommandes()
+    const idx = existingCmds.findIndex(c => c.id === newCmd.id)
+    if (idx >= 0) existingCmds[idx] = newCmd; else existingCmds.push(newCmd)
+    store.saveCommandes(existingCmds)
 
-    // Marquer la commande web comme "confirmee" dans Supabase via l'API service_role
+    // Un seul enregistrement fl_commandes (même id) : on conserve l'origine
+    // web + on marque l'injection, statut "confirmee" côté web (= remis à la
+    // logistique). injectedToErp évite tout retraitement.
     await fetch("/api/sync-write", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         table:   "fl_commandes",
-        upserts: [{ id: cmd.id, payload: { ...(cmd.rawPayload ?? {}), statut: "confirmee" }, updated_at: new Date().toISOString() }],
+        upserts: [{ id: cmd.id, payload: { ...(cmd.rawPayload ?? {}), statut: "confirmee", injectedToErp: true, source: "site_web" }, updated_at: new Date().toISOString() }],
       }),
     })
 
