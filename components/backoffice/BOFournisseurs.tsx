@@ -5,13 +5,26 @@ import {
   store, type Fournisseur, type ItinerairePoint,
   SPECIALITES_FRUITS_LEGUMES, MODALITE_LABELS, type ModalitePaiement,
 } from "@/lib/store"
+import BOFournisseurDetail from "./BOFournisseurDetail"
 
 const JOURS = ["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"]
 
 const emptyFournisseur = (): Omit<Fournisseur, "id"> => ({
   nom: "", contact: "", telephone: "", email: "", adresse: "", ville: "Casablanca", region: "Casablanca-Settat",
-  specialites: [], modalitePaiement: "cash", delaiPaiement: 0, ice: "", rc: "", notes: "", itineraires: [],
+  specialites: [], modalitePaiement: "cash", delaiPaiement: 0, plafondCredit: 0, ice: "", rc: "", notes: "", itineraires: [],
 })
+
+// Push d'un fournisseur vers Supabase (service-role {id, payload}) — partagé avec le portail boutique
+async function pushFournisseur(f: Fournisseur): Promise<boolean> {
+  try {
+    const { id, ...payload } = f
+    const res = await fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_fournisseurs", upserts: [{ id, payload, updated_at: new Date().toISOString() }] }),
+    })
+    return (await res.json()).ok === true
+  } catch { return false }
+}
 
 const emptyPoint = (): ItinerairePoint => ({ nom: "", lat: undefined, lng: undefined, jour: "", heureDepart: "", heureArrivee: "" })
 
@@ -24,6 +37,7 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
   const [activeTab, setActiveTab] = useState<"info" | "specialites" | "itineraires" | "conditions">("info")
   const [saved, setSaved] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [detail, setDetail] = useState<Fournisseur | null>(null)
 
   const canEdit = ["super_super_admin","super_admin","admin","resp_commercial","resp_achat","team_leader"].includes(user.role) || !!(user as { canViewExternal?: boolean }).canViewExternal
 
@@ -44,28 +58,38 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
       nom: f.nom, contact: f.contact, telephone: f.telephone || "", email: f.email,
       adresse: f.adresse || "", ville: f.ville || "Casablanca", region: f.region || "Casablanca-Settat",
       specialites: f.specialites || [], modalitePaiement: f.modalitePaiement || "cash",
-      delaiPaiement: f.delaiPaiement || 0, ice: f.ice || "", rc: f.rc || "",
+      delaiPaiement: f.delaiPaiement || 0, plafondCredit: f.plafondCredit || 0,
+      ice: f.ice || "", rc: f.rc || "",
       notes: f.notes || "", itineraires: f.itineraires || [],
     })
     setActiveTab("info")
     setShowForm(true)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.nom.trim()) return
+    const full: Fournisseur = editing
+      ? { ...form, id: editing.id }
+      : { ...form, id: store.genId() }
     if (editing) {
       store.updateFournisseur(editing.id, form)
     } else {
-      store.addFournisseur({ ...form, id: store.genId() })
+      store.addFournisseur(full)
     }
     setShowForm(false)
     refresh()
-    setSaved("Fournisseur sauvegardé")
+    // ✅ Sync Supabase (service-role) → la boutique et la fiche fournisseur partagent le même enregistrement
+    const ok = await pushFournisseur(full)
+    setSaved(ok ? "Fournisseur sauvegardé & synchronisé" : "Sauvegardé localement (erreur Supabase)")
     setTimeout(() => setSaved(""), 2500)
   }
 
   const handleDelete = (id: string) => {
     store.deleteFournisseur(id)
+    fetch("/api/sync-write", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_fournisseurs", deletes: [id] }),
+    }).catch(() => {})
     setConfirmDelete(null)
     refresh()
   }
@@ -130,11 +154,15 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
           <div key={f.id} className="bg-card rounded-2xl border border-border p-5 flex flex-col gap-3">
             {/* Header */}
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="font-bold text-foreground">{f.nom}</h3>
+              <button onClick={() => setDetail(f)} className="text-left min-w-0 group">
+                <h3 className="font-bold text-foreground group-hover:text-primary transition-colors truncate">{f.nom}</h3>
                 <p className="text-xs text-muted-foreground">{f.ville}{f.region ? ` — ${f.region}` : ""}</p>
-              </div>
+              </button>
               <div className="flex gap-1 shrink-0">
+                <button onClick={() => setDetail(f)} title="Ouvrir la fiche complète"
+                  className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                </button>
                 {canEdit && (
                   <>
                     <button onClick={() => openEdit(f)}
@@ -201,6 +229,17 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
           </div>
         )}
       </div>
+
+      {/* Fiche fournisseur complète */}
+      {detail && (
+        <BOFournisseurDetail
+          fournisseur={detail}
+          user={user}
+          canEdit={canEdit}
+          onClose={() => setDetail(null)}
+          onEdit={(fr) => { setDetail(null); openEdit(fr) }}
+        />
+      )}
 
       {/* Confirm delete */}
       {confirmDelete && (
@@ -367,10 +406,17 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
                       {MODALITE_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-foreground">Délai de paiement (jours)</label>
-                    <input type="number" min={0} max={180} value={form.delaiPaiement || 0} onChange={e => setForm(f => ({ ...f, delaiPaiement: parseInt(e.target.value) || 0 }))}
-                      className="w-32 px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-foreground">Délai de paiement (jours)</label>
+                      <input type="number" min={0} max={180} value={form.delaiPaiement || 0} onChange={e => setForm(f => ({ ...f, delaiPaiement: parseInt(e.target.value) || 0 }))}
+                        className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-foreground">Plafond crédit (DH)</label>
+                      <input type="number" min={0} value={form.plafondCredit || 0} onChange={e => setForm(f => ({ ...f, plafondCredit: parseFloat(e.target.value) || 0 }))}
+                        className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
                     <div className="flex flex-col gap-1">

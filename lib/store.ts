@@ -369,6 +369,7 @@ export interface Fournisseur {
   specialites: string[]           // fruits & légumes fournis
   modalitePaiement?: ModalitePaiement
   delaiPaiement?: number          // jours
+  plafondCredit?: number          // plafond de crédit accordé par le fournisseur (DH)
   ice?: string                    // Identifiant commun entreprise Maroc
   rc?: string                     // Registre de commerce
   notes?: string
@@ -636,6 +637,9 @@ export interface BonLivraison {
   fraisImpressionParFeuille?: number   // DH par feuille (ex: 2 DH/feuille)
   nbFeuilles?: number                  // nb de feuilles (defaut: 1)
   fraisServiceParCaisse?: number       // DH par caisse (gros + demi) (ex: 5 DH/caisse)
+  // Facturation — id de la facture (fl_invoices) qui regroupe ce BL.
+  // Présent => le BL a déjà été facturé et ne doit plus être re-regroupé.
+  factureId?: string
 }
 
 export interface PurchaseOrder {
