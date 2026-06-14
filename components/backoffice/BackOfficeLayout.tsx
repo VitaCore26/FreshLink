@@ -85,6 +85,7 @@ const AnalyseAchatPanel      = dynamic(() => import("./AnalyseAchatPanel"),     
 const AnalyseCaisseAcheteur  = dynamic(() => import("./AnalyseCaisseAcheteur"),  { ssr: false, loading: L("Chargement caisse acheteur...") })
 const BOAnalyseCredit        = dynamic(() => import("./BOAnalyseCredit"),        { ssr: false, loading: L("Chargement analyse crédit...") })
 const BORolesPermissions     = dynamic(() => import("./BORolesPermissions"),     { ssr: false, loading: L("Chargement rôles...") })
+const BORapportMarche        = dynamic(() => import("./BORapportMarche"),        { ssr: false, loading: L("Chargement rapport marché...") })
 const AnalyseReceptionPanel  = dynamic(() => import("./AnalyseReceptionPanel"),  { ssr: false, loading: L("Chargement analyse reception...") })
 const ShelfLifePanel         = dynamic(() => import("./ShelfLifePanel"),         { ssr: false, loading: L("Chargement shelf life...") })
 const ForecastPanel          = dynamic(() => import("./ForecastPanel"),          { ssr: false, loading: L("Chargement forecast...") })
@@ -138,7 +139,7 @@ export type Tab =
   | "comptes_externes"
   | "prospection" | "credit_fournisseur" | "agents_ia"
   | "gps_tracker"
-  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit" | "roles_permissions"
+  | "feedback" | "trip_charges" | "analyse_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit" | "roles_permissions" | "rapport_marche"
   | "caisses_vides" | "shelf_life" | "forecast" | "ashel_market"
   | "camera_perms" | "cutoffs" | "deploy_guide"
   | "azmi_agent" | "hicham_agent" | "ourai_agent"
@@ -254,6 +255,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "reception",         label: "Reception Achat",        labelAr: "الاستلام",           permKey: "canViewAchat", icon: <Icon d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /> },
       { id: "sourcing",          label: "Sourcing Marche",        labelAr: "تحديد المصادر",      permKey: "canViewAchat", icon: <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /> },
       { id: "pa_historique",     label: "PA Historique",          labelAr: "تاريخ سعر الشراء",   permKey: "canViewAchat", icon: <Icon d="M3 3v18h18M7 14l3-3 3 3 5-5" /> },
+      { id: "rapport_marche",    label: "Rapport Marché",         labelAr: "تقرير السوق",        permKey: "canViewAchat", icon: <Icon d="M8 7h12m0 0l-4-4m4 4l-4 4M4 7h.01M4 12h.01M4 17h.01M8 12h12M8 17h12" /> },
       { id: "pricing",           label: "Releve de Prix",         labelAr: "رصد الأسعار",        permKey: "canViewAchat", icon: <Icon d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /> },
       { id: "analyse_achat",     label: "Analyse Achat",          labelAr: "تحليل المشتريات",    permKey: "canViewAchat", icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "analyse_reception", label: "Analyse Reception",      labelAr: "تحليل الاستلام",     permKey: "canViewAchat", icon: <Icon d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
@@ -429,6 +431,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   caisse_acheteur:     (_u) => <AnalyseCaisseAcheteur />,
   analyse_credit:      (_u) => <BOAnalyseCredit />,
   roles_permissions:   (_u) => <BORolesPermissions />,
+  rapport_marche:      (_u) => <BORapportMarche />,
   analyse_reception:   (_u) => <AnalyseReceptionPanel />,
   shelf_life:          (_u) => <ShelfLifePanel />,
   forecast:            (_u) => <ForecastPanel />,

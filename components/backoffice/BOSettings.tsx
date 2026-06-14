@@ -377,6 +377,12 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
   const [artAbsenceMedium, setArtAbsenceMedium] = useState(() => store.getAlertConfig?.()?.articleAbsenceMedium ?? 14)
   const [artAbsenceUrgent, setArtAbsenceUrgent] = useState(() => store.getAlertConfig?.()?.articleAbsenceUrgent ?? 21)
   const [savedAlert, setSavedAlert] = useState(false)
+  // Config Marché (rapport besoin / camions / heure d'arrivée)
+  const [mcCapacite, setMcCapacite]   = useState(() => store.getMarcheConfig?.()?.capaciteHondaKg ?? 1500)
+  const [mcHeure, setMcHeure]         = useState(() => store.getMarcheConfig?.()?.heureOuvertureMarche ?? "05:00")
+  const [mcMinTonne, setMcMinTonne]   = useState(() => store.getMarcheConfig?.()?.minutesParTonne ?? 8)
+  const [mcMarge, setMcMarge]         = useState(() => store.getMarcheConfig?.()?.margeSecuriteMin ?? 30)
+  const [savedMarche, setSavedMarche] = useState(false)
   const [seedMsg, setSeedMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [seeding, setSeeding] = useState(false)
 
@@ -2784,6 +2790,41 @@ To: {{to_email}}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white"
                 style={{ background: "oklch(0.38 0.2 260)" }}>
                 {savedAlert ? "✓ Sauvegardé" : "Enregistrer les alertes"}
+              </button>
+            </div>
+          </div>
+
+          {/* Config Marché (Rapport Besoin Marché) */}
+          <div className="bg-card rounded-2xl border border-border p-6 flex flex-col gap-4">
+            <h3 className="font-bold text-sm text-foreground">🚚 Marché (planification achat)</h3>
+            <p className="text-[11px] text-muted-foreground -mt-2">Utilisé par le « Rapport Besoin Marché » : nombre de camions Honda et heure de départ selon le tonnage.</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                Capacité Honda (kg)
+                <input type="number" min={100} value={mcCapacite} onChange={e => setMcCapacite(Number(e.target.value))}
+                  className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                Heure ouverture marché
+                <input type="time" value={mcHeure} onChange={e => setMcHeure(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                Min. / tonne (anticipation)
+                <input type="number" min={0} value={mcMinTonne} onChange={e => setMcMinTonne(Number(e.target.value))}
+                  className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                Marge sécurité (min)
+                <input type="number" min={0} value={mcMarge} onChange={e => setMcMarge(Number(e.target.value))}
+                  className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+              </label>
+            </div>
+            <div>
+              <button
+                onClick={() => { store.saveMarcheConfig({ capaciteHondaKg: mcCapacite, heureOuvertureMarche: mcHeure, minutesParTonne: mcMinTonne, margeSecuriteMin: mcMarge }); setSavedMarche(true); setTimeout(() => setSavedMarche(false), 2000) }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white" style={{ background: "oklch(0.38 0.2 260)" }}>
+                {savedMarche ? "✓ Sauvegardé" : "Enregistrer le marché"}
               </button>
             </div>
           </div>

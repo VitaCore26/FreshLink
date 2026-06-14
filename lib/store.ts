@@ -2806,6 +2806,24 @@ export const store = {
     setLS("fl_alert_config", { ...store.getAlertConfig(), ...c })
   },
 
+  // --- Config Marché (planification achat / besoin / camions / heure arrivée) ---
+  // capaciteHondaKg     : capacité d'un camion "Honda" en kg
+  // heureOuvertureMarche: heure d'ouverture du marché "HH:MM"
+  // minutesParTonne     : marge de départ anticipé par tonne (plus de tonnage = départ plus tôt)
+  // margeSecuriteMin    : marge fixe de sécurité (minutes)
+  getMarcheConfig: (): { capaciteHondaKg: number; heureOuvertureMarche: string; minutesParTonne: number; margeSecuriteMin: number } => {
+    const c = getLS<Partial<{ capaciteHondaKg: number; heureOuvertureMarche: string; minutesParTonne: number; margeSecuriteMin: number }>>("fl_marche_config", {})
+    return {
+      capaciteHondaKg:      Number(c.capaciteHondaKg)   || 1500,
+      heureOuvertureMarche: c.heureOuvertureMarche      || "05:00",
+      minutesParTonne:      Number(c.minutesParTonne)   || 8,
+      margeSecuriteMin:     Number(c.margeSecuriteMin)  || 30,
+    }
+  },
+  saveMarcheConfig: (c: Partial<{ capaciteHondaKg: number; heureOuvertureMarche: string; minutesParTonne: number; margeSecuriteMin: number }>) => {
+    setLS("fl_marche_config", { ...store.getMarcheConfig(), ...c })
+  },
+
   // --- Email config ---
   getEmailConfig: (): EmailConfig => getLS("fl_email_config", DEFAULT_EMAIL_CONFIG),
   saveEmailConfig: (c: EmailConfig) => setLS("fl_email_config", c),
