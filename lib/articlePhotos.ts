@@ -174,6 +174,28 @@ export const ARTICLE_PHOTOS: Record<string, string> = {
   "marjolaine":        U("photo-1515586000433-45406d8e6662"),
 }
 
+// Photos génériques réelles par famille — garantit qu'aucun produit n'affiche un placeholder.
+// ⚠️ DÉCLARÉ AVANT getArticlePhoto : sinon TDZ en build prod minifié
+// ("Cannot access 'X' before initialization") car getArticlePhoto → getFamilyPhoto → FAMILY_PHOTOS.
+const FAMILY_PHOTOS: Record<string, string> = {
+  fruit:   U("photo-1610832958506-aa56368176cf"), // panier de fruits
+  agrume:  U("photo-1557800636-894a64c1696f"),    // agrumes
+  legume:  U("photo-1540420773420-3366772f4999"), // légumes variés
+  herbe:   U("photo-1466637574441-749b8f19452f"), // herbes aromatiques
+  champignon: U("photo-1504545102780-26774c1bb073"),
+  racine:  U("photo-1598170845058-32b9d6a5da37"), // carottes/racines
+}
+function getFamilyPhoto(famille: string): string {
+  const f = (famille || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  if (f.includes("agrume")) return FAMILY_PHOTOS.agrume
+  if (f.includes("herbe")) return FAMILY_PHOTOS.herbe
+  if (f.includes("champign")) return FAMILY_PHOTOS.champignon
+  if (f.includes("racine")) return FAMILY_PHOTOS.racine
+  if (f.includes("fruit")) return FAMILY_PHOTOS.fruit
+  if (f.includes("legume")) return FAMILY_PHOTOS.legume
+  return FAMILY_PHOTOS.legume // défaut = légumes (cœur du catalogue)
+}
+
 /**
  * Cherche la meilleure photo pour un article par son nom.
  * Retourne une URL Unsplash ou un placeholder coloré si aucun match.
@@ -197,24 +219,4 @@ export function getArticlePhoto(nom: string, famille = ""): string {
 
   // 3. Fallback : VRAIE photo générique par famille (jamais de placehold)
   return getFamilyPhoto(famille)
-}
-
-// Photos génériques réelles par famille — garantit qu'aucun produit n'affiche un placeholder
-const FAMILY_PHOTOS: Record<string, string> = {
-  fruit:   U("photo-1610832958506-aa56368176cf"), // panier de fruits
-  agrume:  U("photo-1557800636-894a64c1696f"),    // agrumes
-  legume:  U("photo-1540420773420-3366772f4999"), // légumes variés
-  herbe:   U("photo-1466637574441-749b8f19452f"), // herbes aromatiques
-  champignon: U("photo-1504545102780-26774c1bb073"),
-  racine:  U("photo-1598170845058-32b9d6a5da37"), // carottes/racines
-}
-function getFamilyPhoto(famille: string): string {
-  const f = (famille || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
-  if (f.includes("agrume")) return FAMILY_PHOTOS.agrume
-  if (f.includes("herbe")) return FAMILY_PHOTOS.herbe
-  if (f.includes("champign")) return FAMILY_PHOTOS.champignon
-  if (f.includes("racine")) return FAMILY_PHOTOS.racine
-  if (f.includes("fruit")) return FAMILY_PHOTOS.fruit
-  if (f.includes("legume")) return FAMILY_PHOTOS.legume
-  return FAMILY_PHOTOS.legume // défaut = légumes (cœur du catalogue)
 }
