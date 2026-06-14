@@ -116,6 +116,7 @@ const BOCategoryPricing      = dynamic(() => import("./BOCategoryPricing"),     
 const BOExternalLinks        = dynamic(() => import("./BOExternalLinks"),         { ssr: false, loading: L("Chargement liens...") })
 const BODeviceAccess         = dynamic(() => import("./BODeviceAccess"),          { ssr: false, loading: L("Chargement accès appareils...") })
 const BOCommandesUnifiees    = dynamic(() => import("./BOCommandesUnifiees"),      { ssr: false, loading: L("Chargement commandes...") })
+const BOAlertesClients       = dynamic(() => import("./BOAlertesClients"),         { ssr: false, loading: L("Chargement alertes articles...") })
 // ── Modules V3 (moteur commercial, cadeaux, cutoffs, feedbacks, PA) ──
 const BOCutoffsV3            = dynamic(() => import("./BOCutoffs"),               { ssr: false, loading: L("Chargement cutoffs...") })
 const BOGiftsV3              = dynamic(() => import("./BOGifts"),                 { ssr: false, loading: L("Chargement cadeaux...") })
@@ -155,6 +156,7 @@ export type Tab =
   | "device_access"
   | "commandes_web"
   | "commandes_unifiees"
+  | "alertes_clients"
   | "moteur_commercial" | "gifts_v3" | "pa_historique" | "cutoffs_v3" | "feedbacks_v3"
 
 interface NavItem {
@@ -262,6 +264,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Commercial", labelAr: "التجاري",
     items: [
       { id: "commandes_unifiees", label: "Commandes",              labelAr: "الطلبيات",          permKey: "canViewCommercial", icon: <Icon d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /> },
+      { id: "alertes_clients",    label: "Alertes Articles Clients",labelAr: "تنبيهات أصناف الزبائن", permKey: "canViewCommercial", icon: <Icon d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /> },
       { id: "affectation",        label: "Affectation Commerciale",labelAr: "التوزيع التجاري",   permKey: "canViewCommercial", icon: <Icon d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /> },
       { id: "category_pricing",   label: "Tarifs par Categorie",   labelAr: "أسعار الفئات",      permKey: "canViewCommercial", icon: <Icon d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
       { id: "documents",          label: "Devis & Contrats CHR",   labelAr: "العروض والعقود",    permKey: "canViewCommercial", icon: <Icon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
@@ -401,6 +404,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   feedbacks_v3:      (u) => <FeedbackPanel user={u} />,
   commandes_web:       (u) => <BOCommandesUnifiees user={u} />,
   commandes_unifiees:  (u) => <BOCommandesUnifiees user={u} />,
+  alertes_clients:     (u) => <BOAlertesClients user={u} />,
   category_pricing:  (_u) => <BOCategoryPricing />,
   documents:         (u) => <BODocuments user={u} />,
   firebase_archive:  (_u) => <div className="p-8 text-center text-slate-400">Module retiré</div>,
