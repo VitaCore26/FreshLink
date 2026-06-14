@@ -472,6 +472,17 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
   const [showProfil, setShowProfil]     = useState(false)
   const [profilPhoto, setProfilPhoto]   = useState(user.photoUrl ?? "")
   const [navSearch, setNavSearch]       = useState("")
+  // Groupes (grandes rubriques) repliés — liste déroulable. Persistée.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem("fl_nav_collapsed") ?? "[]") as string[]) } catch { return new Set() }
+  })
+  const toggleGroup = (label: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(label)) next.delete(label); else next.add(label)
+    try { localStorage.setItem("fl_nav_collapsed", JSON.stringify([...next])) } catch { /* */ }
+    return next
+  })
   const [companyBrand, setCompanyBrand] = useState(() => store.getCompanyConfig())
   const isDemo           = isDemoUser(user)
 
@@ -960,16 +971,24 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 thin-scroll" style={{ scrollbarColor: "#1a4f2a transparent" }}>
-        {filteredGroups.map(group => (
+        {filteredGroups.map(group => {
+          const isGroupCollapsed = collapsedGroups.has(group.label) && !searchQ
+          return (
           <div key={group.label} className="mb-2">
             {!sidebarCollapsed && !searchQ && (
-              <div className="px-3 pt-3 pb-1">
+              <button onClick={() => toggleGroup(group.label)}
+                className="w-full flex items-center justify-between px-3 pt-3 pb-1 group/hdr"
+                title={isGroupCollapsed ? "Dérouler" : "Replier"}>
                 <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#4ade80", opacity: 0.7 }}>
                   {getGroupLabel(group.label, lang)}
                 </span>
-              </div>
+                <svg className={`w-3 h-3 transition-transform duration-200 ${isGroupCollapsed ? "" : "rotate-90"}`}
+                  style={{ color: "#4ade80", opacity: 0.7 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             )}
-            {group.items.map(item => {
+            {!isGroupCollapsed && group.items.map(item => {
               const isActive = activeTab === item.id
               const itemLabel = getNavLabel(item.id, item.label, item.labelAr, lang)
               return (
@@ -1009,7 +1028,8 @@ function SidebarContent({
               )
             })}
           </div>
-        ))}
+          )
+        })}
         {searchQ && filteredGroups.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-8" style={{ color: "#4ade80", opacity: 0.5 }}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

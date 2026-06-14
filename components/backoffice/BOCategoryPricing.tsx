@@ -73,6 +73,11 @@ export default function BOCategoryPricing() {
   const [saved, setSaved]           = useState(false)
   const [importMsg, setImportMsg]   = useState<{ ok: boolean; text: string } | null>(null)
   const fileRef                     = useRef<HTMLInputElement>(null)
+  // Pricing par famille (application en masse sur le segment actif)
+  const [famPanel, setFamPanel]     = useState(false)
+  const [famSel, setFamSel]         = useState("")
+  const [famMethode, setFamMethode] = useState<"marge" | "fixe">("marge")
+  const [famValeur, setFamValeur]   = useState("")
 
   useEffect(() => {
     setArticles(store.getArticles())
@@ -144,6 +149,30 @@ export default function BOCategoryPricing() {
       ...prev,
       [artId]: { ...prev[artId], [field]: val === "" ? undefined : Number(val) },
     }))
+  }
+
+  // Liste des familles distinctes
+  const familles = Array.from(new Set(articles.map(a => a.famille).filter(Boolean))).sort() as string[]
+
+  // Applique un pricing en masse à tous les articles d'une famille → pré-remplit
+  // les edits du segment actif (l'utilisateur valide ensuite avec « Enregistrer »).
+  const applyFamillePricing = () => {
+    const v = Number(famValeur)
+    if (!famSel || isNaN(v) || v <= 0) return
+    const cible = articles.filter(a => a.famille === famSel)
+    setEdits(prev => {
+      const next = { ...prev }
+      cible.forEach(a => {
+        const pa = Number(a.prixAchat) || 0
+        const prix = famMethode === "marge"
+          ? Math.round(pa * (1 + v / 100) * 100) / 100   // marge % sur PA
+          : Math.round(v * 100) / 100                     // prix fixe
+        next[a.id] = { ...next[a.id], prix }
+      })
+      return next
+    })
+    setImportMsg({ ok: true, text: `${cible.length} article(s) de « ${famSel} » → ${famMethode === "marge" ? `PA +${v}%` : `${v} DH`} sur ${CAT_LABELS[activeCat]}. Cliquez « Enregistrer » pour appliquer.` })
+    setTimeout(() => setImportMsg(null), 6000)
   }
 
   const clientCat = (clientId: string): Cat => {
@@ -348,7 +377,51 @@ export default function BOCategoryPricing() {
         <span className="text-xs text-muted-foreground bg-muted rounded-lg px-2 py-1.5 font-medium">
           {filtered.length}/{articles.length} articles
         </span>
+        {mode === "segment" && (
+          <button onClick={() => setFamPanel(v => !v)}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/5">
+            🏷️ Pricing par famille
+          </button>
+        )}
       </div>
+
+      {/* Pricing par famille — application en masse sur le segment actif */}
+      {mode === "segment" && famPanel && (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-sm font-bold text-foreground">🏷️ Prix de vente par famille — segment {CAT_LABELS[activeCat]}</h3>
+            <span className="text-[11px] text-muted-foreground">Applique un prix/marge à tous les articles d&apos;une famille en une fois</span>
+          </div>
+          <div className="grid sm:grid-cols-4 gap-2 items-end">
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+              Famille
+              <select value={famSel} onChange={e => setFamSel(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">— Choisir —</option>
+                {familles.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+              Méthode
+              <select value={famMethode} onChange={e => setFamMethode(e.target.value as "marge" | "fixe")}
+                className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="marge">Marge % sur PA</option>
+                <option value="fixe">Prix fixe (DH)</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+              {famMethode === "marge" ? "Marge (%)" : "Prix (DH)"}
+              <input type="number" min={0} step="0.01" value={famValeur} onChange={e => setFamValeur(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+            </label>
+            <button onClick={applyFamillePricing} disabled={!famSel || !famValeur}
+              className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary disabled:opacity-50">
+              Appliquer
+            </button>
+          </div>
+          <p className="text-[11px] text-amber-700">⚠️ « Appliquer » pré-remplit les prix ; cliquez ensuite <strong>Enregistrer</strong> pour sauvegarder.</p>
+        </div>
+      )}
 
       {/* Empty state for client mode without selection */}
       {mode === "client" && !selectedClient && (
