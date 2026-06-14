@@ -399,6 +399,10 @@ export interface Livreur {
   photoPermis?: string
   // externe
   societe?: string
+  // Carburant : avec = on fournit/paie le carburant (→ analyse conso) ;
+  // sans = forfait, carburant à la charge du transporteur/livreur.
+  carburantInclus?: boolean        // true = "avec carburant"
+  consommationL100?: number        // consommation moyenne L/100km (estimation)
   notes?: string
   actif: boolean
 }
@@ -549,6 +553,10 @@ export interface Trip {
   nbCaissesByArticle?: Record<string, { gros: number; demi: number; articleNom: string }>
   caissesValidees?: boolean  // true une fois le contrôleur a saisi toutes les caisses
   kmDepartConfirme?: boolean // true une fois le livreur a saisi le KM départ
+  // Carburant / coût voyage
+  carburantInclus?: boolean      // true = trip "avec carburant" (on paie le carburant → analyse conso)
+  carburantReelLitres?: number   // litres réellement consommés (saisie au retour)
+  coutEstime?: number            // coût estimé du voyage (DH) — snapshot à la planification
 }
 
 export interface LigneRetour {
@@ -1416,6 +1424,7 @@ export interface EmailConfig {
   recapCC?: string[]
   // Livreur pay config
   tarifKmLivreur: number        // DH per km — default 0.45
+  prixCarburantL?: number       // prix du litre de carburant (DH) — pour l'estimation conso
   tarifCaisseLivreur: number    // DH per caisse — default 0.80
   tarifClientLivreur: number    // DH per client — default 2.50
   primePonctualite: number      // bonus ponctualité — default 30
@@ -2008,6 +2017,7 @@ const DEFAULT_EMAIL_CONFIG: EmailConfig = {
   besoinDelaiMinutes: 0,
   besoinPushAuto: true,
   tarifKmLivreur: 0.45,
+  prixCarburantL: 15,
   tarifCaisseLivreur: 0.80,
   tarifClientLivreur: 2.50,
   primePonctualite: 30,

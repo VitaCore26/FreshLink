@@ -9,6 +9,7 @@ interface Props { user: User }
 const EMPTY_LIVREUR: Omit<Livreur, "id"> = {
   type: "interne", nom: "", prenom: "", telephone: "", actif: true,
   matricule: "", capaciteCaisses: 0, capaciteTonnage: 0,
+  carburantInclus: false, consommationL100: 0,
 }
 
 export default function BODispatch({ user }: Props) {
@@ -129,6 +130,26 @@ export default function BODispatch({ user }: Props) {
   const ownsTrip = (t: Trip) => user.role === "livreur" && (t.livreurId === user.id || t.livreurNom === user.name)
   const canRunTrip = (t: Trip) => canManageTrips || ownsTrip(t)
 
+  // Estimation coût voyage + analyse carburant (prévu vs réel) d'un trip
+  const tripCout = (t: Trip) => {
+    const p = store.getDispatchParams()
+    const liv = livreurs.find(l => l.id === t.livreurId)
+    const km = t.kmTotal ?? ((t.kmArrivee ?? 0) > 0 && (t.kmDepart ?? 0) > 0 ? (t.kmArrivee! - t.kmDepart!) : 0)
+    const avecCarb = t.carburantInclus ?? liv?.carburantInclus ?? false
+    const consoL100 = Number(liv?.consommationL100) || 0
+    const prixL = Number(p.prixCarburantL) || 15
+    const coutKm = km * (Number(p.tarifKmLivreur) || 0)
+    const litresPrevu = consoL100 > 0 ? Math.round((km / 100) * consoL100 * 10) / 10 : 0
+    const coutCarbPrevu = Math.round(litresPrevu * prixL)
+    const litresReel = Number(t.carburantReelLitres) || 0
+    const coutCarbReel = Math.round(litresReel * prixL)
+    const ecartLitres = litresReel > 0 ? Math.round((litresReel - litresPrevu) * 10) / 10 : 0
+    const coutEstime = Math.round(coutKm + (avecCarb ? coutCarbPrevu : 0))
+    return { km, avecCarb, consoL100, prixL, coutKm: Math.round(coutKm), litresPrevu, coutCarbPrevu, litresReel, coutCarbReel, ecartLitres, coutEstime }
+  }
+  const setCarbReel = (id: string, litres: number) => { store.updateTrip(id, { carburantReelLitres: litres }); refresh() }
+  const toggleTripCarb = (id: string, v: boolean) => { store.updateTrip(id, { carburantInclus: v }); refresh() }
+
   const toggleCmd = (id: string) =>
     setSelectedCmds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
 
@@ -224,7 +245,8 @@ export default function BODispatch({ user }: Props) {
   const openEditLivreur = (l: Livreur) => {
     setEditingLivreur(l)
     setLivreurForm({ type: l.type, nom: l.nom, prenom: l.prenom, telephone: l.telephone, actif: l.actif,
-      cin: l.cin || "", matricule: l.matricule || "", capaciteCaisses: l.capaciteCaisses || 0, capaciteTonnage: l.capaciteTonnage || 0 })
+      cin: l.cin || "", matricule: l.matricule || "", capaciteCaisses: l.capaciteCaisses || 0, capaciteTonnage: l.capaciteTonnage || 0,
+      carburantInclus: l.carburantInclus ?? false, consommationL100: l.consommationL100 ?? 0 })
     setShowLivreurForm(true)
   }
 
@@ -491,6 +513,41 @@ export default function BODispatch({ user }: Props) {
                 </div>
               </div>
 
+              {/* Estimation coût voyage + analyse carburant (prévu vs réel) */}
+              {(() => {
+                const c = tripCout(trip)
+                return (
+                  <div className="border-t border-border px-4 py-3 bg-slate-50/60 flex flex-col gap-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-xs font-bold text-slate-700">💰 Coût voyage estimé : <span className="text-emerald-700">{c.coutEstime.toLocaleString("fr-MA")} DH</span></span>
+                      <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={c.avecCarb} onChange={e => toggleTripCarb(trip.id, e.target.checked)} className="w-3.5 h-3.5 rounded accent-primary" />
+                        Avec carburant
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                      <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Km</p><p className="font-bold">{c.km || "—"}</p></div>
+                      <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Coût km</p><p className="font-bold">{c.coutKm} DH</p></div>
+                      {c.avecCarb && <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Carb. prévu</p><p className="font-bold">{c.litresPrevu} L · {c.coutCarbPrevu} DH</p></div>}
+                      {c.avecCarb && (
+                        <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5">
+                          <p className="text-slate-400">Carb. réel (L)</p>
+                          <input type="number" step="0.1" defaultValue={c.litresReel || ""} placeholder="saisir"
+                            onBlur={e => { const v = Number(e.target.value); if (v !== c.litresReel) setCarbReel(trip.id, v) }}
+                            className="w-full font-bold bg-transparent outline-none border-b border-slate-200 focus:border-primary" />
+                        </div>
+                      )}
+                    </div>
+                    {c.avecCarb && c.litresReel > 0 && (
+                      <p className={`text-[11px] font-semibold ${c.ecartLitres > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        Écart conso : {c.ecartLitres > 0 ? "+" : ""}{c.ecartLitres} L vs prévu ({c.coutCarbReel} DH réel)
+                        {c.ecartLitres > 0 ? " — surconsommation à vérifier" : " — conforme/économe"}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
               {trip.itineraire && trip.itineraire.length > 0 && (
                 <div className="h-44 border-t border-border"
                   ref={el => { if (el && !mapRefs.current[trip.id]) { mapRefs.current[trip.id] = el; loadTripMap(trip, el) } }} />
@@ -571,6 +628,26 @@ export default function BODispatch({ user }: Props) {
                       </div>
                     </div>
                   )}
+
+                  {/* Carburant : avec / sans + consommation pour l'estimation conso */}
+                  <div className="rounded-xl border border-border p-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" id="carbInclus" checked={!!livreurForm.carburantInclus}
+                        onChange={e => setLivreurForm({ ...livreurForm, carburantInclus: e.target.checked })}
+                        className="w-4 h-4 rounded accent-primary" />
+                      <label htmlFor="carbInclus" className="text-sm text-foreground cursor-pointer">
+                        Avec carburant <span className="text-xs text-muted-foreground">(on fournit/paie le carburant → analyse conso)</span>
+                      </label>
+                    </div>
+                    {livreurForm.carburantInclus && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold text-foreground">Consommation moyenne (L/100 km)</label>
+                        <input type="number" step="0.1" value={livreurForm.consommationL100 || 0}
+                          onChange={e => setLivreurForm({ ...livreurForm, consommationL100: Number(e.target.value) })}
+                          className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="actif" checked={livreurForm.actif}
