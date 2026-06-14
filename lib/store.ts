@@ -2222,7 +2222,7 @@ export const store = {
   getArticles: (): Article[] => {
     const raw = getLS<Article[]>("fl_articles", DEFAULT_ARTICLES)
     if (!Array.isArray(raw)) return DEFAULT_ARTICLES
-    return raw
+    const normalized = raw
       .filter(a => a && (a.id != null))
       .map(a => ({
         ...a,
@@ -2234,6 +2234,11 @@ export const store = {
         stockDefect: Number(a.stockDefect) || 0,
         prixAchat: Number(a.prixAchat) || 0,
       }))
+    // Déduplication par id — évite les doublons accumulés lors de syncs précédents
+    // (ex: articles vus en double sur mobile acheteur/commercial)
+    const byId = new Map<string, Article>()
+    for (const a of normalized) byId.set(a.id, a)
+    return [...byId.values()]
   },
   saveArticles: (a: Article[]) => setLS("fl_articles", a),
 

@@ -196,11 +196,13 @@ export default function BOCategoryPricing() {
 
   // ── Save ─────────────────────────────────────────────────────────────────
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const all = store.getArticles()
+    const touchedIds: string[] = []
     for (const [artId, edit] of Object.entries(edits)) {
       const idx = all.findIndex(a => a.id === artId)
       if (idx < 0) continue
+      touchedIds.push(artId)
       if (mode === "segment") {
         const { prix: prixKey, promo: promoKey } = getField(activeCat)
         if (edit.prix  !== undefined) (all[idx] as unknown as Record<string, unknown>)[prixKey  as string] = edit.prix
@@ -222,9 +224,16 @@ export default function BOCategoryPricing() {
     setEdits({})
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    // Synchronise vers Supabase pour propager les tarifs aux mobiles
+    // (prévendeurs/acheteurs voient le prix CHR/Marchand/Particulier mis à jour).
+    const { upsertArticle } = await import("@/lib/supabase/db")
+    for (const id of touchedIds) {
+      const art = all.find(a => a.id === id)
+      if (art) upsertArticle(art)
+    }
   }
 
-  const clearClientOverride = (artId: string) => {
+  const clearClientOverride = async (artId: string) => {
     const all = store.getArticles()
     const idx = all.findIndex(a => a.id === artId)
     if (idx >= 0 && all[idx].clientPrices?.[selectedClient]) {
@@ -232,6 +241,8 @@ export default function BOCategoryPricing() {
       store.saveArticles(all)
       setArticles(all)
       setEdits(prev => { const n = { ...prev }; delete n[artId]; return n })
+      const { upsertArticle } = await import("@/lib/supabase/db")
+      upsertArticle(all[idx])
     }
   }
 

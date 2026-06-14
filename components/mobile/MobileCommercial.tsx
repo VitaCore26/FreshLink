@@ -1160,13 +1160,12 @@ export default function MobileCommercial({ user }: Props) {
             </div>
           ) : pickerArticles.map(a => {
             const inCart = lignes.some(l => l.articleId === a.id)
-            const stockOk = a.stockDisponible > 0
             const pv = store.computePV(a)
             const globalCount = globalRotation[a.id] ?? 0
             const habitCount = clientHabits[a.id]?.count ?? 0
             return (
               <label key={a.id}
-                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${inCart ? "bg-primary/5" : stockOk ? "hover:bg-muted/50" : "opacity-40 pointer-events-none"}`}>
+                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${inCart ? "bg-primary/5" : "hover:bg-muted/50"}`}>
                 <input type="checkbox" checked={inCart} readOnly={false}
                   onChange={e => {
                     if (e.target.checked) {
