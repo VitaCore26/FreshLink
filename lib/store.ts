@@ -2790,10 +2790,20 @@ export const store = {
   addMessage: (m: Message) => { const msgs = store.getMessages(); msgs.push(m); store.saveMessages(msgs) },
 
   // --- Alert inactivity config ---
-  getAlertConfig: (): { inactivityDays: number } =>
-    getLS("fl_alert_config", { inactivityDays: 30 }),
-  saveAlertConfig: (c: { inactivityDays: number }) => {
-    setLS("fl_alert_config", c)
+  // inactivityDays      : client sans aucune commande depuis N jours
+  // articleAbsenceJours : article habituel d'un client non recommandé depuis N jours (seuil d'alerte)
+  // articleAbsenceMedium/Urgent : seuils de gravité (badge orange / rouge)
+  getAlertConfig: (): { inactivityDays: number; articleAbsenceJours: number; articleAbsenceMedium: number; articleAbsenceUrgent: number } => {
+    const c = getLS<Partial<{ inactivityDays: number; articleAbsenceJours: number; articleAbsenceMedium: number; articleAbsenceUrgent: number }>>("fl_alert_config", {})
+    return {
+      inactivityDays:       Number(c.inactivityDays)       || 30,
+      articleAbsenceJours:  Number(c.articleAbsenceJours)  || 7,
+      articleAbsenceMedium: Number(c.articleAbsenceMedium) || 14,
+      articleAbsenceUrgent: Number(c.articleAbsenceUrgent) || 21,
+    }
+  },
+  saveAlertConfig: (c: { inactivityDays: number; articleAbsenceJours?: number; articleAbsenceMedium?: number; articleAbsenceUrgent?: number }) => {
+    setLS("fl_alert_config", { ...store.getAlertConfig(), ...c })
   },
 
   // --- Email config ---

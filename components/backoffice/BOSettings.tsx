@@ -373,6 +373,9 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
   })
   const [alertSaved, setAlertSaved] = useState("")
   const [alertInactivityDays, setAlertInactivityDays] = useState(() => store.getAlertConfig?.()?.inactivityDays ?? 30)
+  const [artAbsenceJours, setArtAbsenceJours]   = useState(() => store.getAlertConfig?.()?.articleAbsenceJours ?? 7)
+  const [artAbsenceMedium, setArtAbsenceMedium] = useState(() => store.getAlertConfig?.()?.articleAbsenceMedium ?? 14)
+  const [artAbsenceUrgent, setArtAbsenceUrgent] = useState(() => store.getAlertConfig?.()?.articleAbsenceUrgent ?? 21)
   const [savedAlert, setSavedAlert] = useState(false)
   const [seedMsg, setSeedMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [seeding, setSeeding] = useState(false)
@@ -2745,13 +2748,43 @@ To: {{to_email}}
                   className="w-24 px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <span className="text-sm text-muted-foreground">jours</span>
-                <button
-                  onClick={() => { store.saveAlertConfig({ inactivityDays: alertInactivityDays }); setSavedAlert(true); setTimeout(() => setSavedAlert(false), 2000) }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white"
-                  style={{ background: "oklch(0.38 0.2 260)" }}>
-                  {savedAlert ? "✓ Sauvegardé" : "Enregistrer"}
-                </button>
+                <span className="text-sm text-muted-foreground">jours</span>
               </div>
+            </div>
+
+            {/* Alertes articles par client (mobile prévendeur + analyses) */}
+            <div className="flex flex-col gap-1.5 border-t border-border pt-4">
+              <label className="text-xs font-bold text-foreground">Alertes « articles par client »</label>
+              <p className="text-[11px] text-muted-foreground">Un article habituel d&apos;un client non recommandé depuis N jours déclenche une alerte (onglet Habitudes / mobile prévendeur).</p>
+              <div className="grid grid-cols-3 gap-3 mt-1">
+                <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                  Seuil alerte (j)
+                  <input type="number" min={1} max={365} value={artAbsenceJours} onChange={e => setArtAbsenceJours(Number(e.target.value))}
+                    className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] font-semibold text-amber-700">
+                  Moyen (j)
+                  <input type="number" min={1} max={365} value={artAbsenceMedium} onChange={e => setArtAbsenceMedium(Number(e.target.value))}
+                    className="px-3 py-2 rounded-xl border border-amber-300 bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] font-semibold text-red-700">
+                  Urgent (j)
+                  <input type="number" min={1} max={365} value={artAbsenceUrgent} onChange={e => setArtAbsenceUrgent(Number(e.target.value))}
+                    className="px-3 py-2 rounded-xl border border-red-300 bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-400" />
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  store.saveAlertConfig({ inactivityDays: alertInactivityDays, articleAbsenceJours: artAbsenceJours, articleAbsenceMedium: artAbsenceMedium, articleAbsenceUrgent: artAbsenceUrgent })
+                  setSavedAlert(true); setTimeout(() => setSavedAlert(false), 2000)
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                style={{ background: "oklch(0.38 0.2 260)" }}>
+                {savedAlert ? "✓ Sauvegardé" : "Enregistrer les alertes"}
+              </button>
             </div>
           </div>
 

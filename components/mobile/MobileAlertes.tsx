@@ -261,7 +261,7 @@ export default function MobileAlertes({ user }: Props) {
       const art = articles.find(a => a.id === artId)
       if (!art) return acc
       const joursAbsence = Math.floor((today.getTime() - new Date(info.lastDate).getTime()) / 86400000)
-      if (joursAbsence < 7) return acc
+      if (joursAbsence < store.getAlertConfig().articleAbsenceJours) return acc
       acc.push({ articleId: artId, articleNom: art.nom, famille: art.famille ?? "", joursAbsence, nbCommandesHistorique: info.count, stockDisponible: art.stockDisponible, prixVente: info.prixVente })
       return acc
     }, []).sort((a, b) => b.joursAbsence - a.joursAbsence)
@@ -452,7 +452,7 @@ export default function MobileAlertes({ user }: Props) {
           <span className="text-base">📦</span>
           <h3 className="font-bold text-sm text-foreground">Alertes articles par client</h3>
         </div>
-        <p className="text-xs text-muted-foreground -mt-2">Articles habituellement commandés mais absents depuis +7 jours</p>
+        <p className="text-xs text-muted-foreground -mt-2">Articles habituellement commandés mais absents depuis +{store.getAlertConfig().articleAbsenceJours} jours</p>
 
         <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-400">
@@ -470,8 +470,9 @@ export default function MobileAlertes({ user }: Props) {
         {articleAlerts.length > 0 && (
           <div className="flex flex-col gap-2">
             {articleAlerts.map(a => {
-              const isUrgent = a.joursAbsence >= 21
-              const isMedium = a.joursAbsence >= 14
+              const _ac = store.getAlertConfig()
+              const isUrgent = a.joursAbsence >= _ac.articleAbsenceUrgent
+              const isMedium = a.joursAbsence >= _ac.articleAbsenceMedium
               const bg    = isUrgent ? "bg-red-50 border-red-200" : isMedium ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"
               const badge = isUrgent ? "bg-red-100 text-red-700" : isMedium ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
               const stockOk = (a.stockDisponible ?? 0) > 0
