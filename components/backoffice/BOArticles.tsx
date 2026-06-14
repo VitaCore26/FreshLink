@@ -233,6 +233,14 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
     }
   }
 
+  // Pour le filtre actif : si famille choisie → chercher via groupe.
+  // ⚠️ DÉCLARÉ AVANT `filtered` : sinon TDZ en build prod minifié
+  // ("Cannot access 'famillesFiltre' before initialization") car
+  // le callback de `filtered` lit `famillesFiltre` quand une famille est sélectionnée.
+  const famillesFiltre = famille
+    ? (FAMILLE_GROUPES[famille] ?? [famille])
+    : []
+
   const filtered = articles.filter(a => {
     const q = search.toLowerCase()
     const matchSearch = !q || a.nom.toLowerCase().includes(q) || a.nomAr.includes(q) || a.famille.toLowerCase().includes(q)
@@ -306,11 +314,6 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
     familles,
     count: articles.filter(a => familles.includes(a.famille)).length,
   }))
-
-  // Pour le filtre actif : si famille choisie → chercher via groupe
-  const famillesFiltre = famille
-    ? (FAMILLE_GROUPES[famille] ?? [famille])
-    : []
 
   const byFamille = FAMILLES_ARTICLES.map(f => ({
     famille: f,
