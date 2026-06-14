@@ -149,13 +149,28 @@ export async function deleteArticle(id: string) {
 }
 
 export async function fetchArticles(): Promise<Article[]> {
+  // Lecture via l'API service-role (/api/sync-read) : le client ANON est
+  // bloqué par la RLS sur fl_articles → les articles ne se synchronisaient
+  // pas chez les prévendeurs mobiles. Le service-role contourne la RLS.
+  try {
+    const res = await fetch("/api/sync-read?table=fl_articles", { cache: "no-store" })
+    if (res.ok) {
+      const j = await res.json() as { ok?: boolean; data?: { id: string; payload?: unknown }[] }
+      const rows = j?.data ?? []
+      if (rows.length > 0) {
+        const articles = rows.map(r => fromRow<Article>(r as { id: string; payload: unknown }))
+        store.saveArticles(articles)
+        return store.getArticles()   // normalisé (nom/famille/unite garantis)
+      }
+    }
+  } catch { /* offline / hors app */ }
+  // Repli : client anon (si l'API est inaccessible mais la RLS ouverte)
   try {
     const { data, error } = await sbRead().from("fl_articles").select("id, payload")
-    if (error) throw error
-    if (data && data.length > 0) {
+    if (!error && data && data.length > 0) {
       const articles = (data as { id: string; payload: unknown }[]).map(r => fromRow<Article>(r))
       store.saveArticles(articles)
-      return articles
+      return store.getArticles()
     }
   } catch { /* offline */ }
   return store.getArticles()

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { store, type EmailConfig, type MotifRetour, type CompanyConfig, type CompanyContacts, type WorkflowConfig, type WorkflowStep, type ContenantTare, DEFAULT_WORKFLOW_STEPS, type ProcessConfig, DEFAULT_PROCESS_CONFIG, type TransportCompany } from "@/lib/store"
 import { useRealtimeSync } from "@/lib/supabase/useRealtimeSync"
 import { seedDemoData } from "@/lib/seedData"
-import { saveEmailJSConfig, getEmailJSConfigPublic, testEmailJSConnection } from "@/lib/email"
+// EmailJS retiré — l'envoi d'email passe par Resend (serveur, /api/send-email)
 import { createClient } from "@/lib/supabase/client"
 
 function AccessDenied() {
@@ -264,7 +264,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
   const [motifs, setMotifs] = useState<MotifRetour[]>([])
   const [newMotif, setNewMotif] = useState({ label: "", labelAr: "" })
   const [saved, setSaved] = useState("")
-  const [tab, setTab] = useState<"entreprise" | "contacts" | "process" | "workflow" | "emails" | "emailjs" | "motifs" | "contenants" | "dataguard" | "ai_config" | "alertes" | "transporteurs" | "moncompte" | "systeme" | "siteweb">("entreprise")
+  const [tab, setTab] = useState<"entreprise" | "contacts" | "process" | "workflow" | "emails" | "motifs" | "contenants" | "dataguard" | "ai_config" | "alertes" | "transporteurs" | "moncompte" | "systeme" | "siteweb">("entreprise")
   const [restartMsg, setRestartMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [restartLoading, setRestartLoading] = useState(false)
 
@@ -314,7 +314,6 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     ice: "", patente: "", rc: "", if_fiscal: "", tp: "", cnss: "",
     telephone: "", email: "", adresse: "", ville: "", contact: "", notes: ""
   })
-  const [ejsCfg, setEjsCfg] = useState({ serviceId: "", templateId: "", publicKey: "" })
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
   const [dgMsg, setDgMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -406,8 +405,6 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     setContenants(store.getContenantsConfig())
     setProcessCfg(store.getProcessConfig())
     setTransporteurs(store.getTransportCompanies())
-    const ejs = getEmailJSConfigPublic()
-    setEjsCfg({ serviceId: ejs.serviceId, templateId: ejs.templateId, publicKey: ejs.publicKey })
   }, [canAccess])
 
   // Guard AFTER hooks — safe conditional render
@@ -1860,145 +1857,6 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
               Sauvegarder la configuration
             </button>
           )}
-        </div>
-      )}
-
-      {/* EmailJS config */}
-      {tab === "emailjs" && (
-        <div className="flex flex-col gap-4">
-
-          {/* Guide pas-à-pas */}
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
-            <p className="text-sm font-bold text-blue-800 mb-3">Guide de configuration EmailJS (5 minutes)</p>
-            <ol className="text-xs text-blue-800 leading-relaxed list-decimal list-inside space-y-2">
-              <li>
-                Créez un compte gratuit sur{" "}
-                <a href="https://www.emailjs.com" target="_blank" rel="noreferrer" className="underline font-semibold">emailjs.com</a>
-              </li>
-              <li>
-                <strong>Email Services</strong> → Add New Service → choisissez Gmail, Outlook ou autre. Notez le <strong>Service ID</strong>.
-              </li>
-              <li>
-                <strong>Email Templates</strong> → Create New Template. Dans le corps du template, utilisez impérativement ces variables :<br />
-                <code className="bg-blue-100 rounded px-1.5 py-0.5 text-xs font-mono mt-1 inline-block">
-                  {'To: {{to_email}} | Subject: {{subject}} | Body: {{message}}'}
-                </code>
-                <br />Notez le <strong>Template ID</strong>.
-              </li>
-              <li>
-                <strong>Account</strong> → <strong>API Keys</strong> → copiez votre <strong>Public Key</strong>.
-              </li>
-              <li>Collez les 3 identifiants ci-dessous et cliquez Sauvegarder, puis testez la connexion.</li>
-            </ol>
-          </div>
-
-          {/* Identifiants */}
-          <div className="bg-card rounded-2xl border border-border p-6 flex flex-col gap-4">
-            <h3 className="font-semibold text-foreground text-sm">Identifiants EmailJS / بيانات EmailJS</h3>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-foreground">Service ID</label>
-                <input type="text" value={ejsCfg.serviceId}
-                  onChange={e => setEjsCfg({ ...ejsCfg, serviceId: e.target.value })}
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="service_xxxxxxx" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-foreground">Template ID</label>
-                <input type="text" value={ejsCfg.templateId}
-                  onChange={e => setEjsCfg({ ...ejsCfg, templateId: e.target.value })}
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="template_xxxxxxx" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-foreground">Public Key (Account → API Keys)</label>
-                <input type="text" value={ejsCfg.publicKey}
-                  onChange={e => setEjsCfg({ ...ejsCfg, publicKey: e.target.value })}
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="XXXXXXXXXXXXXXXXXXXXXXX" />
-              </div>
-            </div>
-
-            {/* Résultat test */}
-            {testResult && (
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border ${
-                testResult.ok
-                  ? "bg-green-50 border-green-200 text-green-800"
-                  : "bg-red-50 border-red-200 text-red-800"
-              }`}>
-                {testResult.ok
-                  ? <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                  : <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                }
-                <span className="leading-relaxed">{testResult.msg}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={() => {
-                  saveEmailJSConfig(ejsCfg)
-                  setSaved("Configuration EmailJS sauvegardée.")
-                  setTimeout(() => setSaved(""), 3000)
-                  setTestResult(null)
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-                style={{ background: "oklch(0.38 0.2 260)" }}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Sauvegarder
-              </button>
-              <button
-                disabled={testing || !ejsCfg.publicKey || !ejsCfg.serviceId || !ejsCfg.templateId}
-                onClick={async () => {
-                  // Sauvegarder d'abord pour que le test utilise les nouveaux identifiants
-                  saveEmailJSConfig(ejsCfg)
-                  setTesting(true)
-                  setTestResult(null)
-                  const result = await testEmailJSConnection()
-                  setTesting(false)
-                  setTestResult({
-                    ok: result.ok,
-                    msg: result.ok
-                      ? "Connexion EmailJS réussie ! Les emails peuvent être envoyés."
-                      : `Echec: ${result.error ?? "Vérifiez vos identifiants."}`,
-                  })
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border border-border hover:bg-muted transition-colors disabled:opacity-50">
-                {testing
-                  ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                }
-                Tester la connexion
-              </button>
-            </div>
-          </div>
-
-          {/* Template requis */}
-          <div className="bg-card rounded-2xl border border-border p-5">
-            <p className="text-sm font-semibold text-foreground mb-3">Template EmailJS requis</p>
-            <p className="text-xs text-muted-foreground mb-3">
-              Votre template doit contenir exactement ces 3 variables (copiez-collez dans votre template EmailJS) :
-            </p>
-            <pre className="text-xs font-mono bg-muted rounded-xl p-4 text-foreground leading-relaxed overflow-x-auto whitespace-pre-wrap">{`Subject: {{subject}}
-
-To: {{to_email}}
-
-{{message}}`}</pre>
-            <p className="text-xs text-muted-foreground mt-3">
-              Dans &quot;To Email&quot; du template, mettez <code className="bg-muted px-1 rounded font-mono">{"{{to_email}}"}</code> pour que chaque email soit envoyé au bon destinataire.
-            </p>
-          </div>
-
-          {/* Sécurité */}
-          <div className="flex items-start gap-3 p-4 rounded-xl border border-border bg-muted/50">
-            <svg className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            <div className="text-xs text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-1">Sécurité & limites</p>
-              Identifiants stockés uniquement dans le navigateur (localStorage). Plan gratuit EmailJS : 200 emails/mois. Pour restreindre l&apos;origine dans EmailJS : <strong>Account → API Keys → Allowed Origins</strong>.
-            </div>
-          </div>
         </div>
       )}
 
