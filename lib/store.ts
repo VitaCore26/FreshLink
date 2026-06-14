@@ -3282,6 +3282,11 @@ export const DEFAULT_CUTOFFS: CutoffNotification[] = [
   // ── Caisse / Finance ──
   { id: "co11", time: "18:30", message: "Cut-off caisse : transmettez les encaissements pour clôture.", active: true, roles: ["cash_man"] },
   { id: "co12", time: "19:30", message: "Clôture financière du jour : rapprochez caisse, BL et crédits.", active: true, roles: ["financier", "comptable"] },
+  // ── Marché / planification achat (Rapport Besoin Marché) ──
+  { id: "co13", time: "03:30", message: "💵 Préparez l'espèce du marché selon le Rapport Besoin Marché (montant + camions).", active: true, roles: ["financier", "cash_man", "resp_achat"] },
+  { id: "co14", time: "03:45", message: "🛻 Préparez les Honda selon le tonnage du jour (voir Rapport Marché).", active: true, roles: ["resp_logistique", "dispatcheur"] },
+  { id: "co15", time: "04:00", message: "⏰ Départ marché : respectez l'heure recommandée par le Rapport Besoin Marché (selon tonnage).", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co16", time: "11:00", message: "📦 Réceptionnez et pesez les achats du marché — mettez à jour le stock.", active: true, roles: ["magasinier", "ctrl_achat"] },
 ]
 
 export const DEFAULT_FEEDBACKS: Feedback[] = [
