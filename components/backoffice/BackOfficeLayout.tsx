@@ -472,17 +472,6 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
   const [showProfil, setShowProfil]     = useState(false)
   const [profilPhoto, setProfilPhoto]   = useState(user.photoUrl ?? "")
   const [navSearch, setNavSearch]       = useState("")
-  // Groupes (grandes rubriques) repliés — liste déroulable. Persistée.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set()
-    try { return new Set(JSON.parse(localStorage.getItem("fl_nav_collapsed") ?? "[]") as string[]) } catch { return new Set() }
-  })
-  const toggleGroup = (label: string) => setCollapsedGroups(prev => {
-    const next = new Set(prev)
-    if (next.has(label)) next.delete(label); else next.add(label)
-    try { localStorage.setItem("fl_nav_collapsed", JSON.stringify([...next])) } catch { /* */ }
-    return next
-  })
   const [companyBrand, setCompanyBrand] = useState(() => store.getCompanyConfig())
   const isDemo           = isDemoUser(user)
 
@@ -924,6 +913,18 @@ function SidebarContent({
   const BG = "#0d2218"
   const BG2 = "#1a4f2a"
   const ACTIVE = "#22c55e"
+
+  // Groupes (grandes rubriques) repliés — liste déroulable, persistée.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem("fl_nav_collapsed") ?? "[]") as string[]) } catch { return new Set() }
+  })
+  const toggleGroup = (label: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(label)) next.delete(label); else next.add(label)
+    try { localStorage.setItem("fl_nav_collapsed", JSON.stringify([...next])) } catch { /* */ }
+    return next
+  })
 
   return (
     <aside className="flex flex-col h-full" style={{ background: BG, color: "#d1fae5" }}>
