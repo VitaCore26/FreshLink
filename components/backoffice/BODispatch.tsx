@@ -132,7 +132,7 @@ export default function BODispatch({ user }: Props) {
 
   // Estimation coût voyage + analyse carburant (prévu vs réel) d'un trip
   const tripCout = (t: Trip) => {
-    const p = store.getDispatchParams()
+    const p = store.getEmailConfig()   // tarifs livreur + prixCarburantL vivent dans EmailConfig
     const liv = livreurs.find(l => l.id === t.livreurId)
     const km = t.kmTotal ?? ((t.kmArrivee ?? 0) > 0 && (t.kmDepart ?? 0) > 0 ? (t.kmArrivee! - t.kmDepart!) : 0)
     const avecCarb = t.carburantInclus ?? liv?.carburantInclus ?? false

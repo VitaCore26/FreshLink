@@ -382,6 +382,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
   const [mcHeure, setMcHeure]         = useState(() => store.getMarcheConfig?.()?.heureOuvertureMarche ?? "05:00")
   const [mcMinTonne, setMcMinTonne]   = useState(() => store.getMarcheConfig?.()?.minutesParTonne ?? 8)
   const [mcMarge, setMcMarge]         = useState(() => store.getMarcheConfig?.()?.margeSecuriteMin ?? 30)
+  const [mcPrixCarb, setMcPrixCarb]   = useState(() => store.getEmailConfig?.()?.prixCarburantL ?? 15)
   const [savedMarche, setSavedMarche] = useState(false)
   const [seedMsg, setSeedMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [seeding, setSeeding] = useState(false)
@@ -2819,10 +2820,15 @@ To: {{to_email}}
                 <input type="number" min={0} value={mcMarge} onChange={e => setMcMarge(Number(e.target.value))}
                   className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
               </label>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+                Prix carburant (DH/L)
+                <input type="number" min={0} step="0.1" value={mcPrixCarb} onChange={e => setMcPrixCarb(Number(e.target.value))}
+                  className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
+              </label>
             </div>
             <div>
               <button
-                onClick={() => { store.saveMarcheConfig({ capaciteHondaKg: mcCapacite, heureOuvertureMarche: mcHeure, minutesParTonne: mcMinTonne, margeSecuriteMin: mcMarge }); setSavedMarche(true); setTimeout(() => setSavedMarche(false), 2000) }}
+                onClick={() => { store.saveMarcheConfig({ capaciteHondaKg: mcCapacite, heureOuvertureMarche: mcHeure, minutesParTonne: mcMinTonne, margeSecuriteMin: mcMarge }); store.saveEmailConfig({ ...store.getEmailConfig(), prixCarburantL: mcPrixCarb }); setSavedMarche(true); setTimeout(() => setSavedMarche(false), 2000) }}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white" style={{ background: "oklch(0.38 0.2 260)" }}>
                 {savedMarche ? "✓ Sauvegardé" : "Enregistrer le marché"}
               </button>
