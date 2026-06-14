@@ -277,6 +277,17 @@ export interface Article {
   promoMarchand?: number  // remise % marchand
   promoParticulier?: number // remise % particulier
   clientPrices?: Record<string, { prix?: number; promo?: number }> // overrides par client individuel
+  // Charge appliquée à cet article pour le calcul du coût de revient
+  // (transport, manutention, perte…) — référence un ChargeArticle du catalogue.
+  chargeArticleId?: string
+}
+
+// Catalogue de charges applicables par article (coût de revient).
+// Distinct des charges comptables (interface Charge / fl_charges).
+export interface ChargeArticle {
+  id: string
+  nom: string        // ex: "Transport", "Manutention", "Perte"
+  montant: number    // DH par unité, ajouté au prix d'achat
 }
 
 // Gestion caisses vides
@@ -2238,7 +2249,35 @@ export const store = {
     // (ex: articles vus en double sur mobile acheteur/commercial)
     const byId = new Map<string, Article>()
     for (const a of normalized) byId.set(a.id, a)
-    return [...byId.values()]
+
+    // Déduplication par NOM (FR) normalisé — fusionne les doublons à id différent
+    // (ex: PO achat affichait "Tomate" 2 fois : une ligne FR seule, une FR+AR).
+    // On garde l'enregistrement le plus complet et on récupère les champs
+    // manquants depuis les doublons écartés (nomAr, photo, famille, prixAchat).
+    const normNom = (s: string) =>
+      s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim()
+    const score = (a: Article) =>
+      (a.nomAr ? 2 : 0) + (a.photo ? 1 : 0) + (a.famille ? 1 : 0) +
+      (a.prixAchat > 0 ? 1 : 0) + (a.stockDisponible > 0 ? 1 : 0) +
+      (a.marketplaceActif ? 1 : 0)
+    const byNom = new Map<string, Article>()
+    for (const a of byId.values()) {
+      const key = normNom(a.nom)
+      if (!key) { byNom.set(a.id, a); continue } // pas de nom → ne pas fusionner
+      const prev = byNom.get(key)
+      if (!prev) { byNom.set(key, a); continue }
+      // garder le plus complet ; compléter ses trous depuis l'autre
+      const keep = score(a) > score(prev) ? a : prev
+      const drop = keep === a ? prev : a
+      byNom.set(key, {
+        ...keep,
+        nomAr:   keep.nomAr   || drop.nomAr,
+        photo:   keep.photo   || drop.photo,
+        famille: keep.famille || drop.famille,
+        prixAchat: keep.prixAchat > 0 ? keep.prixAchat : drop.prixAchat,
+      })
+    }
+    return [...byNom.values()]
   },
   saveArticles: (a: Article[]) => setLS("fl_articles", a),
 
@@ -2310,6 +2349,10 @@ export const store = {
     if (idx >= 0) { arr[idx] = { ...arr[idx], ...updates }; store.saveCharges(arr) }
   },
   deleteCharge: (id: string) => { store.saveCharges(store.getCharges().filter(c => c.id !== id)) },
+
+  // --- Charges par article (coût de revient) ---
+  getChargesArticle: (): ChargeArticle[] => getLS("fl_charges_article", []),
+  saveChargesArticle: (c: ChargeArticle[]) => setLS("fl_charges_article", c),
 
   // --- Caisse ---
   getCaisseEntries: (): CaisseEntry[] => getLS("fl_caisse", []),

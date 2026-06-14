@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type BonAchat, type Article, type Fournisseur } from "@/lib/store"
+import { store, type BonAchat, type Article, type Fournisseur, type ChargeArticle } from "@/lib/store"
 import { sendEmail, buildAchatEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
@@ -16,10 +16,11 @@ export default function BOAchat() {
   const [showFournisseurForm, setShowFournisseurForm] = useState(false)
   const [tab, setTab] = useState<"bons" | "articles" | "fournisseurs">("bons")
   const [emailConfig, setEmailConfig] = useState(store.getEmailConfig().achat)
-  const [chargeParUnite, setChargeParUnite] = useState<number>(() => {
-    const v = localStorage.getItem("fl_charge_par_unite")
-    return v ? Number(v) : 0
-  })
+  // Catalogue de charges (coût de revient) + état du mini-formulaire d'ajout
+  const [chargesArticle, setChargesArticle] = useState<ChargeArticle[]>([])
+  const [showChargeForm, setShowChargeForm] = useState(false)
+  const [newChargeNom, setNewChargeNom] = useState("")
+  const [newChargeMontant, setNewChargeMontant] = useState("")
 
   // Form state
   const [formFournisseurId, setFormFournisseurId] = useState("")
@@ -80,6 +81,44 @@ export default function BOAchat() {
     setBons(store.getBonsAchat())
     setArticles(store.getArticles())
     setFournisseurs(store.getFournisseurs())
+    setChargesArticle(store.getChargesArticle())
+  }
+
+  // ── Charges coût de revient (catalogue + affectation par article) ─────────
+  const handleAddCharge = () => {
+    const nom = newChargeNom.trim()
+    const montant = Number(newChargeMontant)
+    if (!nom || !(montant >= 0) || Number.isNaN(montant)) return
+    const next = [...chargesArticle, { id: store.genId(), nom, montant }]
+    store.saveChargesArticle(next)
+    setChargesArticle(next)
+    setNewChargeNom(""); setNewChargeMontant(""); setShowChargeForm(false)
+  }
+
+  const handleDeleteCharge = (id: string) => {
+    const next = chargesArticle.filter(c => c.id !== id)
+    store.saveChargesArticle(next)
+    setChargesArticle(next)
+    // Détacher la charge des articles qui la référençaient
+    const arts = store.getArticles().map(a => a.chargeArticleId === id ? { ...a, chargeArticleId: undefined } : a)
+    store.saveArticles(arts)
+    setArticles(arts)
+  }
+
+  const handleSetArticleCharge = async (articleId: string, chargeId: string) => {
+    const arts = store.getArticles()
+    const idx = arts.findIndex(a => a.id === articleId)
+    if (idx < 0) return
+    arts[idx] = { ...arts[idx], chargeArticleId: chargeId || undefined }
+    store.saveArticles(arts)
+    setArticles(arts)
+    // Sync Supabase (service-role) — comme le pricing par famille
+    try {
+      const { upsertArticle } = await import("@/lib/supabase/db")
+      await upsertArticle(arts[idx])
+    } catch (e) {
+      console.error("[BOAchat] sync charge article error:", e)
+    }
   }
 
   const handleValidateBon = async (bon: BonAchat) => {
@@ -557,24 +596,53 @@ export default function BOAchat() {
       {tab === "articles" && (
         <div className="flex flex-col gap-4">
 
-          {/* ── Charge config ── */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 shrink-0">
-              <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* ── Catalogue des charges (coût de revient) ── */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              <span className="text-sm font-semibold text-amber-800">Calcul coût de revient</span>
+              <span className="text-sm font-semibold text-amber-800">Charges coût de revient</span>
+              <span className="text-xs text-amber-600">— choisissez une charge par article dans le tableau ci-dessous</span>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-amber-700 font-medium">Charge / unité :</label>
-              <input
-                type="number" min={0} step={0.01} value={chargeParUnite}
-                onChange={e => { const v = Number(e.target.value); setChargeParUnite(v); localStorage.setItem("fl_charge_par_unite", String(v)) }}
-                className="w-24 px-2 py-1.5 rounded-lg border border-amber-300 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
-              />
-              <span className="text-xs text-amber-700 font-semibold">DH/unité</span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {chargesArticle.length === 0 && !showChargeForm && (
+                <span className="text-xs text-amber-600 italic">Aucune charge définie. Ajoutez transport, manutention, perte…</span>
+              )}
+              {chargesArticle.map(c => (
+                <span key={c.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-amber-300 text-xs font-medium text-amber-800">
+                  {c.nom}
+                  <span className="font-mono text-amber-600">+{c.montant.toFixed(2)} DH</span>
+                  <button type="button" onClick={() => handleDeleteCharge(c.id)} title="Supprimer cette charge"
+                    className="text-amber-400 hover:text-destructive ml-0.5">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </span>
+              ))}
+
+              {showChargeForm ? (
+                <div className="flex items-center gap-1.5 bg-white border border-amber-300 rounded-full pl-3 pr-1.5 py-1">
+                  <input autoFocus value={newChargeNom} onChange={e => setNewChargeNom(e.target.value)}
+                    placeholder="Nom (ex: Transport)"
+                    className="w-32 bg-transparent text-xs focus:outline-none text-amber-900 placeholder:text-amber-400" />
+                  <input type="number" min={0} step={0.01} value={newChargeMontant} onChange={e => setNewChargeMontant(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleAddCharge() }}
+                    placeholder="DH"
+                    className="w-16 bg-transparent text-xs font-mono focus:outline-none text-amber-900 placeholder:text-amber-400 text-center border-l border-amber-200" />
+                  <button type="button" onClick={handleAddCharge} disabled={!newChargeNom.trim()}
+                    className="px-2 py-1 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-40">OK</button>
+                  <button type="button" onClick={() => { setShowChargeForm(false); setNewChargeNom(""); setNewChargeMontant("") }}
+                    className="px-1.5 text-amber-400 hover:text-amber-700 text-xs">✕</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowChargeForm(true)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                  Ajouter une charge
+                </button>
+              )}
             </div>
-            <p className="text-xs text-amber-600 ml-auto">Inclut transport, manutention, perte… — réparti sur chaque unité</p>
           </div>
 
           <div className="flex justify-end">
@@ -688,7 +756,7 @@ export default function BOAchat() {
                   <th className="text-left px-3 py-3 text-muted-foreground font-medium text-xs">Unité</th>
                   <th className="text-right px-3 py-3 text-muted-foreground font-medium text-xs">Stock</th>
                   <th className="text-right px-3 py-3 text-muted-foreground font-medium text-xs">PA</th>
-                  <th className="text-right px-3 py-3 text-amber-600 font-bold text-xs">+Charge</th>
+                  <th className="text-right px-3 py-3 text-amber-600 font-bold text-xs">Charge</th>
                   <th className="text-right px-3 py-3 text-orange-700 font-bold text-xs">Coût revient</th>
                   <th className="text-right px-3 py-3 text-blue-600 font-bold text-xs">PV</th>
                   <th className="text-right px-3 py-3 text-green-700 font-bold text-xs">Marge nette</th>
@@ -701,7 +769,9 @@ export default function BOAchat() {
                   const pv = a.pvMethode === "manuel" ? a.pvValeur
                     : a.pvMethode === "pourcentage" ? a.prixAchat * (1 + a.pvValeur / 100)
                     : a.prixAchat + a.pvValeur
-                  const coutRevient = a.prixAchat + chargeParUnite
+                  const charge = chargesArticle.find(c => c.id === a.chargeArticleId)
+                  const chargeMontant = charge?.montant ?? 0
+                  const coutRevient = a.prixAchat + chargeMontant
                   const margeNette = pv - coutRevient
                   const margePct = pv > 0 ? (margeNette / pv) * 100 : 0
                   return (
@@ -729,7 +799,22 @@ export default function BOAchat() {
                         {a.stockDisponible}
                       </td>
                       <td className="px-3 py-2 text-right text-muted-foreground font-mono text-xs">{a.prixAchat.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right text-amber-600 font-mono text-xs">+{chargeParUnite.toFixed(2)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <select
+                            value={a.chargeArticleId ?? ""}
+                            onChange={e => handleSetArticleCharge(a.id, e.target.value)}
+                            disabled={chargesArticle.length === 0}
+                            title={chargesArticle.length === 0 ? "Ajoutez d'abord une charge ci-dessus" : "Charge appliquée à cet article"}
+                            className="max-w-[110px] px-1.5 py-1 rounded-lg border border-amber-300 bg-white text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40">
+                            <option value="">—</option>
+                            {chargesArticle.map(c => (
+                              <option key={c.id} value={c.id}>{c.nom} (+{c.montant})</option>
+                            ))}
+                          </select>
+                          <span className="text-amber-600 font-mono text-xs w-12 text-right shrink-0">+{chargeMontant.toFixed(2)}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-right text-orange-700 font-mono font-bold text-xs">{coutRevient.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right text-blue-600 font-mono text-xs">{pv.toFixed(2)}</td>
                       <td className={`px-3 py-2 text-right font-mono font-bold text-xs ${margeNette >= 0 ? "text-green-700" : "text-red-600"}`}>
