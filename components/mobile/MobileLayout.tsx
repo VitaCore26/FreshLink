@@ -115,7 +115,10 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
   const resolvedTab = currentTabAllowed ? activeTab : (allowedTabIds[0] ?? "achat")
 
   return (
-    <div className="min-h-screen flex flex-col w-full font-sans bg-slate-50 text-slate-800">
+    // h-[100dvh] borne la hauteur → <main> devient une vraie région de scroll
+    // (sinon le scroll est saccadé avec la nav fixe). 100dvh gère la barre
+    // d'adresse mobile mieux que h-screen.
+    <div className="h-[100dvh] flex flex-col w-full font-sans bg-slate-50 text-slate-800 overflow-hidden">
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="px-4 pt-safe-top pb-3 flex items-center justify-between sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
@@ -186,7 +189,8 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
       )}
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-auto pb-20">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-24"
+        style={{ WebkitOverflowScrolling: "touch" }}>
         {resolvedTab === "magasinier"    && <MobileMagasinier user={user} />}
         {resolvedTab === "achat"         && <MobileAchat user={user} />}
         {resolvedTab === "charges"       && <MobileChargesAcheteur user={user} />}

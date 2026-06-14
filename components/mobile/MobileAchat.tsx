@@ -335,6 +335,11 @@ export default function MobileAchat({ user }: Props) {
     if (!selectedDepotId && allDepots.length > 0) {
       setSelectedDepotId(user.depotId ?? allDepots[0].id)
     }
+    // ⚡ Génération AUTOMATIQUE des PO à partir du besoin net, directement sur
+    // le mobile acheteur (avant, seul le back-office les générait). Idempotent :
+    // le garde alreadyExists (même article + même jour + genereAuto) évite les
+    // doublons. Régénère aussi les PO si la sync les a effacés à la reconnexion.
+    try { store.autoGeneratePOsFromBesoin() } catch { /* offline / demo */ }
     const pos = store.getPendingPOsForAcheteur()
     setPendingPOs(pos)
     // Auto mode: go directly to PO push tab if there are pending POs
