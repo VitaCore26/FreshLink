@@ -31,6 +31,21 @@ async function sbGet(table: string, filter: string): Promise<unknown[]> {
   return res.json()
 }
 
+/**
+ * Lecture {id, payload} aplatie avec le service role (bypass RLS).
+ * fl_users / fl_clients sont stockés en JSONB {id, payload} — on aplatit pour
+ * accéder de manière fiable à role / chrRole / categorie (le schéma plat est cassé).
+ */
+async function sbGetFlat(table: string, filter: string): Promise<any[]> {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?${filter}&select=id,payload`, {
+    headers: { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}` },
+    cache: "no-store",
+  })
+  if (!res.ok) return []
+  const rows = await res.json() as { id: string; payload?: Record<string, unknown> }[]
+  return rows.map(r => ({ id: r.id, ...(r.payload && typeof r.payload === "object" ? r.payload : {}) }))
+}
+
 export async function GET(req: NextRequest) {
   const origin = req.headers.get("origin")
 
@@ -79,23 +94,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Récupérer l'utilisateur
-    const users = await sbGet("fl_users", `id=eq.${encodeURIComponent(userId)}&select=id,name,email,role,phone,telephone,clientId,actif&limit=1`) as any[]
+    // 3. Récupérer l'utilisateur (service role, {id,payload} aplati)
+    const users = await sbGetFlat("fl_users", `id=eq.${encodeURIComponent(userId)}&limit=1`)
     if (!users || users.length === 0) {
       return NextResponse.json({ error: "Utilisateur introuvable." }, { status: 404, headers: cors(origin) })
     }
     const user = users[0]
 
-    if (!user.actif) {
+    if (user.actif === false) {
       return NextResponse.json({ error: "Compte désactivé." }, { status: 403, headers: cors(origin) })
     }
 
-    // 3. Récupérer le profil client
+    // 3. Récupérer le profil client (service role, {id,payload} aplati)
     let client: any = null
     if (clientId) {
-      const clients = await sbGet("fl_clients", `id=eq.${encodeURIComponent(clientId)}&select=*&limit=1`) as any[]
+      const clients = await sbGetFlat("fl_clients", `id=eq.${encodeURIComponent(clientId)}&limit=1`)
       if (clients && clients.length > 0) client = clients[0]
     }
+
+    // ── Hiérarchie CHR : propriétaire (→ ERP) vs gérant (→ shop) ───────────────
+    const rawChrRole = String(user.chrRole ?? user.chr_role ?? user.sousRole ?? "").toLowerCase()
+    const chrRole: "proprietaire" | "gerant" | null =
+      (user.role === "client_proprietaire" || rawChrRole === "proprietaire") ? "proprietaire"
+      : (user.role === "client_gerant"      || rawChrRole === "gerant")       ? "gerant"
+      : null
 
     // 4. Récupérer les commandes récentes (max 10)
     let commandes: any[] = []
@@ -113,11 +135,14 @@ export async function GET(req: NextRequest) {
     // 5. Réponse
     return NextResponse.json(
       {
+        chrRole,
         user: {
           id:    user.id,
           name:  user.name,
           email: user.email,
           role:  user.role,
+          chrRole,
+          categorie: client?.categorie ?? null,
           phone: user.phone ?? user.telephone ?? null,
         },
         client: {

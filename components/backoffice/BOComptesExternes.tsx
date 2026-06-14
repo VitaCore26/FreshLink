@@ -153,6 +153,19 @@ function ClientForm({
           </select>
         </div>
 
+        {/* Rôle CHR — propriétaire pilote la gestion via l'ERP, gérant commande via le shop */}
+        {form.categorie === "chr" && (
+          <div className="flex flex-col gap-1">
+            <label className={`text-xs font-semibold ${c.label}`}>Rôle CHR</label>
+            <select value={form.chrRole ?? ""} onChange={e => set("chrRole", (e.target.value || undefined) as Client["chrRole"])}
+              className={`px-3 py-2 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 ${c.input}`}>
+              <option value="">— Standard (shop)</option>
+              <option value="proprietaire">Propriétaire — accès ERP gestion</option>
+              <option value="gerant">Gérant — commandes shop</option>
+            </select>
+          </div>
+        )}
+
         {/* Taille */}
         <div className="flex flex-col gap-1">
           <label className={`text-xs font-semibold ${c.label}`}>Volume / Taille</label>
@@ -438,11 +451,18 @@ export default function BOComptesExternes({ user }: Props) {
     const fullClient = { ...data, id: clientId, createdBy: user.id, createdAt: new Date().toISOString() }
     store.addClient(fullClient)
 
+    // Rôle du compte de connexion selon la hiérarchie CHR
+    const chrRole = data.categorie === "chr" ? data.chrRole : undefined
+    const loginRole = chrRole === "proprietaire" ? "client_proprietaire"
+                    : chrRole === "gerant"       ? "client_gerant"
+                    : "client"
+
     // ✅ Auto-push vers Supabase (la boutique le verra)
     const clientOk = await pushToSupabase("fl_clients", clientId, {
       nom: data.nom, telephone: data.telephone, email: data.email || null,
       adresse: data.adresse, secteur: data.secteur, zone: data.zone,
       type: data.type, categorie: data.categorie, segment: data.categorie === "chr" ? "CHR" : data.categorie === "marchand" ? "Marchand" : "standard",
+      chrRole: chrRole ?? null,
       taille: data.taille, rotation: data.rotation, ice: data.ice,
       modalitePaiement: data.modalitePaiement, creditAutorise: data.creditAutorise,
       plafondCredit: data.plafondCredit, creditSolde: data.creditSolde,
@@ -457,8 +477,8 @@ export default function BOComptesExternes({ user }: Props) {
       await pushToSupabase("fl_users", userId, {
         name: data.nom, telephone: data.telephone,
         email: data.email || null, password,
-        role: "client", clientId, actif: true,
-        sousType: data.categorie,
+        role: loginRole, clientId, actif: true,
+        sousType: data.categorie, chrRole: chrRole ?? null,
         createdAt: new Date().toISOString(),
       })
       setResetPwd({ userId, pwd: password })
@@ -473,19 +493,40 @@ export default function BOComptesExternes({ user }: Props) {
   // ── Save edited client ───────────────────────────────────────────────────────
   const handleEdit = async (data: Omit<Client, "id" | "createdBy" | "createdAt">) => {
     if (!editId || !data.nom.trim()) { flash(false, "Le nom est obligatoire."); return }
-    store.updateClient(editId, data)
+    const cid = editId
+    store.updateClient(cid, data)
     setEditId(null)
+
+    const chrRole = data.categorie === "chr" ? data.chrRole : undefined
+    const loginRole = chrRole === "proprietaire" ? "client_proprietaire"
+                    : chrRole === "gerant"       ? "client_gerant"
+                    : "client"
+
     // ✅ Auto-push modification vers Supabase
-    const ok = await pushToSupabase("fl_clients", editId, {
+    const ok = await pushToSupabase("fl_clients", cid, {
       nom: data.nom, telephone: data.telephone, email: data.email || null,
       adresse: data.adresse, secteur: data.secteur, zone: data.zone,
       type: data.type, categorie: data.categorie,
       segment: data.categorie === "chr" ? "CHR" : data.categorie === "marchand" ? "Marchand" : "standard",
+      chrRole: chrRole ?? null,
       taille: data.taille, rotation: data.rotation, ice: data.ice,
       modalitePaiement: data.modalitePaiement, creditAutorise: data.creditAutorise,
       plafondCredit: data.plafondCredit, creditSolde: data.creditSolde,
       updatedAt: new Date().toISOString(),
     })
+
+    // ✅ Répercuter le rôle CHR sur le compte de connexion lié (read-merge-write)
+    const linkedUser = users.find(u => (u as any).clientId === cid && String(u.role).startsWith("client"))
+    if (linkedUser) {
+      try {
+        const r   = await fetch("/api/sync-read?table=fl_users", { cache: "no-store" })
+        const j   = await r.json()
+        const row = (j?.data ?? []).find((x: { id: string }) => x.id === linkedUser.id) as { payload?: Record<string, unknown> } | undefined
+        const payload = { ...(row?.payload ?? {}), role: loginRole, chrRole: chrRole ?? null }
+        await pushToSupabase("fl_users", linkedUser.id, payload)
+      } catch { /* best-effort — le client est déjà à jour */ }
+    }
+
     reload()
     flash(ok, ok ? `✅ Client "${data.nom}" mis à jour & synchronisé Supabase.` : `⚠️ Mis à jour localement, erreur Supabase`)
   }
@@ -587,7 +628,7 @@ export default function BOComptesExternes({ user }: Props) {
             taille: editClient.taille, typeProduits: editClient.typeProduits,
             rotation: editClient.rotation, telephone: editClient.telephone,
             email: editClient.email, adresse: editClient.adresse, ice: editClient.ice,
-            notes: editClient.notes, categorie: editClient.categorie,
+            notes: editClient.notes, categorie: editClient.categorie, chrRole: editClient.chrRole,
             creditAutorise: editClient.creditAutorise, plafondCredit: editClient.plafondCredit,
             creditSolde: editClient.creditSolde, modalitePaiement: editClient.modalitePaiement,
             prevendeurId: editClient.prevendeurId, teamLeadId: editClient.teamLeadId,

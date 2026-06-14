@@ -333,7 +333,13 @@ export default function PortailClient({ user, onLogout }: Props) {
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
             <p className="text-xs font-bold text-white">{client?.nom ?? user.name}</p>
-            <p className="text-[10px] text-sidebar-foreground/60">Portail Client / بوابة الزبون</p>
+            <p className="text-[10px] text-sidebar-foreground/60">
+              {portalRole === "proprietaire"
+                ? "Espace Gestion — Propriétaire / صاحب المحل"
+                : portalRole === "gerant"
+                ? "Espace Commandes — Gérant / مسير"
+                : "Portail Client / بوابة الزبون"}
+            </p>
           </div>
           <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
             {(client?.nom ?? user.name ?? "?")[0]}

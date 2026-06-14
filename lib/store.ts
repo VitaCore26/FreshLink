@@ -169,6 +169,9 @@ export interface Client {
   loyaltyPoints?: number    // cached total — updated by loyalty engine
   loyaltyOptIn?: boolean    // client opted into loyalty program
   categorie?: "chr" | "marchand" | "particulier"   // category group for pricing
+  // Hiérarchie CHR : le propriétaire pilote la gestion via l'ERP, le gérant commande via le shop.
+  // Détermine le rôle du compte de connexion (client_proprietaire / client_gerant).
+  chrRole?: "proprietaire" | "gerant"
   // Remises & Promotions
   remisePct?: number        // remise globale % accordée à ce client (ex: 5 = 5%)
   remiseActive?: boolean    // true = la remise est appliquée sur ses achats
@@ -2156,11 +2159,14 @@ export const store = {
     // Resolve which role this subtype maps to
     const isFournisseurSubtype = subtype === "fournisseur" || subtype === "ferme" || subtype === "vendeur" || subtype === "intermediaire"
     const isClientSubtype     = subtype === "client" || subtype === "chr" || subtype === "particulier" || subtype === "marchand"
+    // La famille « client » inclut la hiérarchie CHR : propriétaire (→ accès ERP gestion)
+    // et gérant. Sans ça, un compte client_proprietaire ne pourrait pas se connecter à l'ERP.
+    const isClientFamily = (r: string) => r === "client" || r === "client_proprietaire" || r === "client_gerant"
     return users.find(u => {
       if (!u.actif) return false
-      if (u.role !== "client" && u.role !== "fournisseur") return false
+      if (!isClientFamily(u.role) && u.role !== "fournisseur") return false
       if (isFournisseurSubtype && u.role !== "fournisseur") return false
-      if (isClientSubtype && u.role !== "client") return false
+      if (isClientSubtype && !isClientFamily(u.role)) return false
       // If user has a stored subtype, it must match (allows "particulier" to not match a "chr" user)
       if (u.subtype && subtype && u.subtype !== subtype) {
         // Group chr separately; particulier/marchand can cross-match with each other

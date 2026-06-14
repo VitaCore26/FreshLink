@@ -317,7 +317,7 @@ export async function POST(req: NextRequest) {
       // deviceStatus === "autorise" ou "skip" → on continue
     }
 
-    const ALLOWED = ["client", "fournisseur", "resp_commercial", "admin", "super_admin", "super_super_admin"]
+    const ALLOWED = ["client", "client_proprietaire", "client_gerant", "fournisseur", "resp_commercial", "admin", "super_admin", "super_super_admin"]
     if (!ALLOWED.includes(user.role)) {
       return NextResponse.json(
         { error: "Accès non autorisé pour ce type de compte." },
@@ -334,13 +334,25 @@ export async function POST(req: NextRequest) {
     // espace pro enrichi (commandes, paiements, livraison, historique).
     // Plus de redirection vers une app externe (fin de la boucle ERP↔shop).
     const sousType = String(user.sousType ?? user.sous_type ?? client?.categorie ?? "").toLowerCase()
-    const isPro = ["chr", "marchand"].includes(sousType)
+
+    // ── Hiérarchie CHR : propriétaire (→ ERP gestion) vs gérant (→ shop pro) ──
+    // Le marqueur canonique est le rôle (client_proprietaire / client_gerant),
+    // aligné sur lib/rolePermissions.ts. On accepte aussi un champ chrRole/sous_role
+    // explicite dans le payload pour rétro-compatibilité.
+    const rawChrRole = String(user.chrRole ?? user.chr_role ?? user.sousRole ?? "").toLowerCase()
+    const chrRole: "proprietaire" | "gerant" | null =
+      (user.role === "client_proprietaire" || rawChrRole === "proprietaire") ? "proprietaire"
+      : (user.role === "client_gerant"      || rawChrRole === "gerant")       ? "gerant"
+      : null
+    // Un compte CHR hiérarchique est toujours « pro », même si la catégorie n'est pas renseignée.
+    const isPro = ["chr", "marchand"].includes(sousType) || chrRole != null
 
     const exp   = Date.now() + 86_400_000
     const token = signToken({
       userId:   user.id,
       email:    user.email,
       role:     user.role,
+      chrRole,
       clientId: user.clientId ?? null,
       exp,
     })
@@ -348,11 +360,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       token,
       isPro,
+      chrRole,
       user: {
         id:            user.id,
         name:          user.name,
         email:         user.email ?? null,
         role:          user.role,
+        chrRole,
         phone:         user.telephone ?? user.phone ?? null,
         clientId:      user.clientId ?? null,
         categorie:     client?.categorie ?? sousType ?? null,

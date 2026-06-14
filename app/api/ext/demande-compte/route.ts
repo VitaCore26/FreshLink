@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
   const {
     type, nom, email, telephone, societe, ice, ville, message, origine,
     // Champs étendus alignés sur le BO (BOComptesExternes)
-    adresse, secteur, sousType: bodySousType,
+    adresse, secteur, sousType: bodySousType, chrRole: bodyChrRole,
     taille, rotation, modalitePaiement,
     produits, volumeKgSemaine, origineProduction,
     origineDetail,
@@ -148,8 +148,17 @@ export async function POST(req: NextRequest) {
   const telNorm   = normPhone(telephone.trim())
   const nomTrimmed = nom.trim()
   const isFournisseur = type === "fournisseur"
-  const roleUser  = isFournisseur ? "fournisseur" : "client"
+  const roleUser  = isFournisseur ? "fournisseur" : "client"  // famille de base (compat BO « Demandes Comptes »)
   const sousType  = type  // chr / marchand / particulier / client / fournisseur
+
+  // ── Hiérarchie CHR : propriétaire (→ ERP gestion) vs gérant (→ shop) ──
+  // Le rôle réel du compte de connexion peut être client_proprietaire / client_gerant.
+  const chrRoleNorm = (!isFournisseur && String(sousType).toLowerCase() === "chr")
+    ? String(bodyChrRole ?? "").toLowerCase()
+    : ""
+  const loginRole = chrRoleNorm === "proprietaire" ? "client_proprietaire"
+                  : chrRoleNorm === "gerant"       ? "client_gerant"
+                  : roleUser
 
   // ── Mode auto (SERVICE_ROLE_KEY disponible) ───────────────────────────────
   const hasServiceKey = !!((process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY))
@@ -210,7 +219,8 @@ export async function POST(req: NextRequest) {
       telephone: telNorm,
       email:     email?.trim()?.toLowerCase() || null,
       password:  passwordHash,
-      role:      roleUser,
+      role:      loginRole,
+      chrRole:   chrRoleNorm || null,
       clientId,
       actif:     autoApproved,   // auto-approuvé → actif ; sinon en attente de validation
       sousType,
@@ -230,6 +240,7 @@ export async function POST(req: NextRequest) {
       secteur:    secteur?.trim() || null,
       categorie:  sousType,
       segment:    sousType === "chr" ? "CHR" : sousType === "marchand" ? "Marchand" : "standard",
+      chrRole:    chrRoleNorm || null,
       // Sous-type métier détaillé (CHR : restaurant/hotel/cafe... · Marchand : epicerie/grossiste...)
       type:       bodySousType?.trim() || null,
       // Conditions commerciales (CHR / Marchand)
