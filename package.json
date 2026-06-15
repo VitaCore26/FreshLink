@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
@@ -21,12 +23,11 @@
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "firebase": "^12.13.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.511.0",
-    "next": "^15.5.18",
+    "next": "^15.5.19",
     "nodemailer": "^8.0.9",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.14",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-is": "^19.0.0",
@@ -40,10 +41,13 @@
     "@types/react-dom": "^19.0.2",
     "eslint": "^9.0.0",
     "eslint-config-next": "15.5.18",
-    "typescript": "^5.7.2"
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   },
   "overrides": {
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "postcss": "$postcss"
   }
 }
