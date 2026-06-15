@@ -294,7 +294,11 @@ export default function BOBonPreparation({ user }: Props) {
 
   const refresh = () => setBons(store.getBonsPreparation())
 
-  const cmdsPrepable = commandes.filter(c => c.statut === "valide" || c.statut === "en_transit")
+  // Commandes prêtes à préparer. Inclut "en_attente"/"en_attente_approbation" :
+  // la logique de validation de prép gère déjà ces statuts (sinon les commandes
+  // restaient introuvables côté logistique pour démarrer la préparation).
+  const cmdsPrepable = commandes.filter(c =>
+    ["valide", "en_transit", "en_attente", "en_attente_approbation"].includes(c.statut))
   const tripsEnCours = trips.filter(t => t.statut === "planifié" || t.statut === "en_cours")
 
   // Build clientsInfo for the chosen selection
@@ -449,7 +453,7 @@ export default function BOBonPreparation({ user }: Props) {
     if (linkedCmdIds.length > 0) {
       const cmds = store.getCommandes()
       const updatedCmds = cmds.map(c =>
-        linkedCmdIds.includes(c.id) && ["valide", "en_attente"].includes(c.statut)
+        linkedCmdIds.includes(c.id) && ["valide", "en_attente", "en_attente_approbation", "en_transit"].includes(c.statut)
           ? { ...c, statut: "en_preparation" as typeof c.statut }
           : c
       )
