@@ -2049,8 +2049,13 @@ function getLS<T>(key: string, def: T): T {
 
 function setLS<T>(key: string, val: T): void {
   if (typeof window === "undefined") return
-  localStorage.setItem(key, JSON.stringify(val))
+  const raw = JSON.stringify(val)
+  localStorage.setItem(key, raw)
   window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: key }))
+  // Write-through Supabase : Supabase est la source de vérité, localStorage
+  // n'est qu'un cache/tampon hors-ligne. Fire-and-forget, ignoré si la table
+  // n'est pas synchronisée. (import dynamique → client only, pas de cycle)
+  import("@/lib/supabase/autoSync").then(m => m.onLocalWrite(key, raw)).catch(() => {})
 }
 
 // ============================================================

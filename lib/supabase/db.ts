@@ -17,6 +17,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { store } from "@/lib/store"
+import { suppressAutoSync } from "./autoSync"
 import type {
   User, Client, Article, Fournisseur, Livreur, MotifRetour,
   Commande, Visite, BonAchat, PurchaseOrder, Reception,
@@ -112,7 +113,7 @@ export async function fetchClients(): Promise<{ clients: Client[]; source: "supa
     // Connection OK — could be empty table
     if (data && data.length > 0) {
       const clients = (data as { id: string; payload: unknown }[]).map(r => fromRow<Client>(r))
-      store.saveClients(clients)
+      suppressAutoSync(() => store.saveClients(clients))
       return { clients, source: "supabase" }
     }
     // Connected but empty table → still report supabase connected
@@ -159,7 +160,7 @@ export async function fetchArticles(): Promise<Article[]> {
       const rows = j?.data ?? []
       if (rows.length > 0) {
         const articles = rows.map(r => fromRow<Article>(r as { id: string; payload: unknown }))
-        store.saveArticles(articles)
+        suppressAutoSync(() => store.saveArticles(articles))
         return store.getArticles()   // normalisé (nom/famille/unite garantis)
       }
     }
@@ -169,7 +170,7 @@ export async function fetchArticles(): Promise<Article[]> {
     const { data, error } = await sbRead().from("fl_articles").select("id, payload")
     if (!error && data && data.length > 0) {
       const articles = (data as { id: string; payload: unknown }[]).map(r => fromRow<Article>(r))
-      store.saveArticles(articles)
+      suppressAutoSync(() => store.saveArticles(articles))
       return store.getArticles()
     }
   } catch { /* offline */ }
@@ -192,7 +193,7 @@ export async function fetchFournisseurs(): Promise<Fournisseur[]> {
     if (error) throw error
     if (data && data.length > 0) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Fournisseur>(r))
-      store.saveFournisseurs(items)
+      suppressAutoSync(() => store.saveFournisseurs(items))
       return items
     }
   } catch { /* offline */ }
@@ -229,7 +230,7 @@ export async function fetchCommandes(dateFilter?: string): Promise<Commande[]> {
       for (const c of store.getCommandes()) byId.set(c.id, c)
       for (const c of remote) byId.set(c.id, c)
       const merged = [...byId.values()]
-      store.saveCommandes(merged)
+      suppressAutoSync(() => store.saveCommandes(merged))
       return dateFilter ? merged.filter(c => c.date === dateFilter) : merged
     }
   } catch { /* offline */ }
@@ -263,7 +264,7 @@ export async function fetchTrips(): Promise<Trip[]> {
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Trip>(r))
-      store.saveTrips(items)
+      suppressAutoSync(() => store.saveTrips(items))
       return items
     }
   } catch { /* offline */ }
@@ -286,7 +287,7 @@ export async function fetchBonsLivraison(): Promise<BonLivraison[]> {
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<BonLivraison>(r))
-      store.saveBonsLivraison(items)
+      suppressAutoSync(() => store.saveBonsLivraison(items))
       return items
     }
   } catch { /* offline */ }
@@ -309,7 +310,7 @@ export async function fetchRetours(): Promise<Retour[]> {
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Retour>(r))
-      store.saveRetours(items)
+      suppressAutoSync(() => store.saveRetours(items))
       return items
     }
   } catch { /* offline */ }
@@ -437,7 +438,8 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
         if (error) { errors.push(`${table}: ${error.message}`); return }
         if (data && Array.isArray(data) && data.length > 0) {
           const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<unknown>(r))
-          save(items)
+          // Hydratation : on écrit le cache sans repousser vers Supabase (seed snapshot)
+          suppressAutoSync(() => save(items))
           tables.push(table)
         }
       } catch (e) {

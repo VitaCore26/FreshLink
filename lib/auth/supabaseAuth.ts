@@ -275,12 +275,47 @@ export async function createUser(
       ...userData,
     }
 
-    // ⚠️ À revoir : newUser utilise des clés camelCase alors que fl_users est en
-    // snake_case (cf. lecture dans signInWithEmail). Le cast débloque le typage
-    // sans changer le comportement ; un mapping camel→snake reste à faire.
+    // fl_users utilise des colonnes snake_case : on mappe camelCase → snake_case
+    // (miroir de la lecture dans signInWithEmail/getCurrentUser).
+    const newRow: FlUserRow = {
+      id: authData.user.id,
+      name: newUser.name!,
+      email,
+      role: newUser.role!,
+      actif: newUser.actif ?? true,
+      access_type: newUser.accessType,
+      secteur: newUser.secteur,
+      phone: newUser.phone,
+      telephone: newUser.telephone,
+      photo_url: newUser.photoUrl,
+      can_view_achat: newUser.canViewAchat,
+      can_view_commercial: newUser.canViewCommercial,
+      can_view_logistique: newUser.canViewLogistique,
+      can_view_stock: newUser.canViewStock,
+      can_view_cash: newUser.canViewCash,
+      can_view_finance: newUser.canViewFinance,
+      can_view_recap: newUser.canViewRecap,
+      can_view_database: newUser.canViewDatabase,
+      can_view_external: newUser.canViewExternal,
+      can_create_commande_bo: newUser.canCreateCommandeBO,
+      objectif_clients: newUser.objectifClients,
+      objectif_tonnage: newUser.objectifTonnage,
+      objectif_journalier_ca: newUser.objectifJournalierCA,
+      objectif_hebdomadaire_ca: newUser.objectifHebdomadaireCA,
+      objectif_mensuel_ca: newUser.objectifMensuelCA,
+      fournisseur_id: newUser.fournisseurId,
+      client_id: newUser.clientId,
+      depot_id: newUser.depotId,
+      require_camera_auth: newUser.requireCameraAuth,
+    }
+
+    // fl_users n'ayant pas de types Supabase générés, le client type l'Insert de
+    // cette table comme `never` (même cause que les casts `as FlUserRow` à la
+    // lecture). Le payload est désormais correctement mappé en snake_case ci-dessus ;
+    // le cast ne fait que franchir cette frontière non typée.
     const { error: dbError } = await supabase
       .from("fl_users")
-      .insert([newUser] as never)
+      .insert([newRow] as never)
 
     if (dbError) {
       // Rollback : supprimer le compte auth si la création DB échoue
