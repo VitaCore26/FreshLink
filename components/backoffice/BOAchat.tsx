@@ -21,6 +21,8 @@ export default function BOAchat() {
   const [showChargeForm, setShowChargeForm] = useState(false)
   const [newChargeNom, setNewChargeNom] = useState("")
   const [newChargeMontant, setNewChargeMontant] = useState("")
+  // Nombre de doublons physiques (ids écartés par la fusion par nom)
+  const [dupCount, setDupCount] = useState(0)
 
   // Form state
   const [formFournisseurId, setFormFournisseurId] = useState("")
@@ -82,6 +84,60 @@ export default function BOAchat() {
     setArticles(store.getArticles())
     setFournisseurs(store.getFournisseurs())
     setChargesArticle(store.getChargesArticle())
+    setDupCount(computeDupCount())
+  }
+
+  // Compte les ids physiquement en double (présents en localStorage mais
+  // écartés par la fusion par nom de store.getArticles()).
+  const computeDupCount = (): number => {
+    let raw: unknown = []
+    try { raw = JSON.parse(localStorage.getItem("fl_articles") || "[]") } catch { return 0 }
+    if (!Array.isArray(raw)) return 0
+    const kept = new Set(store.getArticles().map(a => a.id))
+    const seen = new Set<string>()
+    let n = 0
+    for (const a of raw as Article[]) {
+      const id = a?.id
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      if (!kept.has(id)) n++
+    }
+    return n
+  }
+
+  // Fusion physique des doublons : garde la version canonique (la plus
+  // complète, déjà calculée par getArticles) et supprime définitivement les
+  // enregistrements écartés de localStorage ET de Supabase.
+  const handleMergeDuplicates = async () => {
+    let raw: unknown = []
+    try { raw = JSON.parse(localStorage.getItem("fl_articles") || "[]") } catch {}
+    const canonical = store.getArticles()
+    const keptIds = new Set(canonical.map(a => a.id))
+    const dropIds = [...new Set(
+      (Array.isArray(raw) ? (raw as Article[]) : [])
+        .map(a => a?.id)
+        .filter((id): id is string => !!id && !keptIds.has(id))
+    )]
+    if (dropIds.length === 0) { alert("✅ Aucun doublon à fusionner."); return }
+    if (!confirm(
+      `${dropIds.length} doublon(s) seront fusionnés dans l'article le plus complet ` +
+      `puis supprimés définitivement (localStorage + Supabase).\n\nContinuer ?`
+    )) return
+    // 1. localStorage = version canonique fusionnée
+    store.saveArticles(canonical)
+    setArticles(canonical)
+    // 2. supprimer les ids écartés de Supabase
+    try {
+      const { deleteArticle } = await import("@/lib/supabase/db")
+      for (const id of dropIds) {
+        try { await deleteArticle(id) } catch (e) { console.error("[BOAchat] delete dup error", id, e) }
+      }
+    } catch (e) {
+      console.error("[BOAchat] merge duplicates error:", e)
+    }
+    setDupCount(0)
+    alert(`✅ ${dropIds.length} doublon(s) fusionné(s) et supprimé(s).`)
+    refresh()
   }
 
   // ── Charges coût de revient (catalogue + affectation par article) ─────────
@@ -645,7 +701,15 @@ export default function BOAchat() {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {dupCount > 0 && (
+              <button onClick={handleMergeDuplicates}
+                title="Fusionner les articles en double (même nom) et supprimer les doublons"
+                className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg text-sm font-semibold font-sans hover:bg-orange-200 transition-colors flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                Fusionner les doublons ({dupCount})
+              </button>
+            )}
             <button onClick={() => { setEditArticle(null); setArtNom(""); setArtUnite("kg"); setArtStock(""); setArtPrixAchat(""); setArtPrixVente(""); setShowArticleForm(true) }} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium font-sans hover:opacity-90 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               Nouvel article
