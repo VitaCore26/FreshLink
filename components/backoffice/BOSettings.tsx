@@ -97,12 +97,22 @@ function MonCompteContent({ user, monNom, setMonNom, monPwd, setMonPwd, monPwdCo
           const users = store.getUsers()
           const idx = users.findIndex(u => u.id === user.id)
           if (idx < 0) { setMonCompteMsg({ ok: false, text: "Utilisateur introuvable" }); return }
-          users[idx] = {
+          const updated = {
             ...users[idx],
             name: monNom || users[idx].name,
-            ...(monPwd ? { password: monPwd } : {}),
+            // Met aussi à jour les mots de passe mobile/BO s'ils existent (comptes
+            // accessType "both"), sinon le nouveau mot de passe ne prendrait pas
+            // effet à la connexion. Réinitialise l'obligation de changement.
+            ...(monPwd ? {
+              password: monPwd,
+              ...(users[idx].passwordBO !== undefined ? { passwordBO: monPwd } : {}),
+              ...(users[idx].passwordMobile !== undefined ? { passwordMobile: monPwd } : {}),
+              mustChangePassword: false,
+            } : {}),
           }
-          store.saveUsers(users)
+          users[idx] = updated
+          store.saveUsers(users)            // sync Supabase via write-through
+          if (monPwd) store.setSession(updated)  // reflète le changement dans la session active
           setMonPwd(""); setMonPwdConfirm("")
           setMonCompteMsg({ ok: true, text: "Profil mis à jour avec succès !" })
           setTimeout(() => setMonCompteMsg(null), 3000)

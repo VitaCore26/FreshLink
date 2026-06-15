@@ -1153,6 +1153,8 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
   const [users, setUsers] = useState<User[]>([])
   const [search, setSearch] = useState("")
   const [filterRole, setFilterRole] = useState<UserRole | "">("")
+  // Interne (équipe) vs Externe (clients / fournisseurs)
+  const [filterScope, setFilterScope] = useState<"" | "interne" | "externe">("")
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<User | null>(null)
   const [form, setForm] = useState<Omit<User, "id">>(EMPTY_USER)
@@ -1329,12 +1331,18 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
     setPurging(false)
   }
 
+  const EXTERNAL_ROLES: UserRole[] = ["client", "client_proprietaire", "client_gerant", "fournisseur"]
+  const isExternal = (u: User) => EXTERNAL_ROLES.includes(u.role)
   const filtered = users.filter(u => {
     const matchSearch = (u.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (u.email ?? "").toLowerCase().includes(search.toLowerCase())
     const matchRole = filterRole === "" || u.role === filterRole
-    return matchSearch && matchRole
+    const matchScope = filterScope === "" ||
+      (filterScope === "externe" ? isExternal(u) : !isExternal(u))
+    return matchSearch && matchRole && matchScope
   })
+  const nbInterne = users.filter(u => !isExternal(u)).length
+  const nbExterne = users.filter(u => isExternal(u)).length
 
   const openNew = () => {
     setEditing(null)
@@ -1866,6 +1874,20 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
           </div>
         </div>
       )}
+
+      {/* Interne / Externe */}
+      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 w-fit">
+        {([
+          { id: "", label: `Tous (${users.length})` },
+          { id: "interne", label: `Interne / الفريق (${nbInterne})` },
+          { id: "externe", label: `Externe / خارجي (${nbExterne})` },
+        ] as { id: "" | "interne" | "externe"; label: string }[]).map(s => (
+          <button key={s.id} onClick={() => setFilterScope(s.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${filterScope === s.id ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
 
       {/* Role stats chips */}
       <div className="flex items-center gap-2 flex-wrap">
