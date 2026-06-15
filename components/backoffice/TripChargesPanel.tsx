@@ -1,597 +1,286 @@
 "use client"
 
-import { useState, useEffect } from "react"
+// ════════════════════════════════════════════════════════════════════════
+// Analyse Coût Trajet (remplace l'ancienne saisie manuelle des charges)
+// Pour chaque trip de livraison (fl_trips) :
+//   - KM théorique calculé depuis le GPS des commandes assignées (itinéraire)
+//   - KM réel relevé (kmDépart → kmArrivée) + écart
+//   - Carburant : réel (litres saisis) vs théorique (km × conso véhicule)
+//   - Charges diverses (carburant, assurance, amortissement, divers)
+//   - Coût total, coût/km, coût/caisse, coût/commande
+// Valeurs pré-remplies depuis ce qui existe déjà (prix carburant = EmailConfig,
+// conso = fiche livreur). Le reste est éditable dans la barre de config.
+// ════════════════════════════════════════════════════════════════════════
+
+import { useState, useMemo } from "react"
+import { store, type Trip } from "@/lib/store"
 import {
-  store, TripCharge, TripChargeType, TRIP_CHARGE_TYPE_LABELS,
-  ControleRetour, RetourMarchandiseItem, MOTIF_RETOUR_LABELS
-} from "@/lib/store"
-import {
-  Truck, Plus, AlertTriangle, CheckCircle2, X,
-  Package, MapPin, Hash, Calendar, ChevronDown, ChevronUp,
-  RefreshCw, FileText, RotateCcw
+  Truck, MapPin, Fuel, Calendar, Hash, Package, ChevronDown, ChevronUp,
+  Settings2, Route, AlertTriangle, CheckCircle2,
 } from "lucide-react"
 
-const AI_ANALYSE = (items: RetourMarchandiseItem[]): string => {
-  const alerts = items.filter(i => i.alerte)
-  if (alerts.length === 0) return "Aucune anomalie détectée dans les retours."
-  const parts = alerts.map(a => `${a.article}: ${a.iaObservation ?? MOTIF_RETOUR_LABELS[a.motif]}`)
-  return `ALERTES IA (${alerts.length}) — ${parts.join(" | ")}`
+// ── Config locale (non synchronisée — clé hors tables FL) ─────────────────
+interface CoutTrajetConfig {
+  depotLat: number
+  depotLng: number
+  roadFactor: number       // distance route ≈ distance à vol d'oiseau × facteur
+  consoDefautL100: number  // conso par défaut si la fiche livreur n'en a pas
+  prixCarburantL: number   // DH / litre
+  assuranceJour: number    // DH / trip (≈ par jour)
+  amortissementJour: number
+  diversJour: number
 }
 
-function RetourControleForm({ tripId, onSave }: { tripId: string; onSave: (c: ControleRetour) => void }) {
-  const [caissesPrevues, setCaissesPrevues] = useState(0)
-  const [caissesRetournees, setCaissesRetournees] = useState(0)
-  const [caissesMarcheRetour, setCaissesMarcheRetour] = useState(0)
-  const [marchandises, setMarchandises] = useState<RetourMarchandiseItem[]>([])
-  const [observations, setObservations] = useState("")
-  const [newItem, setNewItem] = useState<Partial<RetourMarchandiseItem>>({})
+const CFG_KEY = "fl_cout_trajet_cfg"
 
-  const motifs: RetourMarchandiseItem["motif"][] = ["pas_notre_variete", "produit_pourri", "trop_vieux", "endommage", "autre"]
-
-  const iaCheck = (item: Partial<RetourMarchandiseItem>): string => {
-    if (!item.motif) return ""
-    const m = MOTIF_RETOUR_LABELS[item.motif]
-    const alertMotifs: RetourMarchandiseItem["motif"][] = ["pas_notre_variete", "produit_pourri", "trop_vieux"]
-    if (alertMotifs.includes(item.motif)) {
-      if (item.motif === "pas_notre_variete") return "Vérifier la traçabilité fournisseur — non-conformité variété."
-      if (item.motif === "produit_pourri") return "Produit avarié détecté — vérifier chaîne du froid et délais transport."
-      if (item.motif === "trop_vieux") return "Date dépassée — revoir planification achat et rotation stock."
-    }
-    return `Retour signalé: ${m}`
+function loadCfg(): CoutTrajetConfig {
+  const fuel = store.getEmailConfig().prixCarburantL ?? 15
+  const defaults: CoutTrajetConfig = {
+    depotLat: 0, depotLng: 0, roadFactor: 1.3, consoDefautL100: 12,
+    prixCarburantL: fuel, assuranceJour: 50, amortissementJour: 100, diversJour: 0,
   }
+  try {
+    const raw = localStorage.getItem(CFG_KEY)
+    if (raw) return { ...defaults, ...JSON.parse(raw) }
+  } catch { /* noop */ }
+  return defaults
+}
 
-  const addItem = () => {
-    if (!newItem.article || !newItem.quantite || !newItem.motif) return
-    const alertMotifs: RetourMarchandiseItem["motif"][] = ["pas_notre_variete", "produit_pourri", "trop_vieux"]
-    const alerte = alertMotifs.includes(newItem.motif)
-    setMarchandises(prev => [...prev, {
-      article:        newItem.article!,
-      quantite:       newItem.quantite!,
-      motif:          newItem.motif!,
-      alerte,
-      iaObservation:  iaCheck(newItem),
-    }])
-    setNewItem({})
+function saveCfg(c: CoutTrajetConfig) {
+  try { localStorage.setItem(CFG_KEY, JSON.stringify(c)) } catch { /* noop */ }
+}
+
+// Distance à vol d'oiseau entre deux points GPS (km)
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371
+  const dLat = (bLat - aLat) * Math.PI / 180
+  const dLng = (bLng - aLng) * Math.PI / 180
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(aLat * Math.PI / 180) * Math.cos(bLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+const DH = (n: number) => `${n.toLocaleString("fr-MA", { maximumFractionDigits: 0 })} DH`
+const N1 = (n: number) => n.toLocaleString("fr-MA", { maximumFractionDigits: 1 })
+
+interface TripAnalyse {
+  trip: Trip
+  kmTheo: number
+  kmReel: number | null
+  ecartKm: number | null
+  conso: number
+  litresTheo: number
+  litresReel: number | null
+  coutCarburant: number
+  chargesDiverses: number
+  coutTotal: number
+  nbCaisses: number
+  nbCommandes: number
+  coutParKm: number | null
+  coutParCaisse: number | null
+  nbPoints: number
+}
+
+function analyse(trip: Trip, cfg: CoutTrajetConfig): TripAnalyse {
+  const livreurs = store.getLivreurs()
+  const liv = livreurs.find(l => l.id === trip.livreurId || `${l.nom} ${l.prenom ?? ""}`.trim() === trip.livreurNom || l.nom === trip.livreurNom)
+  const conso = (liv?.consommationL100 && liv.consommationL100 > 0) ? liv.consommationL100 : cfg.consoDefautL100
+
+  // Points de l'itinéraire (commandes assignées) triés par ordre
+  const pts = [...(trip.itineraire ?? [])]
+    .filter(p => typeof p.lat === "number" && typeof p.lng === "number")
+    .sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
+  const route: { lat: number; lng: number }[] = []
+  const hasDepot = cfg.depotLat !== 0 && cfg.depotLng !== 0
+  if (hasDepot) route.push({ lat: cfg.depotLat, lng: cfg.depotLng })
+  for (const p of pts) route.push({ lat: p.lat as number, lng: p.lng as number })
+  if (hasDepot) route.push({ lat: cfg.depotLat, lng: cfg.depotLng })
+
+  let straight = 0
+  for (let i = 1; i < route.length; i++) {
+    straight += haversineKm(route[i - 1].lat, route[i - 1].lng, route[i].lat, route[i].lng)
   }
+  const kmTheo = straight * cfg.roadFactor
 
-  const save = () => {
-    onSave({
-      date: store.today(),
-      caissesPrevues,
-      caissesRetournees,
-      caissesMarcheRetour,
-      marchandises,
-      validated: true,
-      observations,
-    })
+  const kmReel = (typeof trip.kmDepart === "number" && typeof trip.kmArrivee === "number" && trip.kmArrivee > trip.kmDepart)
+    ? trip.kmArrivee - trip.kmDepart
+    : (typeof trip.kmTotal === "number" && trip.kmTotal > 0 ? trip.kmTotal : null)
+  const ecartKm = kmReel !== null ? kmReel - kmTheo : null
+
+  const kmBase = kmReel ?? kmTheo
+  const litresTheo = kmBase * conso / 100
+  const litresReel = typeof trip.carburantReelLitres === "number" ? trip.carburantReelLitres : null
+  const coutCarburant = (litresReel ?? litresTheo) * cfg.prixCarburantL
+  const chargesDiverses = cfg.assuranceJour + cfg.amortissementJour + cfg.diversJour
+  const coutTotal = coutCarburant + chargesDiverses
+
+  const caisses = trip.nbCaissesByArticle ?? {}
+  const nbCaisses = Object.values(caisses).reduce((s, c) => s + (c.gros ?? 0) + (c.demi ?? 0), 0)
+  const nbCommandes = trip.commandeIds?.length ?? 0
+
+  return {
+    trip, kmTheo, kmReel, ecartKm, conso, litresTheo, litresReel,
+    coutCarburant, chargesDiverses, coutTotal, nbCaisses, nbCommandes,
+    coutParKm: kmReel && kmReel > 0 ? coutTotal / kmReel : null,
+    coutParCaisse: nbCaisses > 0 ? coutTotal / nbCaisses : null,
+    nbPoints: pts.length,
   }
+}
 
+function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="space-y-4 p-4 rounded-2xl" style={{ background: "#0a0f18", border: "1px solid #1a2535" }}>
-      <p className="text-sm font-bold" style={{ color: "#f1f5f9" }}>Contrôle Retour Livreur</p>
-
-      {/* Caisses */}
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { label: "Caisses Prévues", val: caissesPrevues, set: setCaissesPrevues },
-          { label: "Caisses Retournées", val: caissesRetournees, set: setCaissesRetournees },
-          { label: "Caisses Marché Retour", val: caissesMarcheRetour, set: setCaissesMarcheRetour },
-        ].map(({ label, val, set }) => (
-          <div key={label}>
-            <p className="text-xs mb-1" style={{ color: "#4b5563" }}>{label}</p>
-            <input type="number" value={val} onChange={e => set(+e.target.value)} min={0} className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#060a10", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-          </div>
-        ))}
-      </div>
-
-      {/* Ecart caisses */}
-      {caissesPrevues > 0 && (
-        <div className="px-3 py-2 rounded-xl flex items-center gap-2 text-xs" style={{ background: caissesRetournees < caissesPrevues ? "#1c0a0a" : "#0d2e18", border: `1px solid ${caissesRetournees < caissesPrevues ? "#3b1515" : "#15352a"}` }}>
-          {caissesRetournees < caissesPrevues
-            ? <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-            : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
-          <span style={{ color: caissesRetournees < caissesPrevues ? "#fca5a5" : "#6ee7b7" }}>
-            {caissesRetournees < caissesPrevues
-              ? `Ecart: ${caissesPrevues - caissesRetournees} caisses manquantes`
-              : "Toutes les caisses sont retournées"}
-          </span>
-        </div>
-      )}
-
-      {/* Marchandises retour */}
-      <div>
-        <p className="text-xs font-semibold mb-2" style={{ color: "#94a3b8" }}>Marchandises Retournées</p>
-        <div className="grid grid-cols-3 gap-2 mb-2">
-          <input value={newItem.article ?? ""} onChange={e => setNewItem(n => ({ ...n, article: e.target.value }))} placeholder="Article..." className="px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#060a10", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-          <input type="number" value={newItem.quantite ?? ""} onChange={e => setNewItem(n => ({ ...n, quantite: +e.target.value }))} placeholder="Qté (kg/u)..." min={0} className="px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#060a10", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-          <select value={newItem.motif ?? ""} onChange={e => setNewItem(n => ({ ...n, motif: e.target.value as RetourMarchandiseItem["motif"] }))} className="px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#060a10", border: "1px solid #1a2535", color: "#e2e8f0" }}>
-            <option value="">Motif...</option>
-            {motifs.map(m => <option key={m} value={m}>{MOTIF_RETOUR_LABELS[m]}</option>)}
-          </select>
-        </div>
-        {newItem.motif && (
-          <div className="mb-2 px-3 py-2 rounded-xl text-xs flex items-start gap-2" style={{ background: "#0d1a2e", border: "1px solid #1d3a5e" }}>
-            <span className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0 mt-0.5">IA</span>
-            <span style={{ color: "#7dd3fc" }}>{iaCheck(newItem)}</span>
-          </div>
-        )}
-        <button onClick={addItem} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white mb-3" style={{ background: "#1d4ed8" }}>
-          <Plus className="w-3.5 h-3.5" /> Ajouter Article
-        </button>
-        {marchandises.length > 0 && (
-          <div className="space-y-2">
-            {marchandises.map((m, i) => (
-              <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl text-xs" style={{ background: m.alerte ? "#1c0a0a" : "#060a10", border: `1px solid ${m.alerte ? "#3b1515" : "#1a2535"}` }}>
-                {m.alerte && <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />}
-                <div className="flex-1">
-                  <p className="font-medium" style={{ color: "#e2e8f0" }}>{m.article} — {m.quantite} kg/u</p>
-                  <p style={{ color: "#4b5563" }}>{MOTIF_RETOUR_LABELS[m.motif]}</p>
-                  {m.iaObservation && <p className="mt-0.5" style={{ color: "#7dd3fc" }}>IA: {m.iaObservation}</p>}
-                </div>
-                <button onClick={() => setMarchandises(prev => prev.filter((_, j) => j !== i))}><X className="w-3 h-3" style={{ color: "#6b7280" }} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Observations */}
-      <div>
-        <p className="text-xs mb-1" style={{ color: "#4b5563" }}>Observations générales</p>
-        <textarea value={observations} onChange={e => setObservations(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-xl text-xs outline-none resize-none" style={{ background: "#060a10", border: "1px solid #1a2535", color: "#e2e8f0" }} placeholder="Remarques sur le retour..." />
-      </div>
-
-      <button onClick={save} className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: "#15803d" }}>
-        Valider Contrôle Retour
-      </button>
+    <div className="rounded-xl border border-border bg-card p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-base font-extrabold mt-0.5" style={color ? { color } : undefined}>{value}</p>
+      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   )
 }
 
-function TripRow({ trip, onUpdate }: { trip: TripCharge; onUpdate: () => void }) {
-  const [expanded, setExpanded] = useState(false)
-  const [showControle, setShowControle] = useState(false)
-
-  const kmTotal = trip.kmDepart !== null && trip.kmRetour !== null
-    ? trip.kmRetour - trip.kmDepart
-    : null
-  const totalCharges = trip.charges.reduce((s, c) => s + c.montant, 0)
-  const alertes = trip.controleRetour?.marchandises.filter(m => m.alerte) ?? []
-
-  const validate = () => {
-    store.updateTripCharge(trip.id, { validated: true })
-    onUpdate()
-  }
-
-  const saveControle = (c: ControleRetour) => {
-    store.updateTripCharge(trip.id, { controleRetour: c })
-    setShowControle(false)
-    onUpdate()
-  }
-
+function TripCard({ a }: { a: TripAnalyse }) {
+  const [open, setOpen] = useState(false)
+  const t = a.trip
+  // Surconsommation = carburant réel nettement > théorique
+  const surconso = a.litresReel !== null && a.litresReel > a.litresTheo * 1.15
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#0f1623", border: "1px solid #1a2535" }}>
-      {/* Header */}
-      <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#0a0f18" }}>
-          <Truck className="w-4 h-4" style={{ color: "#06b6d4" }} />
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setOpen(o => !o)}>
+        <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center shrink-0">
+          <Truck className="w-4 h-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            {trip.numero && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-black"
-                style={{ background: "#1a0d2e", color: "#a78bfa", border: "1px solid #3b1d6e" }}>
-                {trip.numero}
-              </span>
-            )}
-            <p className="text-sm font-bold" style={{ color: "#f1f5f9" }}>{trip.livreur}</p>
-            <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#0d1a2e", color: "#60a5fa", border: "1px solid #1d3a5e" }}>{trip.immatricule}</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#0a1a10", color: "#6ee7b7", border: "1px solid #15352a" }}>{trip.secteur}</span>
+            <span className="text-sm font-bold text-foreground">{t.numero ?? t.id.slice(0, 6)}</span>
+            <span className="text-xs text-muted-foreground">{t.livreurNom}</span>
+            {surconso && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-0.5"><AlertTriangle className="w-2.5 h-2.5" />surconso</span>}
           </div>
-          <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: "#4b5563" }}>
-            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{trip.date}</span>
-            <span className="flex items-center gap-1"><Hash className="w-3 h-3" />{trip.nbCaissesFact} caisses</span>
-            <span className="flex items-center gap-1"><Package className="w-3 h-3" />{trip.nbClients} clients</span>
-            {kmTotal !== null && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{kmTotal} km</span>}
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{t.date}</span>
+            <span className="flex items-center gap-1"><Package className="w-3 h-3" />{a.nbCommandes} cmd</span>
+            <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{a.nbPoints} pts</span>
           </div>
         </div>
-        <div className="text-right flex-shrink-0">
-          <p className="text-sm font-bold" style={{ color: "#f59e0b" }}>{totalCharges.toLocaleString()} DH</p>
-          <div className="flex items-center gap-1.5 justify-end mt-1">
-            {alertes.length > 0 && <span className="flex items-center gap-1 text-[10px]" style={{ color: "#ef4444" }}><AlertTriangle className="w-3 h-3" />{alertes.length} alerte{alertes.length > 1 ? "s" : ""}</span>}
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: trip.validated ? "#10b98122" : "#f59e0b22", color: trip.validated ? "#10b981" : "#f59e0b", border: `1px solid ${trip.validated ? "#10b98144" : "#f59e0b44"}` }}>
-              {trip.validated ? "Validé" : "En attente"}
-            </span>
-          </div>
+        <div className="text-right shrink-0">
+          <p className="text-sm font-extrabold text-amber-600">{DH(a.coutTotal)}</p>
+          {a.coutParKm !== null && <p className="text-[10px] text-muted-foreground">{N1(a.coutParKm)} DH/km</p>}
         </div>
-        {expanded ? <ChevronUp className="w-4 h-4 flex-shrink-0" style={{ color: "#374151" }} /> : <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: "#374151" }} />}
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
       </div>
 
-      {/* Expanded */}
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          {/* KM detail */}
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            {[
-              { l: "KM Départ", v: trip.kmDepart !== null ? String(trip.kmDepart) : "—" },
-              { l: "KM Retour", v: trip.kmRetour !== null ? String(trip.kmRetour) : "Pas encore rentré" },
-              { l: "Total KM", v: kmTotal !== null ? `${kmTotal} km` : "En cours" },
-            ].map(({ l, v }) => (
-              <div key={l} className="px-3 py-2.5 rounded-xl" style={{ background: "#0a0f18", border: "1px solid #1a2535" }}>
-                <p style={{ color: "#4b5563" }}>{l}</p>
-                <p className="font-bold mt-0.5" style={{ color: "#e2e8f0" }}>{v}</p>
-              </div>
-            ))}
-          </div>
+      {open && (
+        <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Stat label="KM théorique (GPS)" value={`${N1(a.kmTheo)} km`} sub={`${a.nbPoints} points × route`} />
+          <Stat label="KM réel (relevé)" value={a.kmReel !== null ? `${N1(a.kmReel)} km` : "—"}
+            sub={a.kmReel === null ? "km non saisis" : undefined} />
+          <Stat label="Écart KM" value={a.ecartKm !== null ? `${a.ecartKm >= 0 ? "+" : ""}${N1(a.ecartKm)} km` : "—"}
+            color={a.ecartKm !== null && a.ecartKm > a.kmTheo * 0.2 ? "#dc2626" : "#16a34a"}
+            sub={a.ecartKm !== null && a.ecartKm > a.kmTheo * 0.2 ? "détour important" : undefined} />
+          <Stat label="Conso véhicule" value={`${N1(a.conso)} L/100`} />
 
-          {/* Charges detail */}
-          {trip.charges.length > 0 && (
-            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1a2535" }}>
-              <p className="text-xs font-semibold px-3 py-2" style={{ background: "#0a0f18", color: "#94a3b8", borderBottom: "1px solid #1a2535" }}>Détail charges</p>
-              {trip.charges.map((c, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 text-xs" style={{ borderBottom: i < trip.charges.length - 1 ? "1px solid #1a253520" : "none" }}>
-                  <span style={{ color: "#94a3b8" }}>{TRIP_CHARGE_TYPE_LABELS[c.type]}</span>
-                  <span className="font-bold" style={{ color: "#f59e0b" }}>{c.montant} DH</span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between px-3 py-2 text-xs font-bold" style={{ background: "#0a0f18", borderTop: "1px solid #1a2535" }}>
-                <span style={{ color: "#e2e8f0" }}>Total Charges</span>
-                <span style={{ color: "#f59e0b" }}>{totalCharges} DH</span>
-              </div>
-            </div>
-          )}
+          <Stat label="Carburant théorique" value={`${N1(a.litresTheo)} L`} />
+          <Stat label="Carburant réel" value={a.litresReel !== null ? `${N1(a.litresReel)} L` : "—"}
+            color={a.litresReel !== null && a.litresReel > a.litresTheo * 1.15 ? "#dc2626" : undefined} />
+          <Stat label="Coût carburant" value={DH(a.coutCarburant)} color="#d97706" />
+          <Stat label="Charges diverses" value={DH(a.chargesDiverses)} sub="assur. + amort. + divers" />
 
-          {/* Controle retour */}
-          {trip.controleRetour ? (
-            <div className="rounded-xl p-3" style={{ background: "#0a1a10", border: "1px solid #15352a" }}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold" style={{ color: "#6ee7b7" }}>Contrôle Retour Validé</p>
-                <span className="text-xs" style={{ color: "#4b5563" }}>{trip.controleRetour.date}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-                <div><span style={{ color: "#4b5563" }}>Caisses prévues: </span><span className="font-bold" style={{ color: "#e2e8f0" }}>{trip.controleRetour.caissesPrevues}</span></div>
-                <div><span style={{ color: "#4b5563" }}>Retournées: </span><span className="font-bold" style={{ color: "#e2e8f0" }}>{trip.controleRetour.caissesRetournees}</span></div>
-                <div><span style={{ color: "#4b5563" }}>Marché: </span><span className="font-bold" style={{ color: "#e2e8f0" }}>{trip.controleRetour.caissesMarcheRetour}</span></div>
-              </div>
-              {alertes.length > 0 && (
-                <div className="p-2.5 rounded-xl text-xs" style={{ background: "#1c0a0a", border: "1px solid #3b1515" }}>
-                  <p className="font-bold mb-1.5" style={{ color: "#fca5a5" }}>Alertes IA ({alertes.length})</p>
-                  {alertes.map((a, i) => (
-                    <p key={i} className="flex items-start gap-1.5" style={{ color: "#fca5a5" }}>
-                      <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                      {a.article}: {a.iaObservation}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {trip.controleRetour.observations && (
-                <p className="text-xs mt-2" style={{ color: "#4b5563" }}>Obs: {trip.controleRetour.observations}</p>
-              )}
-            </div>
-          ) : (
-            <div>
-              {showControle ? (
-                <RetourControleForm tripId={trip.id} onSave={saveControle} />
-              ) : (
-                <button onClick={() => setShowControle(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium w-full justify-center" style={{ background: "#1a1500", color: "#fde68a", border: "1px solid #3b2e00" }}>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Effectuer le Contrôle Retour
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Validate trip */}
-          {!trip.validated && (
-            <button onClick={validate} className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: "#15803d" }}>
-              Valider le Trip
-            </button>
-          )}
+          <Stat label="Coût / km" value={a.coutParKm !== null ? `${N1(a.coutParKm)} DH` : "—"} color="#0ea5e9" />
+          <Stat label="Coût / caisse" value={a.coutParCaisse !== null ? `${N1(a.coutParCaisse)} DH` : "—"} sub={`${a.nbCaisses} caisses`} />
+          <Stat label="Coût / commande" value={a.nbCommandes > 0 ? `${N1(a.coutTotal / a.nbCommandes)} DH` : "—"} />
+          <Stat label="Coût total trajet" value={DH(a.coutTotal)} color="#dc2626" />
         </div>
       )}
     </div>
   )
 }
 
-// ── Auto-sync Trip from BL + Controle Preparation + Retour ────────────────────
-function buildTripFromFlows(livreurNom: string, date: string): Partial<TripCharge> & {
-  sourceBLs: string[]; sourcePrepIds: string[]; sourceCaisses: { gros: number; demi: number }; observations?: string
-} {
-  const today = date || store.today()
-
-  // 1. BL for this livreur on this date
-  const bls = store.getBonsLivraison().filter(
-    bl => bl.date === today && bl.livreurNom === livreurNom
-  )
-  const nbClients = bls.length
-  const secteurs = [...new Set(bls.map(bl => (bl as { secteur?: string; clientSecteur?: string }).secteur || (bl as { secteur?: string; clientSecteur?: string }).clientSecteur || "").filter(Boolean))]
-  const nbCaisseGros = bls.reduce((s, bl) => s + ((bl as { nbCaisseGros?: number }).nbCaisseGros ?? 0), 0)
-  const nbCaisseDemi = bls.reduce((s, bl) => s + ((bl as { nbCaisseDemi?: number }).nbCaisseDemi ?? 0), 0)
-  const montantBLs = bls.reduce((s, bl) => s + (bl.montantTTC ?? 0), 0)
-
-  // 2. Bons Préparation for this livreur/date (ctrl_prep)
-  const preps = store.getBonsPreparation().filter(
-    p => p.date === today && p.statut === "valide" &&
-      (bls.some(bl => (bl as { bonPrepId?: string }).bonPrepId === p.id) || p.clientIds.length > 0)
-  )
-  const prepNbCaisses = preps.reduce((s, p) => {
-    // Count total caisses from qteCommandee ÷ 30kg per caisse (standard)
-    return s + p.lignes.reduce((ls, l) => ls + Math.ceil((l.qteCommandee ?? 0) / 30), 0)
-  }, 0)
-
-  // 3. Retours for this livreur today
-  const retours = store.getRetours().filter(
-    r => r.date === today && r.livreurNom === livreurNom
-  )
-  const nbRetoursArticles = retours.reduce((s, r) => s + (r.lignes?.length ?? 0), 0)
-
-  // Caisses prévues = from prep if available, else from BL
-  const caissesPrevues = prepNbCaisses > 0 ? prepNbCaisses : nbCaisseGros + nbCaisseDemi
-
-  return {
-    secteur: secteurs.join(", ") || "—",
-    nbCaissesFact: caissesPrevues,
-    nbClients,
-    charges: [],
-    sourceBLs: bls.map(bl => bl.id),
-    sourcePrepIds: preps.map(p => p.id),
-    sourceCaisses: { gros: nbCaisseGros, demi: nbCaisseDemi },
-    // Auto note for context
-    observations: [
-      bls.length > 0 ? `${bls.length} BL — ${montantBLs.toLocaleString("fr-MA")} DH` : "",
-      preps.length > 0 ? `${preps.length} bon(s) prép. validé(s)` : "",
-      nbRetoursArticles > 0 ? `${nbRetoursArticles} article(s) retourné(s)` : "",
-    ].filter(Boolean).join(" | "),
-  }
-}
-
 export default function TripChargesPanel() {
-  const [trips, setTrips] = useState<TripCharge[]>(() => store.getTripCharges())
-  const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState<Partial<TripCharge> & { observations?: string }>({ charges: [] })
-  const [newCharge, setNewCharge] = useState<{ type: TripChargeType; montant: number; description?: string }>({ type: "carburant", montant: 0 })
-  const [autoSyncInfo, setAutoSyncInfo] = useState<{ sourceBLs: string[]; sourcePrepIds: string[]; sourceCaisses: { gros: number; demi: number } } | null>(null)
-  const [livreurs, setLivreurs] = useState<string[]>([])
+  const [cfg, setCfg] = useState<CoutTrajetConfig>(() => loadCfg())
+  const [showCfg, setShowCfg] = useState(false)
+  const trips = useMemo(() => store.getTrips(), [])
 
-  useEffect(() => {
-    const livList = store.getLivreurs?.() ?? []
-    setLivreurs(livList.map((l: { nom: string }) => l.nom))
-  }, [])
+  const analyses = useMemo(
+    () => trips.map(t => analyse(t, cfg)).sort((a, b) => b.trip.date.localeCompare(a.trip.date)),
+    [trips, cfg]
+  )
 
-  const reload = () => setTrips(store.getTripCharges())
+  const totalCout = analyses.reduce((s, a) => s + a.coutTotal, 0)
+  const totalKmReel = analyses.reduce((s, a) => s + (a.kmReel ?? 0), 0)
+  const coutMoyenKm = totalKmReel > 0 ? totalCout / totalKmReel : null
+  const surconsoCount = analyses.filter(a => a.litresReel !== null && a.litresReel > a.litresTheo * 1.15).length
 
-  // Auto-populate form from flows when livreur is selected
-  const handleLivreurChange = (nom: string) => {
-    const synced = buildTripFromFlows(nom, store.today())
-    const { sourceBLs, sourcePrepIds, sourceCaisses, ...formFields } = synced
-    setForm(f => ({ ...f, livreur: nom, ...formFields, charges: f.charges ?? [] }))
-    setAutoSyncInfo({ sourceBLs, sourcePrepIds, sourceCaisses })
+  const updateCfg = (patch: Partial<CoutTrajetConfig>) => {
+    setCfg(prev => { const next = { ...prev, ...patch }; saveCfg(next); return next })
   }
 
-  const addCharge = () => {
-    if (newCharge.montant <= 0) return
-    setForm(f => ({ ...f, charges: [...(f.charges ?? []), { ...newCharge }] }))
-    setNewCharge({ type: "carburant", montant: 0 })
-  }
-
-  const saveTrip = () => {
-    if (!form.livreur || !form.immatricule || !form.secteur) return
-    // Auto-generate sequential trip number: TRP-001, TRP-002…
-    const existing = store.getTripCharges()
-    const nextNum  = existing.length + 1
-    const numero   = `TRP-${String(nextNum).padStart(3, "0")}`
-    store.addTripCharge({
-      id: store.genId(),
-      numero,
-      date: store.today(),
-      livreur: form.livreur!,
-      immatricule: form.immatricule!,
-      secteur: form.secteur!,
-      nbCaissesFact: form.nbCaissesFact ?? 0,
-      nbClients: form.nbClients ?? 0,
-      kmDepart: form.kmDepart ?? null,
-      kmRetour: null,
-      charges: form.charges ?? [],
-      validated: false,
-    })
-
-    // Auto-update caisses vides stock when trip is created (sortie caisses vers livreur)
-    if (autoSyncInfo && (autoSyncInfo.sourceCaisses.gros > 0 || autoSyncInfo.sourceCaisses.demi > 0)) {
-      store.addCaisseMouvement({
-        id: store.genId(),
-        date: store.today(),
-        typeOperation: "expedition",
-        sens: "sortie",
-        nbCaisseGros: autoSyncInfo.sourceCaisses.gros,
-        nbCaisseDemi: autoSyncInfo.sourceCaisses.demi,
-        referenceDoc: form.livreur!,
-        operateurId: "system",
-        operateurNom: "Auto-Trip",
-        notes: `Trip auto-créé — ${autoSyncInfo.sourceBLs.length} BL(s)`,
-      })
-    }
-
-    setForm({ charges: [] })
-    setAutoSyncInfo(null)
-    setShowAdd(false)
-    reload()
-  }
-
-  const totalChargesAll = trips.reduce((s, t) => s + t.charges.reduce((ss, c) => ss + c.montant, 0), 0)
-  const alertesAll = trips.reduce((s, t) => s + (t.controleRetour?.marchandises.filter(m => m.alerte).length ?? 0), 0)
+  const cfgFields: { key: keyof CoutTrajetConfig; label: string; step?: number }[] = [
+    { key: "prixCarburantL", label: "Prix carburant (DH/L)", step: 0.1 },
+    { key: "consoDefautL100", label: "Conso défaut (L/100km)", step: 0.5 },
+    { key: "roadFactor", label: "Facteur route (×)", step: 0.05 },
+    { key: "assuranceJour", label: "Assurance / trip (DH)", step: 10 },
+    { key: "amortissementJour", label: "Amortissement / trip (DH)", step: 10 },
+    { key: "diversJour", label: "Divers / trip (DH)", step: 10 },
+    { key: "depotLat", label: "Dépôt latitude", step: 0.0001 },
+    { key: "depotLng", label: "Dépôt longitude", step: 0.0001 },
+  ]
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4" style={{ background: "#080c14" }}>
+    <div className="flex flex-col gap-4 p-1">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold" style={{ color: "#f1f5f9" }}>
-            Charges Trip <span style={{ color: "#374151" }}>/ مصاريف الرحلة</span>
+          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+            <Route className="w-4 h-4 text-primary" /> Analyse Coût Trajet
           </h2>
-          <p className="text-xs mt-0.5" style={{ color: "#374151" }}>
-            Auto-rempli depuis Contrôle Préparation · BL · Retours
+          <p className="text-xs text-muted-foreground mt-0.5">
+            KM théorique (GPS commandes) vs réel · carburant réel vs théorique · charges diverses
           </p>
         </div>
-        <button onClick={() => { setShowAdd(true); setAutoSyncInfo(null); setForm({ charges: [] }) }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-          style={{ background: "#1d4ed8" }}>
-          <Plus className="w-3.5 h-3.5" /> Nouveau Trip
+        <button onClick={() => setShowCfg(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted text-foreground hover:bg-muted/70 transition-colors">
+          <Settings2 className="w-3.5 h-3.5" /> Paramètres
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { l: "Trips Aujourd'hui", v: String(trips.filter(t => t.date === store.today()).length), c: "#06b6d4" },
-          { l: "Total Charges", v: `${totalChargesAll.toLocaleString()} DH`, c: "#f59e0b" },
-          { l: "Alertes Retours", v: String(alertesAll), c: "#ef4444" },
-          { l: "Trips Validés", v: String(trips.filter(t => t.validated).length), c: "#10b981" },
-        ].map(s => (
-          <div key={s.l} className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#0f1623", border: "1px solid #1a2535" }}>
-            <p className="text-xs" style={{ color: "#4b5563" }}>{s.l}</p>
-            <p className="text-sm font-bold" style={{ color: s.c }}>{s.v}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Trips list */}
-      <div className="flex-1 overflow-y-auto space-y-3">
-        {trips.map(trip => (
-          <TripRow key={trip.id} trip={trip} onUpdate={reload} />
-        ))}
-        {trips.length === 0 && (
-          <div className="text-center py-12 text-xs" style={{ color: "#374151" }}>Aucun trip enregistré</div>
-        )}
-      </div>
-
-      {/* Add trip modal */}
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }} onClick={() => setShowAdd(false)}>
-          <div className="w-full max-w-lg rounded-2xl overflow-hidden overflow-y-auto" style={{ background: "#0f1623", border: "1px solid #1a2535", maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid #1a2535" }}>
-              <div>
-                <p className="font-bold text-sm" style={{ color: "#f1f5f9" }}>Nouveau Trip</p>
-                <p className="text-[11px] mt-0.5 flex items-center gap-1.5" style={{ color: "#4b5563" }}>
-                  Numéro assigné automatiquement :
-                  <span className="font-black px-1.5 py-0.5 rounded" style={{ background: "#1a0d2e", color: "#a78bfa", fontSize: 10 }}>
-                    TRP-{String(trips.length + 1).padStart(3, "0")}
-                  </span>
-                </p>
+      {/* Config */}
+      {showCfg && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1">Paramètres de calcul</p>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Pré-remplis depuis l&apos;app (prix carburant) et la fiche livreur (conso). Dépôt GPS optionnel — sinon le calcul porte sur le trajet entre clients.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {cfgFields.map(f => (
+              <div key={f.key} className="flex flex-col gap-1">
+                <label className="text-[11px] text-muted-foreground">{f.label}</label>
+                <input type="number" step={f.step ?? 1} value={cfg[f.key]}
+                  onChange={e => updateCfg({ [f.key]: Number(e.target.value) } as Partial<CoutTrajetConfig>)}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
               </div>
-              <button onClick={() => setShowAdd(false)}><X className="w-4 h-4" style={{ color: "#6b7280" }} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-
-              {/* Livreur — triggers auto-sync */}
-              <div>
-                <p className="text-xs mb-1 flex items-center gap-1.5" style={{ color: "#94a3b8" }}>
-                  Livreur <span style={{ color: "#1d4ed8", fontSize: 9 }}>● auto-rempli depuis flux</span>
-                </p>
-                {livreurs.length > 0 ? (
-                  <select
-                    value={form.livreur ?? ""}
-                    onChange={e => handleLivreurChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                    style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }}>
-                    <option value="">— Sélectionner un livreur —</option>
-                    {livreurs.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    value={form.livreur ?? ""}
-                    onChange={e => handleLivreurChange(e.target.value)}
-                    placeholder="Nom du livreur"
-                    className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                    style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                )}
-              </div>
-
-              {/* Auto-sync info banner */}
-              {autoSyncInfo && (
-                <div className="rounded-xl p-3 space-y-2" style={{ background: "#0a1a10", border: "1px solid #15352a" }}>
-                  <div className="flex items-center gap-2 text-xs font-bold" style={{ color: "#6ee7b7" }}>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Données auto-remplies depuis les flux du jour
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="flex items-center gap-1.5" style={{ color: "#4b5563" }}>
-                      <FileText className="w-3 h-3" style={{ color: "#60a5fa" }} />
-                      <span>{autoSyncInfo.sourceBLs.length} BL(s)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5" style={{ color: "#4b5563" }}>
-                      <Package className="w-3 h-3" style={{ color: "#f59e0b" }} />
-                      <span>{autoSyncInfo.sourceCaisses.gros} gros / {autoSyncInfo.sourceCaisses.demi} demi</span>
-                    </div>
-                    <div className="flex items-center gap-1.5" style={{ color: "#4b5563" }}>
-                      <RotateCcw className="w-3 h-3" style={{ color: "#ef4444" }} />
-                      <span>{autoSyncInfo.sourcePrepIds.length} prép.</span>
-                    </div>
-                  </div>
-                  {(form as { observations?: string }).observations && (
-                    <p className="text-xs" style={{ color: "#374151" }}>{(form as { observations?: string }).observations}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-xs mb-1" style={{ color: "#4b5563" }}>Immatricule</p>
-                  <input value={form.immatricule ?? ""} onChange={e => setForm(f => ({ ...f, immatricule: e.target.value }))} placeholder="W-XXXXX-X" className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                </div>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: "#4b5563" }}>Secteur</p>
-                  <input value={form.secteur ?? ""} onChange={e => setForm(f => ({ ...f, secteur: e.target.value }))} placeholder="Zone / Secteur" className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                </div>
-                <div>
-                  <p className="text-xs mb-1 flex items-center gap-1" style={{ color: "#4b5563" }}>
-                    Nb Caisses Facturées
-                    {autoSyncInfo && <span style={{ color: "#6ee7b7", fontSize: 9 }}>↑ auto</span>}
-                  </p>
-                  <input type="number" value={form.nbCaissesFact ?? ""} onChange={e => setForm(f => ({ ...f, nbCaissesFact: +e.target.value }))} min={0} className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                </div>
-                <div>
-                  <p className="text-xs mb-1 flex items-center gap-1" style={{ color: "#4b5563" }}>
-                    Nb Clients
-                    {autoSyncInfo && autoSyncInfo.sourceBLs.length > 0 && <span style={{ color: "#6ee7b7", fontSize: 9 }}>↑ auto</span>}
-                  </p>
-                  <input type="number" value={form.nbClients ?? ""} onChange={e => setForm(f => ({ ...f, nbClients: +e.target.value }))} min={0} className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                </div>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: "#4b5563" }}>KM Départ</p>
-                  <input type="number" value={form.kmDepart ?? ""} onChange={e => setForm(f => ({ ...f, kmDepart: +e.target.value }))} min={0} className="w-full px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                </div>
-              </div>
-
-              {/* Charges */}
-              <p className="text-xs font-semibold" style={{ color: "#94a3b8" }}>Charges مصاريف</p>
-              <div className="grid grid-cols-3 gap-2">
-                <select value={newCharge.type} onChange={e => setNewCharge(c => ({ ...c, type: e.target.value as TripChargeType }))} className="px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }}>
-                  {Object.entries(TRIP_CHARGE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <input type="number" value={newCharge.montant || ""} onChange={e => setNewCharge(c => ({ ...c, montant: +e.target.value }))} placeholder="Montant DH" min={0} className="px-3 py-2 rounded-xl text-xs outline-none" style={{ background: "#0a0f18", border: "1px solid #1a2535", color: "#e2e8f0" }} />
-                <button onClick={addCharge} className="px-3 py-2 rounded-xl text-xs font-medium text-white" style={{ background: "#1d4ed8" }}>+ Ajouter</button>
-              </div>
-              {(form.charges ?? []).length > 0 && (
-                <div className="space-y-1">
-                  {(form.charges ?? []).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg text-xs" style={{ background: "#0a0f18", border: "1px solid #1a2535" }}>
-                      <span style={{ color: "#94a3b8" }}>{TRIP_CHARGE_TYPE_LABELS[c.type]}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold" style={{ color: "#f59e0b" }}>{c.montant} DH</span>
-                        <button onClick={() => setForm(f => ({ ...f, charges: (f.charges ?? []).filter((_, j) => j !== i) }))}><X className="w-3 h-3" style={{ color: "#6b7280" }} /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <button onClick={saveTrip} className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: "#1d4ed8" }}>
-                Enregistrer Trip
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* Stats globales */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat label="Trips analysés" value={String(analyses.length)} color="#0ea5e9" />
+        <Stat label="Coût total trajets" value={DH(totalCout)} color="#d97706" />
+        <Stat label="Coût moyen / km" value={coutMoyenKm !== null ? `${N1(coutMoyenKm)} DH` : "—"} sub={`${N1(totalKmReel)} km réels`} />
+        <Stat label="Surconsommation" value={String(surconsoCount)} color={surconsoCount > 0 ? "#dc2626" : "#16a34a"} sub="carburant réel > +15%" />
+      </div>
+
+      {/* Liste trips */}
+      <div className="flex flex-col gap-2">
+        {analyses.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-10 text-center">
+            <Truck className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-30" />
+            <p className="text-sm text-muted-foreground font-semibold">Aucun trip à analyser</p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Les trips planifiés en logistique apparaissent ici automatiquement.
+            </p>
+          </div>
+        ) : analyses.map(a => <TripCard key={a.trip.id} a={a} />)}
+      </div>
     </div>
   )
 }
