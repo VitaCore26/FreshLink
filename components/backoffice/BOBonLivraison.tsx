@@ -333,12 +333,16 @@ function BLEditor({
               )}
             </div>
 
-            {/* Date */}
+            {/* Date — modifiable uniquement par le super administrateur */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-slate-600">Date BL</label>
+              <label className="text-xs font-semibold text-slate-600">
+                Date BL{store.getSession()?.role !== "super_super_admin" && <span className="text-slate-400 font-normal"> (verrouillée)</span>}
+              </label>
               <input type="date" value={form.date ?? ""}
-                onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                onChange={e => { if (store.getSession()?.role === "super_super_admin") setForm(f => ({ ...f, date: e.target.value })) }}
+                disabled={store.getSession()?.role !== "super_super_admin"}
+                title={store.getSession()?.role === "super_super_admin" ? "" : "Seul le super administrateur peut modifier la date du BL"}
+                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" />
             </div>
 
             {/* Date livraison prevue */}

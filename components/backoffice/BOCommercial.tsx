@@ -150,8 +150,12 @@ export default function BOCommercial({ user }: Props) {
   const zones = [...new Set(commandes.map(c => c.zone).filter(Boolean))]
   const prevendeurs = [...new Set(commandes.map(c => c.commercialNom))]
 
-  // Only resp_commercial + admin can create orders from BO
-  const canCreateBO = user.canCreateCommandeBO || user.role === "super_admin" || user.role === "admin" || user.role === "resp_commercial"
+  // Admin, super_admin, super_super_admin, responsable commercial et team leader
+  // peuvent créer des commandes depuis le BO (+ toute perm canCreateCommandeBO).
+  const canCreateBO = user.canCreateCommandeBO ||
+    ["super_super_admin", "super_admin", "admin", "resp_commercial", "team_leader"].includes(user.role)
+  // Seul le super_super_admin peut modifier la date d'une commande / d'un BL.
+  const canEditDate = user.role === "super_super_admin"
 
   // BO commandes show only "commercial" clients (not fournisseur/client portal accounts)
   const boClients = store.getClients().filter(c => {
@@ -239,9 +243,14 @@ export default function BOCommercial({ user }: Props) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Date livraison</label>
-                  <input type="date" value={createForm.date} onChange={e => setCreateForm(f => ({ ...f, date: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Date livraison{!canEditDate && <span className="text-slate-400 font-normal"> (verrouillée)</span>}
+                  </label>
+                  <input type="date" value={createForm.date}
+                    onChange={e => canEditDate && setCreateForm(f => ({ ...f, date: e.target.value }))}
+                    disabled={!canEditDate}
+                    title={canEditDate ? "" : "Seul le super administrateur peut modifier la date"}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Heure livraison</label>
