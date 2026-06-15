@@ -627,8 +627,8 @@ export default function BODemandesComptes({ user }: Props) {
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${cfg.cls}`}>{cfg.icon} {cfg.label}</span>
                     <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${req.type === "client" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>
-                      {(req as Record<string,unknown>).sous_type
-                        ? ({ chr: "CHR", marchand: "Marchand", particulier: "Particulier", fournisseur: "Fournisseur", client: "Client" }[String((req as Record<string,unknown>).sous_type)] ?? String((req as Record<string,unknown>).sous_type))
+                      {req.sous_type
+                        ? ({ chr: "CHR", marchand: "Marchand", particulier: "Particulier", fournisseur: "Fournisseur", client: "Client" }[String(req.sous_type)] ?? String(req.sous_type))
                         : (req.type === "client" ? "Client" : "Fournisseur")
                       }
                     </span>
@@ -656,9 +656,9 @@ export default function BODemandesComptes({ user }: Props) {
                   </div>
                 )}
 
-                {(req as Record<string,unknown>).rejectReason && (
+                {req.rejectReason && (
                   <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
-                    <strong>Motif rejet :</strong> {String((req as Record<string,unknown>).rejectReason)}
+                    <strong>Motif rejet :</strong> {req.rejectReason}
                   </div>
                 )}
 

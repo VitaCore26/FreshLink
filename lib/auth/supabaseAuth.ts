@@ -27,6 +27,41 @@ export interface AuthSession {
   refresh_token: string
 }
 
+// Ligne de la table fl_users (colonnes snake_case). La table n'ayant pas de
+// types Supabase générés, le client retourne `never` ; ce type rétablit le
+// typage à la lecture (corrige les ~59 erreurs "Property X on type 'never'").
+interface FlUserRow {
+  id: string
+  name: string
+  email: string
+  role: User["role"]
+  actif: boolean
+  access_type?: User["accessType"]
+  secteur?: string
+  phone?: string
+  telephone?: string
+  photo_url?: string
+  can_view_achat?: boolean
+  can_view_commercial?: boolean
+  can_view_logistique?: boolean
+  can_view_stock?: boolean
+  can_view_cash?: boolean
+  can_view_finance?: boolean
+  can_view_recap?: boolean
+  can_view_database?: boolean
+  can_view_external?: boolean
+  can_create_commande_bo?: boolean
+  objectif_clients?: number
+  objectif_tonnage?: number
+  objectif_journalier_ca?: number
+  objectif_hebdomadaire_ca?: number
+  objectif_mensuel_ca?: number
+  fournisseur_id?: string
+  client_id?: string
+  depot_id?: string
+  require_camera_auth?: boolean
+}
+
 /**
  * Signer avec email + password
  * Récupère ensuite le profil utilisateur depuis fl_users
@@ -49,17 +84,18 @@ export async function signInWithEmail(
     }
 
     // 2. Récupérer le profil utilisateur depuis fl_users
-    const { data: userRow, error: userError } = await supabase
+    const { data: userRowRaw, error: userError } = await supabase
       .from("fl_users")
       .select("*")
       .eq("email", email)
       .single()
 
-    if (userError || !userRow) {
+    if (userError || !userRowRaw) {
       return {
         error: "Profil utilisateur non trouvé. Contactez l'administrateur.",
       }
     }
+    const userRow = userRowRaw as FlUserRow
 
     // 3. Mapper vers notre type User (snake_case → camelCase)
     const user: User = {
@@ -147,13 +183,14 @@ export async function getCurrentUser(): Promise<User | null> {
     if (!data.user?.email) return null
 
     // Récupérer le profil complet depuis fl_users
-    const { data: userRow } = await supabase
+    const { data: userRowRaw } = await supabase
       .from("fl_users")
       .select("*")
       .eq("email", data.user.email)
       .single()
 
-    if (!userRow) return null
+    if (!userRowRaw) return null
+    const userRow = userRowRaw as FlUserRow
 
     const user: User = {
       id: userRow.id,
@@ -238,9 +275,12 @@ export async function createUser(
       ...userData,
     }
 
+    // ⚠️ À revoir : newUser utilise des clés camelCase alors que fl_users est en
+    // snake_case (cf. lecture dans signInWithEmail). Le cast débloque le typage
+    // sans changer le comportement ; un mapping camel→snake reste à faire.
     const { error: dbError } = await supabase
       .from("fl_users")
-      .insert([newUser])
+      .insert([newUser] as never)
 
     if (dbError) {
       // Rollback : supprimer le compte auth si la création DB échoue

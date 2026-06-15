@@ -185,26 +185,27 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
     // Pour les comptes non-démo : filtrer les entrées de seed/démo
     // Une entrée est "démo" si createdBy est un compte démo ou si le nom commence par "Demo_"
     const demoCreators = new Set(["u_com_demo","u_liv_demo","demo_admin","demo_seed"])
-    const filterDemo = <T extends Record<string,unknown>>(arr: T[]): T[] => {
+    const filterDemo = <T extends object>(arr: T[]): T[] => {
       if (isCurrentUserDemo) return arr // démo voit tout
       return arr.filter(item => {
-        const cb = String(item.createdBy ?? item.created_by ?? "")
-        const nom = String(item.nom ?? item.name ?? item.libelle ?? "").toLowerCase()
+        const rec = item as Record<string, unknown>
+        const cb = String(rec.createdBy ?? rec.created_by ?? "")
+        const nom = String(rec.nom ?? rec.name ?? rec.libelle ?? "").toLowerCase()
         return !demoCreators.has(cb) && !nom.startsWith("demo_") && !nom.startsWith("__test")
       })
     }
     const loaders: Record<Section, () => unknown[]> = {
-      achats:       () => filterDemo(store.getBonsAchat() as Record<string,unknown>[]),
-      commandes:    () => filterDemo(store.getCommandes() as Record<string,unknown>[]),
-      receptions:   () => filterDemo(store.getReceptions() as Record<string,unknown>[]),
-      stock:        () => filterDemo(store.getArticles() as Record<string,unknown>[]),
-      livraisons:   () => filterDemo(store.getBonsLivraison() as Record<string,unknown>[]),
-      retours:      () => filterDemo(store.getRetours() as Record<string,unknown>[]),
-      trips:        () => filterDemo(store.getTrips() as Record<string,unknown>[]),
-      trip_charges: () => filterDemo(store.getTripCharges() as Record<string,unknown>[]),
-      caisses_mvt:  () => filterDemo(store.getCaissesMovements() as Record<string,unknown>[]),
-      clients:      () => filterDemo(store.getClients() as Record<string,unknown>[]),
-      users:        () => filterDemo(store.getUsers().map(u => ({ ...u, password: "***" })) as Record<string,unknown>[]),
+      achats:       () => filterDemo(store.getBonsAchat()),
+      commandes:    () => filterDemo(store.getCommandes()),
+      receptions:   () => filterDemo(store.getReceptions()),
+      stock:        () => filterDemo(store.getArticles()),
+      livraisons:   () => filterDemo(store.getBonsLivraison()),
+      retours:      () => filterDemo(store.getRetours()),
+      trips:        () => filterDemo(store.getTrips()),
+      trip_charges: () => filterDemo(store.getTripCharges()),
+      caisses_mvt:  () => filterDemo(store.getCaissesMovements()),
+      clients:      () => filterDemo(store.getClients()),
+      users:        () => filterDemo(store.getUsers().map(u => ({ ...u, password: "***" }))),
     }
     setData(loaders[section]())
     setSearch("")

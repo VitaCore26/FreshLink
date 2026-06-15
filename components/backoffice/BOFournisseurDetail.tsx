@@ -69,11 +69,12 @@ const PAY_MODES = ["cash", "cheque", "virement", "traite", "autre"]
 const dh = (n: number) => `${(Number(n) || 0).toLocaleString("fr-MA", { maximumFractionDigits: 2 })} DH`
 
 // Montant d'un bon d'achat — même logique que l'endpoint portail
-function bonAchatMontant(b: BonAchat & Record<string, unknown>): number {
-  const direct = Number(b.montantTTC ?? b.montantTotal ?? b.total ?? b.montant) || 0
+function bonAchatMontant(b: BonAchat): number {
+  const r = b as unknown as Record<string, unknown>
+  const direct = Number(r.montantTTC ?? r.montantTotal ?? r.total ?? r.montant) || 0
   if (direct) return direct
   const lignes = Array.isArray(b.lignes) ? b.lignes : []
-  return lignes.reduce((t: number, l) => t + (Number(l.quantite) || 0) * (Number(l.prixAchat ?? (l as Record<string, number>).prix) || 0), 0)
+  return lignes.reduce((t: number, l) => t + (Number(l.quantite) || 0) * (Number(l.prixAchat ?? (l as unknown as Record<string, number>).prix) || 0), 0)
 }
 
 interface Props {

@@ -249,10 +249,11 @@ export default function BOCommandesUnifiees({ user }: Props) {
         nom:          cmd.nom_client,
         secteur:      "Site Web",
         zone:         cmd.zone ?? "Casablanca",
-        type:         "particulier" as const,
-        taille:       "0-50kg" as const,
-        typeProduits: "mixte" as const,
-        rotation:     "ponctuel" as const,
+        // Valeurs valides des unions Client (cf. ClientType / taille / typeProduits / rotation)
+        type:         "autre",
+        taille:       "50-100kg",
+        typeProduits: "moyenne",
+        rotation:     "moins",
         telephone:    cmd.telephone ?? "",
         email:        "",
         adresse:      cmd.adresse ?? "",
@@ -263,15 +264,21 @@ export default function BOCommandesUnifiees({ user }: Props) {
     }
 
     // Convertir les lignes
-    const lignes: LigneCommande[] = cmd.lignes.map(l => ({
-      articleId:    (l as Record<string, unknown>).articleId as string ?? store.genId(),
-      articleNom:   l.nom ?? l.articleNom ?? "Article",
-      unite:        l.unite ?? "kg",
-      quantite:     l.quantite,
-      prixUnitaire: l.prixUnitaire ?? 0,
-      prixVente:    l.prixUnitaire ?? 0,
-      total:        l.total ?? (l.prixUnitaire ?? 0) * l.quantite,
-    }))
+    const lignes: LigneCommande[] = cmd.lignes.map(l => {
+      // LigneCmd web = { nom, quantite, unite, prix, total }. On lit aussi des
+      // champs éventuels (articleId/prixUnitaire) via un cast unknown défensif.
+      const lr = l as unknown as Record<string, unknown>
+      const prix = l.prix ?? (Number(lr.prixUnitaire) || 0)
+      return {
+        articleId:    (typeof lr.articleId === "string" ? lr.articleId : "") || store.genId(),
+        articleNom:   l.nom ?? "Article",
+        unite:        l.unite ?? "kg",
+        quantite:     l.quantite,
+        prixUnitaire: prix,
+        prixVente:    prix,
+        total:        l.total ?? prix * l.quantite,
+      }
+    })
 
     // Créer la commande ERP pour la logistique.
     // ⚠️ On RÉUTILISE cmd.id (et non store.genId()) : sinon la commande web

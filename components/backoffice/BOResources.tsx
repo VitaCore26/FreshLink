@@ -70,12 +70,12 @@ export interface FichePayroll {
 
 // Write-through Supabase (service-role) — les réglages RH ne sont plus
 // localStorage-only : ils se partagent entre appareils/utilisateurs.
-function syncPush(table: string, rows: Array<Record<string, unknown>>, idOf: (x: never) => string) {
+function syncPush<T>(table: string, rows: T[], idOf: (x: T) => string) {
   try {
     const now = new Date().toISOString()
     fetch("/api/sync-write", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table, upserts: rows.map(r => ({ id: idOf(r as never), payload: r, updated_at: now })) }),
+      body: JSON.stringify({ table, upserts: rows.map(r => ({ id: idOf(r), payload: r, updated_at: now })) }),
     }).catch(() => {})
   } catch { /* offline */ }
 }

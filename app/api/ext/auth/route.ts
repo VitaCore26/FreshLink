@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createHmac } from "crypto"
 import bcrypt from "bcryptjs"
+import { signToken } from "@/lib/auth/extToken"
 
 // ══════════════════════════════════════════════════════════════
 // POST /api/ext/auth — Authentification par numéro de téléphone
@@ -16,7 +16,6 @@ const SB_URL        = process.env.NEXT_PUBLIC_SUPABASE_URL     ?? "https://wnuil
 const SB_ANON       = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 // Service role bypass RLS — obligatoire pour lire fl_users
 const SB_SERVER_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY)    ?? SB_ANON
-const AUTH_SECRET   = process.env.AUTH_SECRET                  ?? "fl_auth_secret_2026"
 
 // ── Utilisateurs de secours hardcodés ─────────────────────────────────────────
 // Utilisés si fl_users Supabase est vide ou inaccessible.
@@ -45,24 +44,6 @@ function cors(origin: string | null): HeadersInit {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   }
-}
-
-export function signToken(payload: object): string {
-  const data = Buffer.from(JSON.stringify(payload)).toString("base64url")
-  const sig  = createHmac("sha256", AUTH_SECRET).update(data).digest("base64url")
-  return `${data}.${sig}`
-}
-
-export function verifyToken(token: string): Record<string, unknown> | null {
-  try {
-    const [data, sig] = token.split(".")
-    if (!data || !sig) return null
-    const expected = createHmac("sha256", AUTH_SECRET).update(data).digest("base64url")
-    if (expected !== sig) return null
-    const payload = JSON.parse(Buffer.from(data, "base64url").toString())
-    if (payload.exp && payload.exp < Date.now()) return null
-    return payload
-  } catch { return null }
 }
 
 /**

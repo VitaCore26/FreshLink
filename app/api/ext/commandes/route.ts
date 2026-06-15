@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
   }
 
   const numero  = "WEB-" + Date.now().toString().slice(-8)
-  const total   = Number(montant_total) || (lignes as Record<string, number>[]).reduce((s, l) => s + (l.total ?? l.prixUnitaire * l.quantite ?? 0), 0)
+  const total   = Number(montant_total) || (lignes as Array<{ total?: number; prixUnitaire?: number; quantite?: number }>).reduce((s, l) => s + (l.total ?? (l.prixUnitaire ?? 0) * (l.quantite ?? 0)), 0)
   const now     = new Date().toISOString()
 
   // Payload complet (format ERP)

@@ -664,7 +664,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
       // 1. Vider localStorage
       ALL_TABLES_KEYS.forEach(k => localStorage.setItem(k, JSON.stringify([])))
       // 2. Charger les données démo
-      await seedDemoData()
+      await seedDemoData(store)
       setDgMsg({ ok: true, text: "✅ Données démo rechargées avec succès. Rechargement..." })
       setTimeout(() => window.location.reload(), 2000)
     } catch {

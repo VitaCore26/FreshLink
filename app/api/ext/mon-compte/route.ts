@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { verifyToken } from "../auth/route"
+import { verifyToken } from "@/lib/auth/extToken"
 
 // ══════════════════════════════════════════════════════════════
 // GET /api/ext/mon-compte — Profil du client connecté

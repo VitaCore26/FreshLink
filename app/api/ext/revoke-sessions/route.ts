@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { verifyToken } from "../auth/route"
+import { verifyToken } from "@/lib/auth/extToken"
 
 // ══════════════════════════════════════════════════════════════
 // POST /api/ext/revoke-sessions

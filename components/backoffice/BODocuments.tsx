@@ -750,7 +750,7 @@ export default function BODocuments({ user }: { user: { id: string; name: string
       if (numero.startsWith("TEMP")) {
         try {
           const { data: numData } = await sb.rpc("generate_document_number", { p_type: doc.type_doc } as any)
-          numero = (numData as string) ?? genNumeroLocal(doc.type_doc)
+          numero = (numData as unknown as string) ?? genNumeroLocal(doc.type_doc)
         } catch {
           numero = genNumeroLocal(doc.type_doc)
         }

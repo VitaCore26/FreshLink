@@ -741,7 +741,7 @@ function AgentChat({ agent, user }: { agent: Agent; user: User }) {
 // ─────────────────────────────────────────────────────────────
 
 export default function BOAgentsIA({ user }: { user?: User }) {
-  const currentUser = user ?? store.getCurrentUser() ?? ({ name: "User", role: "admin" } as User)
+  const currentUser = user ?? ({ name: "User", role: "admin" } as User)
   const [selected, setSelected] = useState<AgentId>("jawad")
   const agent = AGENTS.find(a => a.id === selected) ?? AGENTS[0]
 

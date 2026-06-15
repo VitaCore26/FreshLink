@@ -3602,10 +3602,12 @@ export type AccountRequestStatut = "en_attente" | "approuve" | "rejete"
 export interface AccountRequest {
   id: string
   type: "client" | "fournisseur"
+  // Sous-type demandé (chr / marchand / particulier / fournisseur / client…)
+  sous_type?: string
   nom: string
   email: string
   telephone: string
-  societe: string
+  societe?: string
   ice?: string
   ville?: string
   adresse?: string

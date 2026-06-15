@@ -108,7 +108,6 @@ const DARIJA: Record<string, string> = {
   "cassis":            "كاسيس",
   "fruit de la passion":"ماراكوجا",
   "pamplemousse":      "بانبلموس",
-  "brocoli":           "بروكلي",
   "poireau":           "بورو",
   "echalote":          "بصلة صغيرة",
   "gingembre":         "سكنجبير",

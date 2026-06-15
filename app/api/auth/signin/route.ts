@@ -17,7 +17,7 @@ import { signInWithEmail } from "@/lib/auth/supabaseAuth"
 // ✅ Initialize rate limiter
 let limiter: Ratelimit | null = null
 
-function initRateLimiter(): Ratelimit {
+function initRateLimiter(): Ratelimit | null {
   if (limiter) return limiter
 
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL
@@ -25,10 +25,10 @@ function initRateLimiter(): Ratelimit {
 
   if (!redisUrl || !redisToken) {
     console.warn("[Auth] Rate limiting disabled: Redis not configured")
-    // Fallback: Permissive limiter (still works, just doesn't rate limit)
-    return new Ratelimit({
-      limiter: Ratelimit.slidingWindow(10000, "1h"),
-    })
+    // Pas de Redis → on ne peut pas rate-limiter. On désactive proprement
+    // (fail-open) au lieu de construire un Ratelimit sans redis qui planterait
+    // à l'exécution. La limitation revient dès que UPSTASH_* est configuré.
+    return null
   }
 
   const redis = new Redis({
@@ -66,9 +66,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ✅ SECURITY: Rate limiting [P1-008]
-    const limiter = initRateLimiter()
-    const { success, reset, remaining } = await limiter.limit(email)
+    // ✅ SECURITY: Rate limiting [P1-008] — actif uniquement si Redis configuré
+    const rateLimiter = initRateLimiter()
+    const { success, reset } = rateLimiter
+      ? await rateLimiter.limit(email)
+      : { success: true, reset: 0 }
 
     if (!success) {
       const minutesUntilReset = Math.ceil((reset - Date.now()) / 1000 / 60)
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     if ("error" in result) {
       // Log attempt but don't expose details to prevent user enumeration
-      console.warn(`[Auth] Failed login attempt (${remaining} remaining) for email: ${email}`)
+      console.warn(`[Auth] Failed login attempt for email: ${email}`)
 
       return NextResponse.json(
         { error: "Email ou mot de passe incorrect" },

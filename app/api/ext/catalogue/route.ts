@@ -219,7 +219,7 @@ function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
     nom:              a.nom ?? "",
     nom_ar:           darijaName(String(a.nom ?? "")) ?? a.nomAr ?? a.nom_ar ?? "",
     unite:            a.unite ?? "kg",
-    photo:            resolvePhoto(a.photo ?? (Array.isArray(a.photos) ? (a.photos as string[])[0] : ""), a.nom ?? "", a.famille ?? ""),
+    photo:            resolvePhoto((a.photo as string) || (Array.isArray(a.photos) ? (a.photos as string[])[0] ?? "" : ""), String(a.nom ?? ""), String(a.famille ?? "")),
     famille:          a.famille ?? "",
     description:      a.marketplaceDescription ?? a.marketplaceCommentaire ?? a.famille ?? "Maroc",
     prix_public:      prixBase,

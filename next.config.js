@@ -2,8 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // ── Ignore TypeScript errors during build ────────────────────────────────
-  typescript: { ignoreBuildErrors: true },
+  // ── TypeScript ────────────────────────────────────────────────────────────
+  // Le build échoue désormais sur une erreur de type (0 erreur au 2026-06-15).
+  // Pour débloquer un déploiement urgent en cas de régression, repasser
+  // temporairement à `ignoreBuildErrors: true` puis corriger.
+  typescript: { ignoreBuildErrors: false },
 
   // ── Images ───────────────────────────────────────────────────────────────
   images: {

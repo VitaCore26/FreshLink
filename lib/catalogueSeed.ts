@@ -222,7 +222,7 @@ export const CATALOGUE_SEED: SeedArticle[] = [
   },
   {
     id: "leg-celeri", nom: "Céleri", nom_ar: "كرفس",
-    famille: "Légumes", unite: "botte", prix_public: 5, marseille_actif: true, marketplace_prix_public: 5,
+    famille: "Légumes", unite: "botte", prix_public: 5, marketplace_actif: true, marketplace_prix_public: 5,
     image_url: PHOTO("1589927986089-35812388d1f4"),
     description: "Céleri branche frais et croquant. Parfait pour jus et soupes.",
     tags: ["jus", "soupe", "détox"], ordre: 34, statut: "actif",

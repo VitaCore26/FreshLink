@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
       ...(gps_lat != null && gps_lng != null ? {
         gps_lat: Number(gps_lat), gps_lng: Number(gps_lng),
         gps_precision: gps_precision != null ? Number(gps_precision) : null,
-        gps_consent: gps_consent === true,
+        gps_consent: String(gps_consent) === "true",
       } : {}),
       // Defaults
       actif:      autoApproved,
