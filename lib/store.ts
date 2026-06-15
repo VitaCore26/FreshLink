@@ -2223,7 +2223,28 @@ export const store = {
   },
 
   // --- Clients ---
-  getClients: (): Client[] => getLS("fl_clients", DEFAULT_CLIENTS),
+  getClients: (): Client[] => {
+    const raw = getLS<Client[]>("fl_clients", DEFAULT_CLIENTS)
+    if (!Array.isArray(raw)) return DEFAULT_CLIENTS
+    // Déduplication par id, puis par nom+téléphone normalisés — corrige les
+    // clients affichés 2-3 fois (Affectation Commerciale) et aligne BO ↔ mobile.
+    const byId = new Map<string, Client>()
+    for (const c of raw) if (c && c.id != null) byId.set(String(c.id), c)
+    const norm = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim()
+    const score = (c: Client) =>
+      (c.telephone ? 1 : 0) + (c.adresse ? 1 : 0) + (c.secteur ? 1 : 0) +
+      ((c as { gpsLat?: number }).gpsLat ? 1 : 0)
+    const byKey = new Map<string, Client>()
+    for (const c of byId.values()) {
+      const nom = norm(c.nom)
+      if (!nom) { byKey.set(c.id, c); continue }   // sans nom → on ne fusionne pas
+      const key = nom + "|" + norm(c.telephone)
+      const prev = byKey.get(key)
+      if (!prev) { byKey.set(key, c); continue }
+      byKey.set(key, score(c) > score(prev) ? c : prev)
+    }
+    return [...byKey.values()]
+  },
   saveClients: (c: Client[]) => setLS("fl_clients", c),
   addClient: (c: Client) => { const cl = store.getClients(); cl.push(c); store.saveClients(cl); return c },
   updateClient: (id: string, updates: Partial<Client>) => {
