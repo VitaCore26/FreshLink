@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type User, type UserRole, type UserAccessType, type GranularPermissions, type Civilite, ROLE_LABELS, ROLE_COLORS, JAWAD_ID } from "@/lib/store"
+import { store, type User, type UserRole, type UserAccessType, type GranularPermissions, type Civilite, ROLE_LABELS, ROLE_COLORS, JAWAD_ID, FAMILLES_ARTICLES } from "@/lib/store"
 import { autoAssignPermissions } from "@/lib/rolePermissions"
 import { sendEmail } from "@/lib/email"
 
@@ -1364,6 +1364,7 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
       passwordMobile: u.passwordMobile, passwordBO: u.passwordBO,
       photoUrl: u.photoUrl, telephone: u.telephone,
       requireCameraAuth: u.requireCameraAuth, fournisseurId: u.fournisseurId, clientId: u.clientId,
+      specialitesAchat: u.specialitesAchat ?? [],
     })
     setShowForm(true)
   }
@@ -2504,6 +2505,34 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
                           className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Spécialisation achat — familles affectées à l'acheteur */}
+              {form.role === "acheteur" && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Spécialisation achat / تخصص الشراء</h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Familles que cet acheteur achète. Sur le mobile, son catalogue est filtré sur ces familles
+                    (il peut afficher tout). Aucune sélection = toutes les familles.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {FAMILLES_ARTICLES.map(f => {
+                      const sel = (form.specialitesAchat ?? []).includes(f)
+                      return (
+                        <button key={f} type="button"
+                          onClick={() => setForm({
+                            ...form,
+                            specialitesAchat: sel
+                              ? (form.specialitesAchat ?? []).filter(x => x !== f)
+                              : [...(form.specialitesAchat ?? []), f],
+                          })}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${sel ? "bg-emerald-600 text-white border-emerald-600" : "bg-background text-muted-foreground border-border hover:border-emerald-400"}`}>
+                          {sel ? "✓ " : ""}{f}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}

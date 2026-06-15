@@ -202,6 +202,9 @@ export default function MobileAchat({ user }: Props) {
   const [artSearch, setArtSearch] = useState("")
   type ArtSort = "rotation" | "stock" | "nom"
   const [artSort, setArtSort] = useState<ArtSort>("nom")
+  // Spécialisation acheteur : familles assignées à cet acheteur (filtre par défaut)
+  const specialites = useMemo(() => (user.specialitesAchat ?? []).filter(Boolean), [user.specialitesAchat])
+  const [showAllFamilies, setShowAllFamilies] = useState(false)
 
   // Global rotation: times each article was purchased across all achats
   const globalRotation = useMemo(() => {
@@ -215,6 +218,11 @@ export default function MobileAchat({ user }: Props) {
 
   const filteredArticles = useMemo(() => {
     let list = [...articles]
+    // Filtre spécialisation : par défaut l'acheteur ne voit que ses familles
+    // (sauf s'il a activé « voir tout » ou cherche un terme précis).
+    if (specialites.length > 0 && !showAllFamilies && !artSearch.trim()) {
+      list = list.filter(a => specialites.includes(a.famille))
+    }
     if (artSearch.trim()) {
       const q = artSearch.trim().toLowerCase()
       list = list.filter(a => a.nom.toLowerCase().includes(q) || a.nomAr?.includes(q) || a.famille?.toLowerCase().includes(q))
@@ -223,7 +231,7 @@ export default function MobileAchat({ user }: Props) {
     else if (artSort === "stock") list.sort((a, b) => a.stockDisponible - b.stockDisponible) // lowest stock first = urgent
     else list.sort((a, b) => a.nom.localeCompare(b.nom))
     return list
-  }, [articles, artSearch, artSort, globalRotation])
+  }, [articles, artSearch, artSort, globalRotation, specialites, showAllFamilies])
 
   // ── PO Detail Modal — opened when acheteur clicks "Prendre en charge" ────────
   const [poModalId, setPoModalId] = useState<string | null>(null)
@@ -862,8 +870,15 @@ export default function MobileAchat({ user }: Props) {
           </div>
         </div>
 
-        {/* Sort toggles */}
+        {/* Sort toggles + filtre spécialisation acheteur */}
         <div className="flex gap-2 px-3 py-2 border-b border-border overflow-x-auto">
+          {specialites.length > 0 && (
+            <button onClick={() => setShowAllFamilies(v => !v)}
+              title={specialites.join(", ")}
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${showAllFamilies ? "bg-muted text-muted-foreground" : "bg-emerald-600 text-white"}`}>
+              {showAllFamilies ? "🔎 Voir tout" : `⭐ Mes familles (${specialites.length})`}
+            </button>
+          )}
           {([
             { key: "nom",      label: "Alphabetique" },
             { key: "stock",    label: "Stock faible" },

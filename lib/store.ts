@@ -69,6 +69,9 @@ export interface User {
   objectifJournalierClients?: number
   objectifHebdomadaireClients?: number
   objectifMensuelClients?: number
+  // Spécialisation acheteur : familles (ou produits) qu'il achète. Filtre par
+  // défaut son catalogue mobile Achat (avec option « voir tout »). Vide = tout.
+  specialitesAchat?: string[]
   // workflow notifications
   notifAchat?: boolean
   notifCommercial?: boolean
