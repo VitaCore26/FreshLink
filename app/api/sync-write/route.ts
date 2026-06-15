@@ -83,9 +83,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (upserts && upserts.length > 0) {
+      // Déduplication par id — Postgres rejette un upsert qui touche 2× la même
+      // ligne dans la même commande ("ON CONFLICT DO UPDATE command cannot
+      // affect row a second time", code 21000). On garde la dernière occurrence.
+      const byId = new Map<string, { id: string; payload: unknown; updated_at: string }>()
+      for (const u of upserts) if (u && u.id != null) byId.set(String(u.id), u)
+      const deduped = [...byId.values()]
       const { error } = await sb
         .from(table)
-        .upsert(upserts, { onConflict: "id" })
+        .upsert(deduped, { onConflict: "id" })
       if (error) errors.push(`upsert: ${error.message} (code: ${error.code})`)
     }
 
