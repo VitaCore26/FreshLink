@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { store, type Article, type User, type Client, type Commande, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement } from "@/lib/store"
+import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
@@ -253,6 +253,9 @@ export default function MobileCommercial({ user }: Props) {
       })
       all[idx] = { ...all[idx], lignes: lignesData, heurelivraison: editHeure }
       store.saveCommandes(all)
+      // Sync la modification vers Supabase (back-office)
+      const editedCmd = all[idx]
+      import("@/lib/supabase/db").then(db => db.upsertCommande(editedCmd)).catch(e => console.error("[MobileCommercial] sync edit error:", e))
       refreshMyCommandes()
     }
     setEditSaving(false)
@@ -547,7 +550,7 @@ export default function MobileCommercial({ user }: Props) {
     // Save creation timestamp for 1-hour edit window
     try { localStorage.setItem(`fl_cmd_ts_${commande.id}`, String(Date.now())) } catch { /* noop */ }
     // Record visite
-    store.addVisite({
+    const visite: Visite = {
       id: store.genId(),
       date: store.today(),
       prevendeurId: vendeurId,
@@ -558,7 +561,20 @@ export default function MobileCommercial({ user }: Props) {
       resultat: "commande",
       gpsLat: gpsLat ?? undefined,
       gpsLng: gpsLng ?? undefined,
-    })
+    }
+    store.addVisite(visite)
+    // ⚡ Sync Supabase — INDISPENSABLE : sans ça la commande reste sur le
+    // téléphone du prévendeur et n'apparaît jamais au back-office (qui lit
+    // fl_commandes via /api/sync-read). Corrige aussi la perte des chiffres :
+    // fetchCommandes() écrasait le localStorage par Supabase (vide) au remount
+    // ou au changement de rôle prévendeur→acheteur.
+    try {
+      const dbmod = await import("@/lib/supabase/db")
+      await dbmod.upsertCommande(commande)
+      await dbmod.upsertVisite(visite)
+    } catch (e) {
+      console.error("[MobileCommercial] sync commande/visite error:", e)
+    }
     await sendEmail({ to_email: commande.emailDestinataire, subject: `Commande - ${client.nom} - ${store.today()}`, body: buildCommandeEmail(commande) })
     setSuccess(true); setSending(false)
     setSuccessWorkflow(workflow.validationCommande)
@@ -579,7 +595,7 @@ export default function MobileCommercial({ user }: Props) {
     if (!visiteClientId || !visiteRaison) return
     const client = clients.find(c => c.id === visiteClientId)
     if (!client) return
-    store.addVisite({
+    const visite: Visite = {
       id: store.genId(),
       date: store.today(),
       prevendeurId: user.id,
@@ -590,7 +606,10 @@ export default function MobileCommercial({ user }: Props) {
       raisonSansCommande: visiteRaison,
       gpsLat: gpsLat ?? undefined,
       gpsLng: gpsLng ?? undefined,
-    })
+    }
+    store.addVisite(visite)
+    // Sync la visite vers Supabase (suivi terrain au back-office)
+    import("@/lib/supabase/db").then(db => db.upsertVisite(visite)).catch(e => console.error("[MobileCommercial] sync visite error:", e))
     setVisiteClientId("")
     setVisiteRaison("")
     setShowVisiteForm(false)

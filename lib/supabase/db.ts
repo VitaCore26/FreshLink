@@ -219,10 +219,18 @@ export async function fetchCommandes(dateFilter?: string): Promise<Commande[]> {
     const { data, error } = await sbRead().from("fl_commandes").select("id, payload")
     if (error) throw error
     if (data) {
-      let items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Commande>(r))
-      if (dateFilter) items = items.filter(c => c.date === dateFilter)
-      store.saveCommandes(items)
-      return items
+      const remote = (data as { id: string; payload: unknown }[]).map(r => fromRow<Commande>(r))
+      // ⚠️ Fusion NON destructive : on NE remplace PAS le local par Supabase.
+      // Sinon une commande créée hors-ligne (pas encore poussée) serait effacée
+      // au remount / changement de rôle (bug "chiffres prévendeur disparus").
+      // Supabase fait foi pour les ids partagés ; les commandes uniquement
+      // locales (non encore synchronisées) sont conservées.
+      const byId = new Map<string, Commande>()
+      for (const c of store.getCommandes()) byId.set(c.id, c)
+      for (const c of remote) byId.set(c.id, c)
+      const merged = [...byId.values()]
+      store.saveCommandes(merged)
+      return dateFilter ? merged.filter(c => c.date === dateFilter) : merged
     }
   } catch { /* offline */ }
   const all = store.getCommandes()
