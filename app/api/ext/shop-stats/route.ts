@@ -1,0 +1,103 @@
+import { NextRequest, NextResponse } from "next/server"
+
+// ══════════════════════════════════════════════════════════════════
+// /api/ext/shop-stats — Lecture du compteur analytics boutique
+//   GET  ?days=7        → agrégats (total, aujourd'hui, par jour, top pages,
+//                          régions, événements) + config d'affichage public
+//   POST { config }     → enregistre quelles infos afficher sur le site
+//                          (row id = "__config")
+// ══════════════════════════════════════════════════════════════════
+
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
+const SB_SRV = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY) ?? ""
+
+function cors(origin: string | null): HeadersInit {
+  return {
+    "Access-Control-Allow-Origin":  origin ?? "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  }
+}
+
+interface DayRow { id: string; payload: { visits?: number; clicks?: number; pages?: Record<string, number>; regions?: Record<string, number>; events?: Record<string, number> } }
+
+const DEFAULT_CONFIG = { afficher: true, showVisits: true, showClicks: false, showRegions: false, titre: "Visiteurs" }
+
+function topN(obj: Record<string, number> = {}, n = 8): { label: string; count: number }[] {
+  return Object.entries(obj).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, n)
+}
+
+export async function GET(req: NextRequest) {
+  const origin = req.headers.get("origin")
+  if (!SB_SRV) return NextResponse.json({ ok: false, error: "service_role manquante" }, { status: 500, headers: cors(origin) })
+
+  const days = Math.min(90, Math.max(1, Number(req.nextUrl.searchParams.get("days")) || 7))
+  const start = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const headers = { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}` }
+
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/fl_shop_analytics?id=gte.${start}&order=id.desc&limit=120`, { headers, cache: "no-store" })
+    const rows: DayRow[] = res.ok ? await res.json() : []
+    const today = new Date().toISOString().slice(0, 10)
+
+    const pages: Record<string, number> = {}
+    const regions: Record<string, number> = {}
+    const events: Record<string, number> = {}
+    let totalVisits = 0, totalClicks = 0
+    const parJour = rows
+      .filter(r => r.id !== "__config")
+      .map(r => {
+        const p = r.payload || {}
+        totalVisits += p.visits || 0
+        totalClicks += p.clicks || 0
+        for (const [k, v] of Object.entries(p.pages || {})) pages[k] = (pages[k] || 0) + v
+        for (const [k, v] of Object.entries(p.regions || {})) regions[k] = (regions[k] || 0) + v
+        for (const [k, v] of Object.entries(p.events || {})) events[k] = (events[k] || 0) + v
+        return { date: r.id, visits: p.visits || 0, clicks: p.clicks || 0 }
+      })
+
+    const todayRow = rows.find(r => r.id === today)?.payload || {}
+    const configRow = rows.find(r => r.id === "__config")?.payload as Record<string, unknown> | undefined
+    const config = { ...DEFAULT_CONFIG, ...(configRow ?? {}) }
+
+    return NextResponse.json({
+      ok: true,
+      periode: { days, depuis: start },
+      total: { visits: totalVisits, clicks: totalClicks },
+      aujourdhui: { visits: todayRow.visits || 0, clicks: todayRow.clicks || 0 },
+      parJour,
+      topPages: topN(pages),
+      regions: topN(regions),
+      events: topN(events),
+      config,
+    }, { headers: cors(origin) })
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const origin = req.headers.get("origin")
+  if (!SB_SRV) return NextResponse.json({ ok: false, error: "service_role manquante" }, { status: 500, headers: cors(origin) })
+
+  let body: { config?: Record<string, unknown> } = {}
+  try { body = await req.json() } catch {
+    return NextResponse.json({ ok: false, error: "JSON invalide" }, { status: 400, headers: cors(origin) })
+  }
+  const config = { ...DEFAULT_CONFIG, ...(body.config ?? {}) }
+  const headers = { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }
+
+  try {
+    await fetch(`${SB_URL}/rest/v1/fl_shop_analytics`, {
+      method: "POST", headers,
+      body: JSON.stringify({ id: "__config", payload: config, updated_at: new Date().toISOString() }),
+    })
+    return NextResponse.json({ ok: true, config }, { headers: cors(origin) })
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
+  }
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: cors(req.headers.get("origin")) })
+}
