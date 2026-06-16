@@ -110,12 +110,59 @@ export async function sendEmailMulti(
   return { sent, failed }
 }
 
-export async function testEmailConnection(): Promise<SendResult> {
+export async function testEmailConnection(toEmail = "support@vita-core.org"): Promise<SendResult> {
   return sendEmail({
-    to_email: "test@vitafresh.ma",
-    subject:  "Test connexion Email — FreshLink Pro",
-    body:     "Ce message est un test automatique de la configuration email (Resend).",
+    to_email: toEmail,
+    subject:  "Test envoi — Vita Fresh (support@vita-core.org)",
+    body:     "Ceci est un test de la configuration email Vita Fresh (Resend, expéditeur support@vita-core.org).",
   })
+}
+
+// ── Notifications par email (expéditeur support@vita-core.org) ────────────────
+export interface NotificationEmail {
+  to:      string | string[]
+  title:   string                          // titre court de la notification
+  message: string                          // corps (texte, sauts de ligne OK)
+  cta?:    { label: string; url: string }  // bouton d'action optionnel
+}
+
+function notificationHtml(n: NotificationEmail): string {
+  const safe = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;background:#f6f8f6;margin:0;padding:24px;color:#14241a">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.06)">
+    <div style="background:linear-gradient(135deg,#1a4f2a,#2d7a46);padding:20px 24px;color:#fff">
+      <p style="margin:0;font-size:18px;font-weight:800">🌿 Vita Fresh</p>
+      <p style="margin:4px 0 0;font-size:12px;opacity:.85">Notification — Distribution Fruits &amp; Légumes</p>
+    </div>
+    <div style="padding:24px 28px">
+      <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#1a4f2a">${safe(n.title)}</p>
+      <div style="font-size:14px;line-height:1.6;color:#374151">${safe(n.message)}</div>
+      ${n.cta ? `<a href="${n.cta.url}" style="display:inline-block;margin-top:18px;background:#1a4f2a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px">${safe(n.cta.label)} &rarr;</a>` : ""}
+    </div>
+    <div style="padding:14px 24px;border-top:1px solid #eef2ef;text-align:center;font-size:11px;color:#9ca3af">
+      Vita Fresh &middot; support@vita-core.org
+    </div>
+  </div>
+</body></html>`
+}
+
+/**
+ * Envoie un email de notification (expéditeur support@vita-core.org, défini
+ * côté serveur via /api/send-email). Accepte un ou plusieurs destinataires.
+ */
+export async function sendNotificationEmail(n: NotificationEmail): Promise<{ sent: string[]; failed: string[] }> {
+  const recipients = Array.isArray(n.to) ? n.to : [n.to]
+  const html = notificationHtml(n)
+  const sent: string[] = []
+  const failed: string[] = []
+  for (const to of recipients) {
+    if (!to?.includes("@")) { failed.push(to); continue }
+    const r = await sendEmail({ to_email: to, subject: `[Vita Fresh] ${n.title}`, body: n.message, html })
+    if (r.ok) sent.push(to); else failed.push(to)
+    await new Promise(res => setTimeout(res, 150))
+  }
+  return { sent, failed }
 }
 
 // Legacy alias

@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
     }
 
     const RESEND_API_KEY = process.env.RESEND_API_KEY
-    const EMAIL_FROM     = process.env.EMAIL_FROM ?? from ?? "FreshLink Pro <noreply@vitafresh.ma>"
+    // Expéditeur par défaut : support@vita-core.org (domaine à vérifier dans Resend).
+    // Surcouche possible via EMAIL_FROM (env) ou le champ "from" du corps.
+    const EMAIL_FROM     = process.env.EMAIL_FROM ?? from ?? "Vita Fresh <support@vita-core.org>"
+    const REPLY_TO       = process.env.EMAIL_REPLY_TO ?? "support@vita-core.org"
 
     // ── Resend (prioritaire) ─────────────────────────────────────────────────
     if (RESEND_API_KEY) {
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from:    EMAIL_FROM,
           to:      Array.isArray(to) ? to : [to],
+          reply_to: REPLY_TO,
           subject,
           html:    html ?? `<pre style="font-family:monospace">${text}</pre>`,
           text:    text,
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
         await transporter.sendMail({
           from:    EMAIL_FROM,
           to:      Array.isArray(to) ? to.join(", ") : to,
+          replyTo: REPLY_TO,
           subject,
           html,
           text,
