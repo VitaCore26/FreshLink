@@ -631,6 +631,38 @@ function BLEditor({
             </div>
           )}
 
+          {/* Récap BL : valeur / tonnage / nb articles / estimation caisses */}
+          {lignes.length > 0 && (() => {
+            const qOf = (l: typeof lignes[number]) => l.qteLivree || l.qteCommande || 0
+            const valeur = lignes.reduce((s, l) => s + (l.totalLigne || 0), 0)
+            const tonnageKg = lignes.filter(l => l.unite === "kg").reduce((s, l) => s + qOf(l), 0)
+            const nbArticles = lignes.length
+            // Estimation caisses : caisse comptée directement, kg → /30kg, sac → 1/u
+            const nbCaisses = lignes.reduce((s, l) => {
+              const q = qOf(l)
+              if (l.unite === "caisse") return s + Math.ceil(q)
+              if (l.unite === "kg") return s + Math.ceil(q / 30)
+              if (l.unite === "sac") return s + Math.ceil(q)
+              return s
+            }, 0)
+            const cards = [
+              { l: "Valeur marchandise", v: `${valeur.toLocaleString("fr-MA", { maximumFractionDigits: 2 })} DH`, c: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
+              { l: "Tonnage", v: `${tonnageKg.toLocaleString("fr-MA", { maximumFractionDigits: 1 })} kg`, c: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
+              { l: "Articles", v: String(nbArticles), c: "text-violet-700", bg: "bg-violet-50 border-violet-200" },
+              { l: "Caisses (est.)", v: `≈ ${nbCaisses}`, c: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
+            ]
+            return (
+              <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-100 bg-white">
+                {cards.map(k => (
+                  <div key={k.l} className={`${k.bg} border rounded-xl px-3 py-2 text-center`}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{k.l}</p>
+                    <p className={`text-sm font-extrabold ${k.c} mt-0.5`}>{k.v}</p>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
           {/* Totals + Frais rectifiables */}
           {lignes.length > 0 && (
             <div className="border-t border-slate-100 bg-slate-50">
