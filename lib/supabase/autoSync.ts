@@ -31,6 +31,7 @@ type Row = { id: string; [k: string]: unknown }
 const snapshots: Record<string, Map<string, string>> = {}
 const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 const QUEUE_KEY = "__fl_sync_queue"
+const DELETE_QUEUE_KEY = "__fl_sync_delete_queue"
 let replayReady = false
 let suppressDepth = 0
 
@@ -128,10 +129,50 @@ function flushQueue(): void {
   }
 }
 
+// ── Suppressions explicites → Supabase ────────────────────────────────────────
+// Une suppression NE PEUT PAS être déduite d'un diff localStorage (cf. note en
+// tête de fichier). Elle doit être propagée explicitement, sinon la ligne reste
+// en base et « revient » au prochain fetch (bug « commandes supprimées qui
+// reviennent »). File d'attente hors-ligne rejouée au retour de connexion.
+function queueDelete(table: string, id: string): void {
+  try {
+    const q = JSON.parse(localStorage.getItem(DELETE_QUEUE_KEY) ?? "[]") as { table: string; id: string }[]
+    q.push({ table, id })
+    localStorage.setItem(DELETE_QUEUE_KEY, JSON.stringify(q))
+  } catch { /* noop */ }
+}
+
+export async function syncDelete(table: string, ids: string[]): Promise<void> {
+  if (typeof window === "undefined" || ids.length === 0) return
+  // Retire les ids du snapshot pour éviter tout re-push via un futur diff.
+  const snap = snapshots[table]
+  if (snap) for (const id of ids) snap.delete(String(id))
+  if (!isOnline()) { for (const id of ids) queueDelete(table, id); return }
+  try {
+    const res = await fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table, deletes: ids }),
+    })
+    const json = await res.json() as { ok: boolean }
+    if (!json.ok) for (const id of ids) queueDelete(table, id)
+  } catch { for (const id of ids) queueDelete(table, id) }
+}
+
+function flushDeleteQueue(): void {
+  let q: { table: string; id: string }[] = []
+  try { q = JSON.parse(localStorage.getItem(DELETE_QUEUE_KEY) ?? "[]") } catch { /* noop */ }
+  if (q.length === 0) return
+  localStorage.removeItem(DELETE_QUEUE_KEY)
+  const byTable: Record<string, string[]> = {}
+  for (const { table, id } of q) (byTable[table] ??= []).push(id)
+  for (const [table, ids] of Object.entries(byTable)) void syncDelete(table, ids)
+}
+
 /** Installe le rejeu hors-ligne (une seule fois). */
 export function ensureReplay(): void {
   if (replayReady || typeof window === "undefined") return
   replayReady = true
-  window.addEventListener("online", flushQueue)
-  if (isOnline()) flushQueue()
+  window.addEventListener("online", () => { flushQueue(); flushDeleteQueue() })
+  if (isOnline()) { flushQueue(); flushDeleteQueue() }
 }

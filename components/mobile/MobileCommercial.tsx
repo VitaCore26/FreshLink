@@ -1904,8 +1904,9 @@ export default function MobileCommercial({ user }: Props) {
                         <span className="text-[11px] text-muted-foreground">{cmds.length} cmd(s)</span>
                       </div>
                       {cmds.map(cmd => {
-                const total = cmd.lignes.reduce((s, l) => s + l.total, 0)
-                const tonn  = cmd.lignes.reduce((s, l) => s + l.quantite, 0)
+                const lignesCmd = cmd.lignes ?? []
+                const total = lignesCmd.reduce((s, l) => s + (Number(l.total) || 0), 0)
+                const tonn  = lignesCmd.reduce((s, l) => s + (Number(l.quantite) || 0), 0)
                 const editable = canEdit(cmd)
                 const isActive = editCmd?.id === cmd.id
                 return (
@@ -1927,11 +1928,11 @@ export default function MobileCommercial({ user }: Props) {
 
                     {/* Article lines summary */}
                     <div className="flex flex-col gap-1">
-                      {cmd.lignes.map((l, i) => (
+                      {lignesCmd.map((l, i) => (
                         <div key={i} className="flex items-center justify-between text-xs">
                           <span className="text-foreground">{l.articleNom}</span>
                           <span className="font-semibold text-muted-foreground">
-                            {l.quantiteUM ? `${l.quantiteUM} ${l.um} = ` : ""}{l.quantite} {l.unite} · {l.total.toLocaleString("fr-MA")} DH
+                            {l.quantiteUM ? `${l.quantiteUM} ${l.um} = ` : ""}{l.quantite} {l.unite} · {(Number(l.total) || 0).toLocaleString("fr-MA")} DH
                           </span>
                         </div>
                       ))}

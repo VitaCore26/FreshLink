@@ -293,6 +293,18 @@ export interface ChargeArticle {
   montant: number    // DH par unité, ajouté au prix d'achat
 }
 
+// Première liste par défaut (alimentée/éditable depuis le back-office › Achat).
+// Sert à ne JAMAIS avoir une liste roulante vide ; les montants sont à 0 tant que
+// le back-office ne les renseigne pas. Ids stables (clés React + sélection).
+export const DEFAULT_CHARGES_ARTICLE: ChargeArticle[] = [
+  { id: "chg-manutention", nom: "Manutention",     montant: 0 },
+  { id: "chg-chariots",    nom: "Chariots",        montant: 0 },
+  { id: "chg-balance",     nom: "Balance",         montant: 0 },
+  { id: "chg-transport",   nom: "Transport",       montant: 0 },
+  { id: "chg-emballage",   nom: "Emballage",       montant: 0 },
+  { id: "chg-perte",       nom: "Perte / Freinte", montant: 0 },
+]
+
 // Gestion caisses vides
 export type TypeCaisse = "gros" | "demi"
 
@@ -2084,6 +2096,14 @@ function setLS<T>(key: string, val: T): void {
   import("@/lib/supabase/autoSync").then(m => m.onLocalWrite(key, raw)).catch(() => {})
 }
 
+// Propagation explicite d'une suppression vers Supabase (les deletes ne peuvent
+// pas être déduits d'un diff localStorage). Sans ça, une ligne supprimée reste
+// en base et « revient » au prochain fetch.
+function deleteSynced(table: string, ids: string[]): void {
+  if (typeof window === "undefined" || ids.length === 0) return
+  import("@/lib/supabase/autoSync").then(m => m.syncDelete(table, ids)).catch(() => {})
+}
+
 // ============================================================
 // DEMO GUARD — demo accounts cannot mutate persistent data
 // ============================================================
@@ -2407,7 +2427,10 @@ export const store = {
   deleteCharge: (id: string) => { store.saveCharges(store.getCharges().filter(c => c.id !== id)) },
 
   // --- Charges par article (coût de revient) ---
-  getChargesArticle: (): ChargeArticle[] => getLS("fl_charges_article", []),
+  getChargesArticle: (): ChargeArticle[] => {
+    const stored = getLS<ChargeArticle[]>("fl_charges_article", [])
+    return stored.length > 0 ? stored : DEFAULT_CHARGES_ARTICLE   // jamais vide
+  },
   saveChargesArticle: (c: ChargeArticle[]) => setLS("fl_charges_article", c),
 
   // --- Caisse ---
@@ -2662,6 +2685,7 @@ export const store = {
   },
   deleteCommande: (id: string) => {
     store.saveCommandes(store.getCommandes().filter(c => c.id !== id))
+    deleteSynced("fl_commandes", [id])   // sinon la commande « revient » au prochain fetch
   },
 
   // --- Visites prevendeur ---
