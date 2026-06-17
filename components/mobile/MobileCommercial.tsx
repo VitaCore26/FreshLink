@@ -465,17 +465,20 @@ export default function MobileCommercial({ user }: Props) {
   }
 
   const updateLigne = (i: number, field: keyof LigneForm, value: string) => {
-    const updated = [...lignes]
-    updated[i] = { ...updated[i], [field]: value }
-    if (field === "articleId") {
-      const art = articles.find(a => a.id === value)
-      if (art) {
-        updated[i].prixVente = store.computePV(art).toString()
-        updated[i].uniteMode = "base"   // reset to base unit on article change
-        updated[i].quantite = ""
+    setLignes(prev => {
+      const updated = [...prev]
+      if (!updated[i]) return prev
+      updated[i] = { ...updated[i], [field]: value }
+      if (field === "articleId") {
+        const art = articles.find(a => a.id === value)
+        if (art) {
+          updated[i].prixVente = store.computePV(art).toString()
+          updated[i].uniteMode = "base"   // reset to base unit on article change
+          updated[i].quantite = ""
+        }
       }
-    }
-    setLignes(updated)
+      return updated
+    })
   }
 
   const totalGeneral = lignes.reduce((sum, l) => {
@@ -1216,17 +1219,24 @@ export default function MobileCommercial({ user }: Props) {
                 className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${inCart ? "bg-primary/5" : "hover:bg-muted/50"}`}>
                 <input type="checkbox" checked={inCart} readOnly={false}
                   onChange={e => {
-                    if (e.target.checked) {
-                      const emptyIdx = lignes.findIndex(l => !l.articleId)
-                      if (emptyIdx >= 0) updateLigne(emptyIdx, "articleId", a.id)
-                      else setLignes(prev => [...prev, { articleId: a.id, quantite: "", prixVente: String(pv), uniteMode: "base" }])
-                    } else {
-                      const idx = lignes.findIndex(l => l.articleId === a.id)
-                      if (idx >= 0) {
-                        if (lignes.length === 1) setLignes([{ articleId: "", quantite: "", prixVente: "", uniteMode: "base" }])
-                        else setLignes(prev => prev.filter((_, j) => j !== idx))
+                    const checked = e.target.checked
+                    // Mise à jour fonctionnelle UNIQUE : évite la perte d'articles quand on coche
+                    // plusieurs articles rapidement (le closure `lignes` serait périmé entre 2 clics).
+                    setLignes(prev => {
+                      if (checked) {
+                        if (prev.some(l => l.articleId === a.id)) return prev   // déjà présent
+                        const emptyIdx = prev.findIndex(l => !l.articleId)
+                        if (emptyIdx >= 0) {
+                          const updated = [...prev]
+                          updated[emptyIdx] = { ...updated[emptyIdx], articleId: a.id, prixVente: String(pv), uniteMode: "base", quantite: "" }
+                          return updated
+                        }
+                        return [...prev, { articleId: a.id, quantite: "", prixVente: String(pv), uniteMode: "base" }]
                       }
-                    }
+                      // décocher : retirer la ligne ; garder au moins une ligne vide
+                      const next = prev.filter(l => l.articleId !== a.id)
+                      return next.length === 0 ? [{ articleId: "", quantite: "", prixVente: "", uniteMode: "base" }] : next
+                    })
                   }}
                   className="w-4 h-4 rounded accent-primary shrink-0" />
                 <img src={resolveArticlePhoto(a)}
@@ -1268,7 +1278,7 @@ export default function MobileCommercial({ user }: Props) {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Article #{i + 1}</span>
                 {lignes.length > 1 && (
-                  <button onClick={() => setLignes(lignes.filter((_, j) => j !== i))} className="text-destructive p-1">
+                  <button onClick={() => setLignes(prev => prev.filter((_, j) => j !== i))} className="text-destructive p-1">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 )}
