@@ -2110,7 +2110,11 @@ function guardWrite<T extends unknown[]>(
 export const store = {
   // --- Users ---
   getUsers: (): User[] => {
-    const raw: User[] = getLS("fl_users", DEFAULT_USERS)
+    // Seed minimal : sur un appareil neuf (ou après reset), on ne sème QUE le
+    // super administrateur — plus de comptes démo/par défaut qui réapparaissent.
+    // Les comptes réels arrivent via la synchro Supabase ; le jeu démo complet
+    // reste disponible via le bouton « Recharger démo » (seedDemoData).
+    const raw: User[] = getLS("fl_users", [JAWAD_USER])
     // Supprimer TOUS les doublons Jawad :
     // - l'ancien ID "u_jawad_root"
     // - tout utilisateur avec l'email jawad@vita-fresh.ma qui n'est pas VFU00001
