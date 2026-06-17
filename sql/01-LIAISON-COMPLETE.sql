@@ -37,6 +37,16 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ── 1bis) GRANTs OBLIGATOIRES — sinon "permission denied 42501" pour service_role ──
+-- (Les tables fraîchement créées via SQL Editor n'ont pas les droits des rôles
+--  Supabase ; la RLS protège les lignes, les GRANTs donnent l'accès table.)
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES    IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES  IN SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+
 -- ── 2) Accès ANON limité à ce que le SITE WEB a besoin de lire / écrire ───────
 -- Catalogue (lecture)
 DROP POLICY IF EXISTS anon_read_articles ON public.fl_articles;
