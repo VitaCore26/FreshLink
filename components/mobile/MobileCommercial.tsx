@@ -133,15 +133,21 @@ export default function MobileCommercial({ user }: Props) {
     return map
   }, [])
 
-  // Inline article list — filtered + sorted
-  const pickerArticles = useMemo(() => {
-    // ⚡ Déduplication par id (évite les doublons d'articles dans la vue mobile)
+  // Liste COMPLÈTE dédupliquée par id (NON filtrée par la recherche du picker).
+  // Sert au sélecteur de chaque ligne (ArticleCombobox) pour qu'un article déjà
+  // choisi reste toujours affichable même si la recherche du haut a changé.
+  const allArticlesDedup = useMemo(() => {
     const seen = new Set<string>()
-    let list = articles.filter(a => {
+    return articles.filter(a => {
       if (!a || !a.id || seen.has(a.id)) return false
       seen.add(a.id)
       return true
     })
+  }, [articles])
+
+  // Inline article list — filtered + sorted (picker du haut, checkbox)
+  const pickerArticles = useMemo(() => {
+    let list = [...allArticlesDedup]
     if (articleSearch.trim()) {
       const q = articleSearch.trim().toLowerCase()
       // 🛡️ Null-safety : sécurise nom/nomAr/famille contre undefined (fix crash client-side)
@@ -156,7 +162,7 @@ export default function MobileCommercial({ user }: Props) {
     else if (articleSort === "stock") list.sort((a, b) => (Number(b.stockDisponible) || 0) - (Number(a.stockDisponible) || 0))
     else list.sort((a, b) => (a.nom ?? "").localeCompare(b.nom ?? ""))
     return list
-  }, [articles, articleSearch, articleSort, globalRotation])
+  }, [allArticlesDedup, articleSearch, articleSort, globalRotation])
 
   // Articles sorted by habit frequency for current client
   const sortedArticles = useMemo(() => {
@@ -1284,9 +1290,10 @@ export default function MobileCommercial({ user }: Props) {
                 )}
               </div>
 
-              {/* Article selector */}
+              {/* Article selector — liste COMPLÈTE (pas la recherche du picker) pour
+                  que l'article coché reste toujours affiché dans la ligne */}
               <ArticleCombobox
-                articles={pickerArticles}
+                articles={allArticlesDedup}
                 value={ligne.articleId}
                 onChange={(artId, artObj) => {
                   if (!artObj) { updateLigne(i, "articleId", ""); return }
