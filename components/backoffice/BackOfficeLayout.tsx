@@ -84,6 +84,7 @@ const TripChargesPanel       = dynamic(() => import("./TripChargesPanel"),      
 const AnalyseAchatPanel      = dynamic(() => import("./AnalyseAchatPanel"),      { ssr: false, loading: L("Chargement analyse achat...") })
 const AnalyseTempsAchat      = dynamic(() => import("./AnalyseTempsAchat"),      { ssr: false, loading: L("Chargement temps achat...") })
 const BOShopAnalytics        = dynamic(() => import("./BOShopAnalytics"),        { ssr: false, loading: L("Chargement compteur boutique...") })
+const BOPromoCodes           = dynamic(() => import("./BOPromoCodes"),           { ssr: false, loading: L("Chargement codes promo...") })
 const AnalyseCaisseAcheteur  = dynamic(() => import("./AnalyseCaisseAcheteur"),  { ssr: false, loading: L("Chargement caisse acheteur...") })
 const BOAnalyseCredit        = dynamic(() => import("./BOAnalyseCredit"),        { ssr: false, loading: L("Chargement analyse crédit...") })
 const BORolesPermissions     = dynamic(() => import("./BORolesPermissions"),     { ssr: false, loading: L("Chargement rôles...") })
@@ -141,7 +142,7 @@ export type Tab =
   | "comptes_externes"
   | "prospection" | "credit_fournisseur" | "agents_ia"
   | "gps_tracker"
-  | "feedback" | "trip_charges" | "analyse_achat" | "temps_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit" | "roles_permissions" | "rapport_marche" | "shop_analytics"
+  | "feedback" | "trip_charges" | "analyse_achat" | "temps_achat" | "analyse_reception" | "caisse_acheteur" | "analyse_credit" | "roles_permissions" | "rapport_marche" | "shop_analytics" | "promo_codes"
   | "caisses_vides" | "shelf_life" | "forecast" | "ashel_market"
   | "camera_perms" | "cutoffs" | "deploy_guide"
   | "azmi_agent" | "hicham_agent" | "ourai_agent"
@@ -263,6 +264,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "temps_achat",       label: "Temps Achat",            labelAr: "وقت الشراء",          permKey: "canViewAchat", icon: <Icon d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /> },
       { id: "analyse_reception", label: "Analyse Reception",      labelAr: "تحليل الاستلام",     permKey: "canViewAchat", icon: <Icon d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
       { id: "shop_analytics",    label: "Compteur Boutique",      labelAr: "عداد المتجر",        permKey: "canViewExternal", icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
+      { id: "promo_codes",       label: "Codes Promo",            labelAr: "أكواد الخصم",        permKey: "canViewExternal", icon: <Icon d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z" /> },
     ],
   },
   // ── 3. COMMERCIAL & VENTES ───────────────────────────────────────────────
@@ -434,6 +436,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   analyse_achat:       (_u) => <AnalyseAchatPanel />,
   temps_achat:         (_u) => <AnalyseTempsAchat />,
   shop_analytics:      (_u) => <BOShopAnalytics />,
+  promo_codes:         (_u) => <BOPromoCodes />,
   caisse_acheteur:     (_u) => <AnalyseCaisseAcheteur />,
   analyse_credit:      (_u) => <BOAnalyseCredit />,
   roles_permissions:   (_u) => <BORolesPermissions />,
