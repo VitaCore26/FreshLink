@@ -1252,6 +1252,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
                 { key: "enableControlPreparation" as const,  label: "Controle Preparation",        desc: "Ctrl prep verifie les colis prepares avant chargement dans le camion" },
                 { key: "enableControlExpedition" as const,   label: "Controle Expedition",         desc: "Ctrl expedition valide le chargement final avant le depart du camion" },
                 { key: "enableDispatchCommandes" as const,   label: "Dispatch Commandes",          desc: "Le dispatcheur affecte les commandes aux trips de livraison" },
+                { key: "photoAchatObligatoire" as const,     label: "Photo achat obligatoire",     desc: "Exiger une photo de la marchandise pour confirmer un achat (mobile acheteur)" },
               ] as { key: keyof ProcessConfig; label: string; desc: string }[]).map(item => (
                 <div key={item.key} className="flex items-start justify-between gap-3 py-2 border-b border-border last:border-0">
                   <div className="flex-1 min-w-0">

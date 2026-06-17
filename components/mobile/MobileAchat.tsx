@@ -245,8 +245,21 @@ export default function MobileAchat({ user }: Props) {
     photoAchat: "",       // photo obligatoire avant validation
     chargeArticleId: "",  // charge par article (coût de revient) — cf. BO Articles
   })
-  const chargesArticle = store.getChargesArticle()
+  const [chargesArticle, setChargesArticle] = useState(store.getChargesArticle())
   const [poSaving, setPoSaving] = useState(false)
+
+  // Ajout d'une charge (catalogue fl_charges_article) directement depuis le PO
+  const addChargeArticleInline = () => {
+    const nom = window.prompt("Nom de la charge (ex: Transport, Manutention) :", "")?.trim()
+    if (!nom) return
+    const montantStr = window.prompt(`Montant de « ${nom} » (DH par unité) :`, "0")
+    const montant = Number(montantStr)
+    if (Number.isNaN(montant) || montant < 0) return
+    const next = [...store.getChargesArticle(), { id: store.genId(), nom, montant }]
+    store.saveChargesArticle(next)
+    setChargesArticle(next)
+    setPoDetail(p => ({ ...p, chargeArticleId: next[next.length - 1].id }))
+  }
 
   const openPOModal = (po: typeof pendingPOs[0]) => {
     // Charge par défaut = celle affectée à l'article (back-office), modifiable ici
@@ -266,7 +279,9 @@ export default function MobileAchat({ user }: Props) {
 
   const confirmPO = () => {
     if (!poModalId) return
-    if (!poDetail.photoAchat) {
+    // Photo marchandise obligatoire uniquement si activé dans la config process
+    const photoObligatoire = store.getProcessConfig().photoAchatObligatoire !== false
+    if (photoObligatoire && !poDetail.photoAchat) {
       alert("Photo obligatoire — veuillez prendre ou importer une photo de la marchandise.")
       return
     }
@@ -1318,21 +1333,26 @@ export default function MobileAchat({ user }: Props) {
                   </div>
                 </div>
 
-                {/* Charge par article (coût de revient) */}
+                {/* Charge par article (coût de revient) + ajout inline */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Charge / unité (coût de revient)</label>
-                  <select
-                    value={poDetail.chargeArticleId}
-                    onChange={e => setPoDetail(p => ({ ...p, chargeArticleId: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    <option value="">— Aucune charge —</option>
-                    {chargesArticle.map(c => (
-                      <option key={c.id} value={c.id}>{c.nom} (+{c.montant} DH)</option>
-                    ))}
-                  </select>
-                  {chargesArticle.length === 0 && (
-                    <p className="text-[11px] text-amber-600 mt-1">Aucune charge définie — ajoutez-en dans le back-office (Achat → Articles).</p>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={poDetail.chargeArticleId}
+                      onChange={e => setPoDetail(p => ({ ...p, chargeArticleId: e.target.value }))}
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      <option value="">— Aucune charge —</option>
+                      {chargesArticle.map(c => (
+                        <option key={c.id} value={c.id}>{c.nom} (+{c.montant} DH)</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={addChargeArticleInline}
+                      title="Ajouter une charge"
+                      className="shrink-0 w-10 h-10 rounded-xl bg-amber-500 text-white text-xl font-bold flex items-center justify-center hover:bg-amber-600">+</button>
+                  </div>
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    {chargesArticle.length === 0 ? "Aucune charge — appuyez sur + pour en ajouter (Transport, Manutention…)." : "+ pour ajouter une autre charge."}
+                  </p>
                 </div>
 
                 {/* Total preview + coût de revient */}

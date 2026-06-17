@@ -1157,6 +1157,9 @@ export interface ProcessConfig {
   cameraControlPrep?: boolean    // Camera autorisée pour contrôle préparation
   cameraRetour?: boolean         // Camera autorisée pour retours
   cameraSignature?: boolean      // Camera pour photo signature
+  // Photo marchandise obligatoire pour confirmer un achat (mobile acheteur).
+  // false = la photo devient facultative. Défaut: true (comportement actuel).
+  photoAchatObligatoire?: boolean
   notes?: string
 }
 
@@ -1181,6 +1184,7 @@ export const DEFAULT_PROCESS_CONFIG: ProcessConfig = {
   cameraControlPrep: true,
   cameraRetour: true,
   cameraSignature: true,
+  photoAchatObligatoire: true,
 }
 
 export const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
@@ -1571,6 +1575,20 @@ export const FAMILLES_ARTICLES = [
   "Autre",
   // Produits transformés (après préparation)
   "Épluché", "Lavé", "Coupé", "Prêt pour cuisson", "Emballé",
+]
+
+/** Secteurs de vente (zones commerciales) — listes déroulantes création client */
+export const SECTEURS_VENTE = [
+  "Anfa", "Maârif", "Sidi Maârouf", "Aïn Sebaâ", "Hay Hassani", "Derb Sultan",
+  "Sidi Bernoussi", "Roches Noires", "Oulfa", "Sbata", "Ben M'sick",
+  "Centre-ville", "Nord", "Centre", "Sud", "Est", "Ouest",
+]
+
+/** Villes du Maroc — liste déroulante création client */
+export const VILLES_MAROC = [
+  "Casablanca", "Mohammedia", "Rabat", "Salé", "Témara", "Kénitra",
+  "Marrakech", "Tanger", "Fès", "Meknès", "Agadir", "Oujda", "Tétouan",
+  "Safi", "El Jadida", "Berrechid", "Settat", "Nador", "Khouribga", "Beni Mellal",
 ]
 
 /** 5 groupes d'affichage → familles détaillées */
@@ -2939,7 +2957,7 @@ export const store = {
   saveWorkflowConfig: (c: WorkflowConfig) => setLS("fl_workflow_config", c),
 
   // --- Process config ---
-  getProcessConfig: (): ProcessConfig => getLS<ProcessConfig>("fl_process_config", DEFAULT_PROCESS_CONFIG),
+  getProcessConfig: (): ProcessConfig => ({ ...DEFAULT_PROCESS_CONFIG, ...getLS<Partial<ProcessConfig>>("fl_process_config", {}) }),
   saveProcessConfig: (c: ProcessConfig) => setLS("fl_process_config", c),
 
   // --- Inventory Logs ---

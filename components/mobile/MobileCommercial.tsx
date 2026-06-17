@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement } from "@/lib/store"
+import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, SECTEURS_VENTE, VILLES_MAROC } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
@@ -524,13 +524,24 @@ export default function MobileCommercial({ user }: Props) {
     const statutInitial: "en_attente" | "valide" | "en_attente_approbation" =
       workflow.validationCommande === "direct" && !teamLeadId ? "valide" : "en_attente_approbation"
 
+    // GPS capturé automatiquement en fin de process (position réelle au moment de la prise de commande)
+    const fresh = await new Promise<{ lat: number; lng: number } | null>(resolve => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) { resolve(null); return }
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+      )
+    })
+    if (fresh) { setGpsLat(fresh.lat); setGpsLng(fresh.lng) }
+
     const commande = {
       id: store.genCommande(), date: store.today(),
       commercialId: vendeurId, commercialNom: vendeurNom,
       clientId: client.id, clientNom: client.nom,
       secteur: client.secteur, zone: client.zone,
-      gpsLat: client.gpsLat ?? gpsLat ?? 0,
-      gpsLng: client.gpsLng ?? gpsLng ?? 0,
+      gpsLat: fresh?.lat ?? gpsLat ?? client.gpsLat ?? 0,
+      gpsLng: fresh?.lng ?? gpsLng ?? client.gpsLng ?? 0,
       lignes: lignesData, heurelivraison,
       statut: statutInitial,
       emailDestinataire: store.getEmailConfig().commercial,
@@ -985,8 +996,26 @@ export default function MobileCommercial({ user }: Props) {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-foreground">Secteur</label>
-              <input type="text" value={newClient.secteur} onChange={e => setNewClient({ ...newClient, secteur: e.target.value })}
-                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <select value={newClient.secteur} onChange={e => setNewClient({ ...newClient, secteur: e.target.value })}
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">— Choisir —</option>
+                {/* Secteur du prévendeur en premier s'il n'est pas déjà listé */}
+                {newClient.secteur && !SECTEURS_VENTE.includes(newClient.secteur) && (
+                  <option value={newClient.secteur}>{newClient.secteur}</option>
+                )}
+                {SECTEURS_VENTE.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-foreground">Ville</label>
+              <select value={newClient.zone} onChange={e => setNewClient({ ...newClient, zone: e.target.value })}
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">— Choisir —</option>
+                {newClient.zone && !VILLES_MAROC.includes(newClient.zone) && (
+                  <option value={newClient.zone}>{newClient.zone}</option>
+                )}
+                {VILLES_MAROC.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-foreground">Type</label>
