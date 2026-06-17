@@ -243,10 +243,14 @@ export default function MobileAchat({ user }: Props) {
     statutPaiement: "impaye" as "impaye" | "partiel" | "solde",
     notePaiement: "",
     photoAchat: "",       // photo obligatoire avant validation
+    chargeArticleId: "",  // charge par article (coût de revient) — cf. BO Articles
   })
+  const chargesArticle = store.getChargesArticle()
   const [poSaving, setPoSaving] = useState(false)
 
   const openPOModal = (po: typeof pendingPOs[0]) => {
+    // Charge par défaut = celle affectée à l'article (back-office), modifiable ici
+    const art = store.getArticles().find(a => a.id === po.articleId)
     setPoDetail({
       quantite: String(po.quantite),
       prixUnitaire: String(po.prixUnitaire),
@@ -255,6 +259,7 @@ export default function MobileAchat({ user }: Props) {
       statutPaiement: "impaye",
       notePaiement: "",
       photoAchat: "",
+      chargeArticleId: po.chargeArticleId ?? art?.chargeArticleId ?? "",
     })
     setPoModalId(po.id)
   }
@@ -271,6 +276,9 @@ export default function MobileAchat({ user }: Props) {
     const total = qty * pu
     const fourNom = fournisseurs.find(f => f.id === poDetail.fournisseurId)?.nom ?? ""
     const po = store.getPurchaseOrders().find(p => p.id === poModalId)
+    // Charge par article (coût de revient)
+    const charge = chargesArticle.find(c => c.id === poDetail.chargeArticleId)
+    const chargeMontant = charge?.montant ?? 0
     store.updatePurchaseOrder(poModalId, {
       statut: "envoyé",
       quantite: qty,
@@ -281,6 +289,10 @@ export default function MobileAchat({ user }: Props) {
       montantPaye: Number(poDetail.montantPaye) || 0,
       statutPaiement: poDetail.statutPaiement,
       notePaiement: poDetail.notePaiement,
+      chargeArticleId: poDetail.chargeArticleId || undefined,
+      chargeMontant,
+      coutRevientUnitaire: pu + chargeMontant,
+      totalCharges: chargeMontant * qty,
     })
 
     // Auto-create credit fournisseur si paiement impaye ou partiel
@@ -1306,13 +1318,50 @@ export default function MobileAchat({ user }: Props) {
                   </div>
                 </div>
 
-                {/* Total preview */}
-                {totalCalc > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-green-700">Total commande</span>
-                    <span className="text-lg font-black text-green-800">{totalCalc.toLocaleString("fr-MA")} DH</span>
-                  </div>
-                )}
+                {/* Charge par article (coût de revient) */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Charge / unité (coût de revient)</label>
+                  <select
+                    value={poDetail.chargeArticleId}
+                    onChange={e => setPoDetail(p => ({ ...p, chargeArticleId: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <option value="">— Aucune charge —</option>
+                    {chargesArticle.map(c => (
+                      <option key={c.id} value={c.id}>{c.nom} (+{c.montant} DH)</option>
+                    ))}
+                  </select>
+                  {chargesArticle.length === 0 && (
+                    <p className="text-[11px] text-amber-600 mt-1">Aucune charge définie — ajoutez-en dans le back-office (Achat → Articles).</p>
+                  )}
+                </div>
+
+                {/* Total preview + coût de revient */}
+                {totalCalc > 0 && (() => {
+                  const cm = chargesArticle.find(c => c.id === poDetail.chargeArticleId)?.montant ?? 0
+                  const qte = Number(poDetail.quantite) || 0
+                  const pu = Number(poDetail.prixUnitaire) || 0
+                  const totalCharges = cm * qte
+                  return (
+                    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-green-700">Total achat</span>
+                        <span className="text-lg font-black text-green-800">{totalCalc.toLocaleString("fr-MA")} DH</span>
+                      </div>
+                      {cm > 0 && (
+                        <>
+                          <div className="flex items-center justify-between text-xs text-amber-700">
+                            <span>+ Charges ({cm} DH/u × {qte})</span>
+                            <span className="font-bold">+{totalCharges.toLocaleString("fr-MA")} DH</span>
+                          </div>
+                          <div className="flex items-center justify-between border-t border-green-200 pt-1.5">
+                            <span className="text-sm font-semibold text-orange-700">Coût de revient ({(pu + cm).toFixed(2)} DH/u)</span>
+                            <span className="text-base font-black text-orange-800">{(totalCalc + totalCharges).toLocaleString("fr-MA")} DH</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* Fournisseur */}
                 <div>

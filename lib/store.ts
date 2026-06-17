@@ -691,6 +691,11 @@ export interface PurchaseOrder {
   statutPaiement?: "impaye" | "partiel" | "solde"
   datePaiement?: string
   notePaiement?: string
+  // Charges par article (coût de revient) — saisies/confirmées à l'achat
+  chargeArticleId?: string
+  chargeMontant?: number        // DH par unité, ajouté au prix d'achat
+  coutRevientUnitaire?: number  // prixUnitaire + chargeMontant
+  totalCharges?: number         // chargeMontant × quantité
   // Multi-depot
   depotId?: string
   depotNom?: string
