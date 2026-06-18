@@ -249,6 +249,64 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
   const valeurStock = articles.reduce((s, a) => s + a.stockDisponible * a.prixAchat, 0)
   const alertArticles = articles.filter(a => a.stockDisponible < 50)
 
+  // ── Import/Export CSV des prix de vente ─────────────────────────────────────
+  const exportPrixCSV = () => {
+    const esc = (v: string | number) => { const s = String(v ?? ""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+    const headers = ["id", "nom", "famille", "unite", "prixAchat", "pvMethode", "pvValeur", "prixVente"]
+    const lines = articles.map(a => [a.id, a.nom, a.famille ?? "", a.unite ?? "kg", Number(a.prixAchat) || 0, a.pvMethode, Number(a.pvValeur) || 0, computePV(a)].map(esc).join(";"))
+    const csv = [headers.join(";"), ...lines].join("\n")
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob); const link = document.createElement("a")
+    link.href = url; link.download = `prix-vente-${store.today()}.csv`; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1500)
+    setSaved("Export CSV téléchargé"); setTimeout(() => setSaved(""), 2500)
+  }
+  const importPrixCSV = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result ?? "").replace(/\r/g, "")
+      const rows = text.split("\n").filter(l => l.trim())
+      if (rows.length < 2) { setSaved("CSV vide"); setTimeout(() => setSaved(""), 2500); return }
+      const sep = rows[0].includes(";") ? ";" : ","
+      const head = rows[0].split(sep).map(h => h.trim().toLowerCase())
+      const idx = (k: string) => head.indexOf(k)
+      const all = store.getArticles()
+      let updated = 0
+      for (const line of rows.slice(1)) {
+        const c = line.split(sep).map(x => x.trim().replace(/^"|"$/g, ""))
+        const id = idx("id") >= 0 ? c[idx("id")] : ""
+        const nom = idx("nom") >= 0 ? c[idx("nom")] : ""
+        const art = all.find(a => (id && a.id === id) || (nom && a.nom.toLowerCase() === nom.toLowerCase()))
+        if (!art) continue
+        const num = (k: string) => { const j = idx(k); if (j < 0) return undefined; const n = parseFloat(String(c[j]).replace(",", ".")); return isNaN(n) ? undefined : n }
+        const pa = num("prixachat"); if (pa !== undefined) art.prixAchat = pa
+        const meth = idx("pvmethode") >= 0 ? c[idx("pvmethode")] : ""
+        if (meth === "pourcentage" || meth === "montant" || meth === "manuel") art.pvMethode = meth
+        const pvVal = num("pvvaleur"); if (pvVal !== undefined) art.pvValeur = pvVal
+        // Si seul prixVente est fourni (pas de pvValeur) → fixe en manuel
+        const pvDirect = num("prixvente")
+        if (pvVal === undefined && pvDirect !== undefined) { art.pvMethode = "manuel"; art.pvValeur = pvDirect }
+        updated++
+      }
+      store.saveArticles(all); setArticles(store.getArticles())
+      setSaved(`${updated} prix mis à jour depuis le CSV`); setTimeout(() => setSaved(""), 3500)
+    }
+    reader.readAsText(file)
+  }
+  // ── Prix de vente par famille ───────────────────────────────────────────────
+  const [pfFamille, setPfFamille] = useState("")
+  const [pfMethode, setPfMethode] = useState<Article["pvMethode"]>("pourcentage")
+  const [pfValeur, setPfValeur] = useState("")
+  const applyPrixFamille = () => {
+    if (!pfFamille) { setSaved("Choisissez une famille"); setTimeout(() => setSaved(""), 2500); return }
+    const val = parseFloat(pfValeur); if (isNaN(val)) { setSaved("Valeur invalide"); setTimeout(() => setSaved(""), 2500); return }
+    const all = store.getArticles()
+    let n = 0
+    for (const a of all) { if (a.famille === pfFamille) { a.pvMethode = pfMethode; a.pvValeur = val; n++ } }
+    store.saveArticles(all); setArticles(store.getArticles())
+    setSaved(`${n} article(s) de « ${pfFamille} » mis à jour`); setTimeout(() => setSaved(""), 3500)
+  }
+
   const TABS = [
     { id: "stock" as const, label: "Stock général", labelAr: "المخزون" },
     { id: "articles" as const, label: "Articles", labelAr: "المنتجات" },
@@ -484,6 +542,39 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
 
       {/* PV tab */}
       {tab === "pv" && (
+        <div className="flex flex-col gap-3">
+          {/* Outils prix : import/export CSV + prix par famille */}
+          <div className="flex flex-col gap-3 bg-indigo-50/60 border border-indigo-200 rounded-2xl p-4">
+            <div className="flex flex-wrap gap-2 items-center">
+              <button onClick={exportPrixCSV} className="px-3 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white">⬇ Télécharger les prix (CSV)</button>
+              <label className="px-3 py-2 rounded-xl text-sm font-bold bg-blue-600 text-white cursor-pointer">
+                ⬆ Importer des prix (CSV)
+                <input type="file" accept=".csv,text/csv" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importPrixCSV(f); e.target.value = "" }} />
+              </label>
+              <span className="text-[11px] text-indigo-700">Colonnes : <code>id;nom;famille;unite;prixAchat;pvMethode;pvValeur;prixVente</code> (prixVente seul → prix manuel)</span>
+            </div>
+            <div className="h-px bg-indigo-200" />
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-indigo-800 uppercase tracking-wide">Prix de vente par famille</label>
+                <select value={pfFamille} onChange={e => setPfFamille(e.target.value)} className="px-3 py-2 rounded-xl border border-indigo-300 bg-white text-sm">
+                  <option value="">— Choisir une famille —</option>
+                  {FAMILLES_ARTICLES.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <select value={pfMethode} onChange={e => setPfMethode(e.target.value as Article["pvMethode"])} className="px-3 py-2 rounded-xl border border-indigo-300 bg-white text-sm">
+                <option value="pourcentage">% de marge</option>
+                <option value="montant">+ Montant (DH)</option>
+                <option value="manuel">Prix manuel (DH)</option>
+              </select>
+              <input type="number" step="0.01" value={pfValeur} onChange={e => setPfValeur(e.target.value)}
+                placeholder={pfMethode === "pourcentage" ? "ex: 60 (%)" : "ex: 5 (DH)"}
+                className="w-32 px-3 py-2 rounded-xl border border-indigo-300 bg-white text-sm" />
+              <button onClick={applyPrixFamille} className="px-4 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white">Appliquer à la famille</button>
+            </div>
+          </div>
+
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -531,6 +622,7 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 
