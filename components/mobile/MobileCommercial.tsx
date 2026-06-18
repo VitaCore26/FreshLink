@@ -377,17 +377,20 @@ export default function MobileCommercial({ user }: Props) {
   }
 
   // ── Filter clients ────────────────────────────────────────────────────────
-  // Prevendeur sees ONLY clients explicitly assigned to them (prevendeurId === user.id)
-  // + unassigned clients from their sector (so they can pick up new clients).
-  // Admins/team_leaders see all clients.
+  // Règles (validées 2026-06-18) :
+  //  - admin / team_leader / resp_commercial : voient TOUS les clients.
+  //  - prévendeur SANS secteur affecté : voit TOUS les clients (prévendeur "volant").
+  //  - prévendeur AVEC secteur :
+  //      • client affecté à un prévendeur → visible seulement par CE prévendeur ;
+  //      • client SANS secteur → visible par TOUS les prévendeurs ;
+  //      • sinon → visible si même secteur que le prévendeur.
   const isPrevendeur = user.role === "prevendeur"
   const myClients = clients.filter(c => {
-    if (isPrevendeur) {
-      if (c.prevendeurId) return c.prevendeurId === user.id  // directly assigned
-      if (user.secteur)   return c.secteur === user.secteur   // same sector, not yet assigned
-      return false  // prevendeur without sector — show nothing (until sector is assigned)
-    }
-    return true  // admin / team_leader / resp_commercial see everyone
+    if (!isPrevendeur) return true            // admin / responsable : tout
+    if (!user.secteur) return true            // prévendeur sans secteur : voit tout
+    if (c.prevendeurId) return c.prevendeurId === user.id  // client affecté : seulement le sien
+    if (!c.secteur) return true               // client sans secteur : visible par tous
+    return c.secteur === user.secteur         // sinon : même secteur
   })
   const assignedCount = clients.filter(c => c.prevendeurId === user.id).length
 
