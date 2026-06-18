@@ -39,6 +39,15 @@ export async function GET(req: NextRequest) {
   try {
     const res = await fetch(`${SB_URL}/rest/v1/fl_shop_analytics?id=gte.${start}&order=id.desc&limit=120`, { headers, cache: "no-store" })
     const rows: DayRow[] = res.ok ? await res.json() : []
+    // Lignes spéciales (config + en-ligne) récupérées EXPLICITEMENT : selon la
+    // collation, "__online"/"__config" peuvent sortir de la plage de dates ci-dessus.
+    try {
+      const spRes = await fetch(`${SB_URL}/rest/v1/fl_shop_analytics?id=in.(__online,__config)&select=id,payload`, { headers, cache: "no-store" })
+      if (spRes.ok) {
+        const sp: DayRow[] = await spRes.json()
+        for (const s of sp) if (!rows.some(r => r.id === s.id)) rows.push(s)
+      }
+    } catch { /* noop */ }
     const today = new Date().toISOString().slice(0, 10)
 
     const pages: Record<string, number> = {}
