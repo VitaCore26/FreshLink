@@ -1241,7 +1241,23 @@ export default function BOBonLivraison({ user }: { user: User }) {
                 <input value={printOpts.piedDePageOverride ?? ""} onChange={e => savePrintOpts({ ...printOpts, piedDePageOverride: e.target.value })}
                   placeholder="Capital DH — RC — IF — ICE — Patente" className="px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30" />
               </div>
+              {/* Type de document + mentions légales */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Type de document</label>
+                <select value={printOpts.docType ?? "bl"} onChange={e => savePrintOpts({ ...printOpts, docType: e.target.value as "bl" | "facture" })}
+                  className="px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30">
+                  <option value="bl">Bon de Livraison</option>
+                  <option value="facture">Facture</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 col-span-2 cursor-pointer mt-4">
+                <input type="checkbox" checked={printOpts.showLegal !== false}
+                  onChange={e => savePrintOpts({ ...printOpts, showLegal: e.target.checked })}
+                  className="w-4 h-4 accent-amber-500" />
+                <span className="text-xs font-bold text-amber-800">Afficher RC / ICE / IF (mentions légales société + client)</span>
+              </label>
             </div>
+            <p className="text-[10px] text-amber-600 mt-2">Ce choix s&apos;applique à l&apos;impression et au téléchargement (BL ou Facture, avec ou sans identifiants légaux).</p>
           </div>
         )}
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type User, type BonPreparation, type BonLivraison } from "@/lib/store"
+import { store, type User, type BonPreparation, type BonLivraison, type ContenantTare } from "@/lib/store"
 
 interface Props { user: User }
 
@@ -101,12 +101,30 @@ export default function MobilePreparation({ user }: Props) {
   const [activeBon, setActiveBon] = useState<BonPreparation | null>(null)
   const [localQtys, setLocalQtys] = useState<Record<string, number>>({})
   const [generatedBL, setGeneratedBL] = useState<BonLivraison | null>(null)
+  // Pesée brut → net (même logique que la réception : poids brut − tares contenants)
+  const [contenants, setContenants] = useState<ContenantTare[]>([])
+  const [showPesee, setShowPesee] = useState<Record<string, boolean>>({})
+  const [caisseGros, setCaisseGros] = useState<Record<string, string>>({})
+  const [caisseDemi, setCaisseDemi] = useState<Record<string, string>>({})
+  const [brutPoids, setBrutPoids] = useState<Record<string, string>>({})
+
+  const contenantGros = contenants.find(c => c.nom.toLowerCase().includes("gros") || c.nom.toLowerCase().includes("plastique"))
+  const contenantDemi = contenants.find(c => c.nom.toLowerCase().includes("demi") || c.nom.toLowerCase().includes("petit"))
+
+  // Net = brut − (nb caisses × poids unitaire du contenant). Identique à la réception.
+  const calcNetPrep = (artId: string): number => {
+    const brut = Number(brutPoids[artId]) || 0
+    const tare = (Number(caisseGros[artId] ?? 0)) * (contenantGros?.poidsKg ?? 2.8)
+              + (Number(caisseDemi[artId] ?? 0)) * (contenantDemi?.poidsKg ?? 2.0)
+    return Math.max(0, Math.round((brut - tare) * 100) / 100)
+  }
 
   useEffect(() => {
     const all = store.getBonsPreparation()
     // Livreurs and magasiniers see only in_cours or brouillon bons
     const relevant = all.filter(b => b.statut !== "valide" || b.format === "numerique")
     setBons(relevant)
+    setContenants(store.getContenantsConfig().filter(c => c.actif))
   }, [])
 
   const refresh = () => {
@@ -239,6 +257,56 @@ export default function MobilePreparation({ user }: Props) {
                       <span className="text-xs text-muted-foreground">{ligne.unite}</span>
                       {ligne.valide && (
                         <span className="text-[10px] text-amber-600 font-semibold">(rectifier si besoin)</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pesée brut → net (même logique que la réception) */}
+                  {activeBon.statut !== "valide" && (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPesee(p => ({ ...p, [ligne.articleId]: !p[ligne.articleId] }))}
+                        className="flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9M18 7l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+                        {showPesee[ligne.articleId] ? "Masquer la pesée" : "Peser (brut → net)"}
+                      </button>
+                      {showPesee[ligne.articleId] && (
+                        <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 flex flex-col gap-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] font-bold text-slate-600">Poids brut (kg)</label>
+                              <input type="number" min={0} step={0.1}
+                                value={brutPoids[ligne.articleId] ?? ""}
+                                onChange={e => setBrutPoids(p => ({ ...p, [ligne.articleId]: e.target.value }))}
+                                className="px-2 py-1.5 rounded-lg border border-border bg-background text-sm font-bold text-center" placeholder="0" />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] font-bold text-slate-600">Caisses gros{contenantGros ? ` (${contenantGros.poidsKg}kg)` : ""}</label>
+                              <input type="number" min={0} step={1}
+                                value={caisseGros[ligne.articleId] ?? ""}
+                                onChange={e => setCaisseGros(p => ({ ...p, [ligne.articleId]: e.target.value }))}
+                                className="px-2 py-1.5 rounded-lg border border-border bg-background text-sm font-bold text-center" placeholder="0" />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] font-bold text-slate-600">Caisses demi{contenantDemi ? ` (${contenantDemi.poidsKg}kg)` : ""}</label>
+                              <input type="number" min={0} step={1}
+                                value={caisseDemi[ligne.articleId] ?? ""}
+                                onChange={e => setCaisseDemi(p => ({ ...p, [ligne.articleId]: e.target.value }))}
+                                className="px-2 py-1.5 rounded-lg border border-border bg-background text-sm font-bold text-center" placeholder="0" />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-blue-200">
+                            <span className="text-xs font-bold text-slate-700">
+                              Net = brut − tares = <span className="text-blue-800">{calcNetPrep(ligne.articleId).toFixed(2)} kg</span>
+                            </span>
+                            <button type="button"
+                              onClick={() => setLocalQtys(prev => ({ ...prev, [ligne.articleId]: calcNetPrep(ligne.articleId) }))}
+                              className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600">
+                              Utiliser le net
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}

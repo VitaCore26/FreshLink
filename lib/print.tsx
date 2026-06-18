@@ -616,6 +616,8 @@ export interface PrintBLOpts {
   patentOverride?:     string
   logoOverride?:       string
   piedDePageOverride?: string
+  docType?:            "bl" | "facture"   // titre du document
+  showLegal?:          boolean            // afficher RC / ICE / IF (défaut: true)
 }
 
 interface BOBLLigne {
@@ -659,9 +661,16 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
   const dateStr    = fmtDate(bl.date)
   const tva        = bl.tva ?? 0
   const montantTVA = bl.totalHT * (tva / 100)
+  const showLegal  = opts.showLegal !== false               // défaut: afficher RC/ICE/IF
+  const isFacture  = opts.docType === "facture"
+  const docLabel   = isFacture ? "Facture" : "Bon de Livraison"
+  // Ligne d'identifiants légaux société — masquée si showLegal=false
+  const legalLine  = showLegal
+    ? `<br>ICE: ${ice} — RC: ${rc} — IF: ${ifFiscal}${opts.patentOverride?" — Patente: "+opts.patentOverride:""}`
+    : ""
 
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
-<title>BL ${bl.numero}</title>
+<title>${docLabel} ${bl.numero}</title>
 <style>${baseCss(accent, gold)}</style></head><body>
 <div style="max-width:794px;margin:0 auto;padding:24px 28px">
 <div class="stripe"></div>
@@ -671,11 +680,11 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
     <div class="lh-co">
       <div class="lh-name">${companyNom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Fruits &amp; Légumes — Distribution Réseau Maroc</div>
-      <div class="lh-meta">${adresse}<br>Tél: ${telephone} — ICE: ${ice}<br>RC: ${rc} — IF: ${ifFiscal}${opts.patentOverride?" — Patente: "+opts.patentOverride:""}</div>
+      <div class="lh-meta">${adresse}<br>Tél: ${telephone}${legalLine}</div>
     </div>
   </div>
   <div class="lh-doc">
-    <div class="lh-title">Bon de Livraison</div>
+    <div class="lh-title">${docLabel}</div>
     <div class="lh-accent"></div>
     <div class="lh-num">${bl.numero}</div>
     <div class="lh-date">${dateStr}</div>
@@ -687,7 +696,7 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
     <div class="ic-title">Client / Destinataire</div>
     <div class="ic-val">${bl.clientNom}</div>
     <div class="ic-sub">${bl.clientAdresse ?? ""}</div>
-    ${bl.clientIce?`<div class="ic-sub">ICE: ${bl.clientIce}</div>`:""}
+    ${showLegal && bl.clientIce?`<div class="ic-sub">ICE: ${bl.clientIce}</div>`:""}
     ${bl.clientModalitePaiement?`<div class="ic-sub">Modalité: ${bl.clientModalitePaiement}</div>`:""}
   </div>
   <div class="info-card">
@@ -714,6 +723,7 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
   <div class="tot-row tot-final"><span class="lbl">TOTAL TTC</span><span class="val">${fmtDH(bl.totalTTC)}</span></div>
 </div></div>
 ${bl.notesBL?`<div class="notice"><strong>Notes:</strong> ${bl.notesBL}</div>`:""}
+${isFacture?`<div class="notice" style="margin-top:8px"><strong>Document :</strong> Facture${showLegal?" — valant pièce comptable (mentions légales incluses)":""}.</div>`:""}
 <div class="sig-grid">
   <div class="sig-box"><div class="sig-lbl">Signature Livreur</div><div class="sig-line">${bl.livreurNom??"—"}</div></div>
   <div class="sig-box"><div class="sig-lbl">Signature Client &amp; Cachet</div><div class="sig-line">${bl.clientNom}</div></div>
