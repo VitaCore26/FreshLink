@@ -11,6 +11,7 @@ const BackOfficeLayout    = dynamic(() => import("@/components/backoffice/BackOf
 const PortailClient       = dynamic(() => import("@/components/portail/PortailClient"),           { ssr: false, loading: () => <Spinner /> })
 const PortailFournisseur  = dynamic(() => import("@/components/portail/PortailFournisseur"),      { ssr: false, loading: () => <Spinner /> })
 const SecurityGuard       = dynamic(() => import("@/components/SecurityGuard"),                    { ssr: false })
+const CutoffNotifier      = dynamic(() => import("@/components/CutoffNotifier"),                    { ssr: false })
 
 function Spinner() {
   return (
@@ -183,6 +184,7 @@ export default function App() {
       <>
         {needsGuard ? <SecurityGuard skipGps={false}>{content}</SecurityGuard> : content}
         {bothSwitcher}
+        <CutoffNotifier user={user} />
       </>
     )
   }
@@ -191,6 +193,7 @@ export default function App() {
     <>
       <BackOfficeLayout user={user} onLogout={handleLogout} />
       {bothSwitcher}
+      <CutoffNotifier user={user} />
     </>
   )
 }

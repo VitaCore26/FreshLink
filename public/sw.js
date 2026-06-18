@@ -1,4 +1,4 @@
-const CACHE_NAME = 'freshlink-v3'
+const CACHE_NAME = 'freshlink-v4'
 const OFFLINE_URL = '/'
 
 // Assets to precache on install
@@ -92,4 +92,18 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting()
   }
+})
+
+// ── Notification click → ouvre / focus l'app (cut-offs Vita Fresh) ─────────────
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const target = (event.notification.data && event.notification.data.url) || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const client of list) {
+        if ('focus' in client) return client.focus()
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target)
+    })
+  )
 })
