@@ -181,7 +181,11 @@ export default function BORecap() {
   // --- Config tab ---
   const [cfgEmails, setCfgEmails] = useState({ ...emailCfg })
 
-  const ejsOk = isEmailJSConfigured()
+  // Les emails partent via Resend (serveur, /api/send-email) — la config est côté
+  // serveur (RESEND_API_KEY). On ne bloque donc plus sur EmailJS (supprimé) ; les
+  // erreurs éventuelles (clé absente/invalide) remontent au moment de l'envoi.
+  const ejsOk = true
+  void isEmailJSConfigured
 
   const refreshAll = useCallback(() => {
     setStats(computeStats(selectedDate))
@@ -738,8 +742,8 @@ export default function BORecap() {
               : <svg className="w-5 h-5 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             }
             {ejsOk
-              ? "EmailJS configuré — les emails peuvent être envoyés."
-              : "EmailJS non configuré. Allez dans Paramètres → EmailJS (SMTP) pour saisir vos identifiants."
+              ? "Emails via Resend (serveur) — prêts à être envoyés. En cas d'échec, vérifiez RESEND_API_KEY et le domaine vérifié."
+              : "Emails non disponibles."
             }
           </div>
 

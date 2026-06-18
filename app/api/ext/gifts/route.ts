@@ -39,6 +39,26 @@ async function sbFetch(path: string, init: RequestInit = {}): Promise<Response> 
   })
 }
 
+// Schéma JSONB unifié {id, payload, updated_at} : aplatit le payload (les colonnes
+// plates segment/stock_qte/etc. n'existent pas → on lit/écrit tout dans payload).
+type Row = { id: string; [k: string]: unknown }
+function flatten(rows: { id: string; payload?: Record<string, unknown> }[]): Row[] {
+  return (Array.isArray(rows) ? rows : []).filter(r => !String(r.id).startsWith("__")).map(r => ({ id: r.id, ...(r.payload ?? {}) }))
+}
+async function readRows(table: string): Promise<Row[]> {
+  const res = await sbFetch(`${table}?select=id,payload&limit=5000`)
+  if (!res.ok) throw new Error(await res.text())
+  return flatten(await res.json())
+}
+async function upsertRow(table: string, id: string, payload: Record<string, unknown>): Promise<boolean> {
+  const res = await sbFetch(table, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ id, payload, updated_at: new Date().toISOString() }),
+  })
+  return res.ok
+}
+
 // ═══ GET ═══════════════════════════════════════════════════════════
 export async function GET(req: NextRequest) {
   const origin = req.headers.get("origin")
@@ -51,38 +71,23 @@ export async function GET(req: NextRequest) {
   try {
     if (scope === "materials") {
       const segment = req.nextUrl.searchParams.get("segment")
-      let path = "fl_gift_materials?select=*&order=segment.asc,nom.asc&limit=200"
-      if (segment) path += `&segment=eq.${encodeURIComponent(segment)}`
-      const res = await sbFetch(path)
-      if (!res.ok) throw new Error(await res.text())
-      return NextResponse.json({ ok: true, data: await res.json() }, { headers: cors(origin) })
+      let mats = await readRows("fl_gift_materials")
+      if (segment) mats = mats.filter(m => String(m.segment ?? "") === segment)
+      mats.sort((a, b) => String(a.segment ?? "").localeCompare(String(b.segment ?? "")) || String(a.nom ?? "").localeCompare(String(b.nom ?? "")))
+      return NextResponse.json({ ok: true, data: mats.slice(0, 200) }, { headers: cors(origin) })
     }
 
     if (scope === "attributions") {
-      let path = "fl_gift_attributions?select=*&order=attribue_le.desc&limit=500"
-      if (clientId) path += `&client_id=eq.${encodeURIComponent(clientId)}`
-      if (statut)   path += `&statut=eq.${encodeURIComponent(statut)}`
-      const res = await sbFetch(path)
-      if (!res.ok) throw new Error(await res.text())
-      const attributions = await res.json() as { material_id: string; [k: string]: unknown }[]
-
-      // Joindre le nom du matériel (PostgREST embeddings cross-table peuvent
-      // ne pas être activés → on fait un petit join JS).
-      const matIds = Array.from(new Set(attributions.map(a => a.material_id))).filter(Boolean)
-      let materials: { id: string; nom: string; segment: string }[] = []
-      if (matIds.length > 0) {
-        const inList = matIds.map(id => `"${id}"`).join(",")
-        const mres = await sbFetch(`fl_gift_materials?select=id,nom,segment&id=in.(${encodeURIComponent(inList)})`)
-        if (mres.ok) materials = await mres.json()
-      }
+      let attributions = await readRows("fl_gift_attributions")
+      if (clientId) attributions = attributions.filter(a => String(a.client_id ?? "") === clientId)
+      if (statut)   attributions = attributions.filter(a => String(a.statut ?? "") === statut)
+      attributions.sort((a, b) => String(b.attribue_le ?? "").localeCompare(String(a.attribue_le ?? "")))
+      // Joindre le nom du matériel (join JS)
+      const materials = await readRows("fl_gift_materials")
       const matMap = new Map(materials.map(m => [m.id, m]))
-      const joined = attributions.map(a => {
+      const joined = attributions.slice(0, 500).map(a => {
         const m = matMap.get(String(a.material_id))
-        return {
-          ...a,
-          material_nom: m?.nom ?? null,
-          material_segment: m?.segment ?? null,
-        }
+        return { ...a, material_nom: m?.nom ?? null, material_segment: m?.segment ?? null }
       })
       return NextResponse.json({ ok: true, data: joined }, { headers: cors(origin) })
     }
@@ -114,8 +119,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "nom requis" }, { status: 400, headers: cors(origin) })
       }
       const id = body.id ? String(body.id) : "GM_" + Date.now().toString(36).toUpperCase()
-      const row = {
-        id,
+      const payload = {
         nom:           String(body.nom).trim(),
         segment,
         description:   body.description   ? String(body.description)   : null,
@@ -126,51 +130,39 @@ export async function POST(req: NextRequest) {
         seuil_valeur:  Number(body.seuilValeur ?? 0) || 0,
         actif:         body.actif === false ? false : true,
       }
-      const res = await sbFetch("fl_gift_materials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
-        body: JSON.stringify(row),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const created = await res.json()
-      return NextResponse.json({ ok: true, material: Array.isArray(created) ? created[0] : created }, { headers: cors(origin) })
+      if (!await upsertRow("fl_gift_materials", id, payload)) throw new Error("upsert matériel échoué")
+      return NextResponse.json({ ok: true, material: { id, ...payload } }, { headers: cors(origin) })
     }
 
     if (scope === "attribution") {
       if (!body.clientId || !body.materialId) {
         return NextResponse.json({ ok: false, error: "clientId et materialId requis" }, { status: 400, headers: cors(origin) })
       }
-      // Vérifier le stock matériel
-      const matRes = await sbFetch(`fl_gift_materials?id=eq.${encodeURIComponent(String(body.materialId))}&select=id,nom,segment,stock_qte,actif`)
-      if (!matRes.ok) throw new Error(await matRes.text())
-      const mats = await matRes.json() as { id: string; nom: string; segment: string; stock_qte: number; actif: boolean }[]
-      const mat = mats[0]
-      if (!mat)              return NextResponse.json({ ok: false, error: "Matériel introuvable" },  { status: 404, headers: cors(origin) })
-      if (!mat.actif)        return NextResponse.json({ ok: false, error: "Matériel désactivé" },    { status: 400, headers: cors(origin) })
-      if (mat.stock_qte <= 0) return NextResponse.json({ ok: false, error: "Stock matériel épuisé" }, { status: 400, headers: cors(origin) })
+      // Vérifier le stock matériel (lecture JSONB)
+      const materials = await readRows("fl_gift_materials")
+      const mat = materials.find(m => m.id === String(body.materialId))
+      if (!mat)                       return NextResponse.json({ ok: false, error: "Matériel introuvable" },  { status: 404, headers: cors(origin) })
+      if (mat.actif === false)        return NextResponse.json({ ok: false, error: "Matériel désactivé" },    { status: 400, headers: cors(origin) })
+      const stockQte = Number(mat.stock_qte ?? 0) || 0
+      if (stockQte <= 0)              return NextResponse.json({ ok: false, error: "Stock matériel épuisé" }, { status: 400, headers: cors(origin) })
 
       const id = "GA" + Date.now().toString(36).toUpperCase()
-      const row = {
-        id,
+      const payload = {
         client_id:     String(body.clientId),
         material_id:   String(body.materialId),
-        segment:       body.segment      ? String(body.segment)      : mat.segment,
+        segment:       body.segment      ? String(body.segment)      : String(mat.segment ?? "tous"),
         declenche_par: body.declenchePar ? String(body.declenchePar) : "manuel_bo",
         statut:        "a_livrer",
         attribue_le:   new Date().toISOString(),
       }
-      const res = await sbFetch("fl_gift_attributions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-        body: JSON.stringify(row),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const created = await res.json()
-      // 🛎 Le trigger SQL fl_notify_gift décrémente le stock + push notif Direction
+      if (!await upsertRow("fl_gift_attributions", id, payload)) throw new Error("upsert attribution échoué")
+      // Décrément du stock en code (pas de trigger SQL dans le schéma JSONB)
+      const { id: mId, ...matPayload } = mat
+      await upsertRow("fl_gift_materials", mId, { ...matPayload, stock_qte: Math.max(0, stockQte - 1) })
       return NextResponse.json({
         ok: true,
-        attribution: Array.isArray(created) ? created[0] : created,
-        message: `✅ ${mat.nom} attribué (stock restant : ${Math.max(0, mat.stock_qte - 1)})`,
+        attribution: { id, ...payload },
+        message: `✅ ${mat.nom} attribué (stock restant : ${Math.max(0, stockQte - 1)})`,
       }, { headers: cors(origin) })
     }
 
@@ -187,12 +179,8 @@ export async function POST(req: NextRequest) {
       ]
       let created = 0
       for (const d of defaults) {
-        const res = await sbFetch("fl_gift_materials", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
-          body: JSON.stringify({ ...d, stock_qte: 0, actif: true }),
-        })
-        if (res.ok) created++
+        const { id: dId, ...rest } = d
+        if (await upsertRow("fl_gift_materials", dId, { ...rest, stock_qte: 0, actif: true })) created++
       }
       return NextResponse.json({ ok: true, created, total: defaults.length, message: `✅ ${created} cadeaux dans le catalogue` }, { headers: cors(origin) })
     }
@@ -201,15 +189,16 @@ export async function POST(req: NextRequest) {
     //   Scanne fl_clients, cumule leur volume/CA, et attribue les cadeaux
     //   dont le seuil est atteint et pas déjà attribué.
     if (scope === "auto_scan") {
-      // 1. Charger matériels actifs en stock
-      const matRes = await sbFetch("fl_gift_materials?select=*&actif=eq.true")
-      const materials = matRes.ok ? await matRes.json() as { id: string; nom: string; segment: string; stock_qte: number; seuil_type: string; seuil_valeur: number }[] : []
+      // 1. Charger matériels actifs en stock (JSONB)
+      const materials = (await readRows("fl_gift_materials")).filter(m => m.actif !== false).map(m => ({
+        id: m.id, nom: String(m.nom ?? ""), segment: String(m.segment ?? "tous"),
+        stock_qte: Number(m.stock_qte ?? 0) || 0, seuil_type: String(m.seuil_type ?? ""), seuil_valeur: Number(m.seuil_valeur ?? 0) || 0,
+      }))
       // 2. Charger clients
       const cliRes = await sbFetch("fl_clients?select=id,payload&limit=5000")
       const clients = cliRes.ok ? await cliRes.json() as { id: string; payload: Record<string, unknown> }[] : []
       // 3. Charger attributions existantes (éviter doublons)
-      const attRes = await sbFetch("fl_gift_attributions?select=client_id,material_id&limit=5000")
-      const existing = attRes.ok ? await attRes.json() as { client_id: string; material_id: string }[] : []
+      const existing = await readRows("fl_gift_attributions")
       const dejaAttribue = new Set(existing.map(a => `${a.client_id}|${a.material_id}`))
 
       const attributions: { client: string; material: string; nom: string }[] = []
@@ -231,14 +220,14 @@ export async function POST(req: NextRequest) {
           else if (m.seuil_type === "montant_mad") atteint = caCumule >= m.seuil_valeur
           else if (m.seuil_type === "contrat") atteint = aContrat
           if (!atteint) continue
-          // Attribuer (le trigger SQL décrémente stock + notifie)
+          // Attribuer + décrémenter le stock en code (pas de trigger SQL)
           const id = "GA" + Date.now().toString(36).toUpperCase() + Math.floor(Math.random()*99)
-          const ok = await sbFetch("fl_gift_attributions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-            body: JSON.stringify({ id, client_id: c.id, material_id: m.id, segment: m.segment, declenche_par: "auto_scan", statut: "a_livrer", attribue_le: new Date().toISOString() }),
-          }).then(r => r.ok).catch(() => false)
-          if (ok) { attributions.push({ client: c.id, material: m.id, nom: m.nom }); dejaAttribue.add(`${c.id}|${m.id}`); m.stock_qte-- }
+          const ok = await upsertRow("fl_gift_attributions", id, { client_id: c.id, material_id: m.id, segment: m.segment, declenche_par: "auto_scan", statut: "a_livrer", attribue_le: new Date().toISOString() })
+          if (ok) {
+            attributions.push({ client: c.id, material: m.id, nom: m.nom })
+            dejaAttribue.add(`${c.id}|${m.id}`); m.stock_qte--
+            await upsertRow("fl_gift_materials", m.id, { nom: m.nom, segment: m.segment, stock_qte: Math.max(0, m.stock_qte), seuil_type: m.seuil_type, seuil_valeur: m.seuil_valeur, actif: true })
+          }
         }
       }
       return NextResponse.json({
@@ -281,14 +270,12 @@ export async function PATCH(req: NextRequest) {
       if (body.description !== undefined)  patch.description = body.description === null ? null : String(body.description)
       if (body.actif       !== undefined)  patch.actif       = body.actif === true
       if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: "rien à modifier" }, { status: 400, headers: cors(origin) })
-      const res = await sbFetch(`fl_gift_materials?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-        body: JSON.stringify(patch),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const updated = await res.json()
-      return NextResponse.json({ ok: true, material: Array.isArray(updated) ? updated[0] : updated }, { headers: cors(origin) })
+      const cur = (await readRows("fl_gift_materials")).find(m => m.id === id)
+      if (!cur) return NextResponse.json({ ok: false, error: "Matériel introuvable" }, { status: 404, headers: cors(origin) })
+      const { id: _mid, ...curPayload } = cur
+      const merged = { ...curPayload, ...patch }
+      if (!await upsertRow("fl_gift_materials", id, merged)) throw new Error("upsert matériel échoué")
+      return NextResponse.json({ ok: true, material: { id, ...merged } }, { headers: cors(origin) })
     }
 
     // Attribution
@@ -296,16 +283,13 @@ export async function PATCH(req: NextRequest) {
     if (!["a_livrer", "livre", "annule"].includes(newStatut)) {
       return NextResponse.json({ ok: false, error: "statut invalide (a_livrer | livre | annule)" }, { status: 400, headers: cors(origin) })
     }
-    const patch: Record<string, unknown> = { statut: newStatut }
-    if (newStatut === "livre") patch.livre_le = new Date().toISOString()
-    const res = await sbFetch(`fl_gift_attributions?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify(patch),
-    })
-    if (!res.ok) throw new Error(await res.text())
-    const updated = await res.json()
-    return NextResponse.json({ ok: true, attribution: Array.isArray(updated) ? updated[0] : updated }, { headers: cors(origin) })
+    const curAtt = (await readRows("fl_gift_attributions")).find(a => a.id === id)
+    if (!curAtt) return NextResponse.json({ ok: false, error: "Attribution introuvable" }, { status: 404, headers: cors(origin) })
+    const { id: _aid, ...curAttPayload } = curAtt
+    const merged: Record<string, unknown> = { ...curAttPayload, statut: newStatut }
+    if (newStatut === "livre") merged.livre_le = new Date().toISOString()
+    if (!await upsertRow("fl_gift_attributions", id, merged)) throw new Error("upsert attribution échoué")
+    return NextResponse.json({ ok: true, attribution: { id, ...merged } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }

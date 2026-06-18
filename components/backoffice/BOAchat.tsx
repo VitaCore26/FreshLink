@@ -238,7 +238,7 @@ export default function BOAchat() {
     const phone = fournisseur.telephone?.replace(/\D/g, "") ?? ""
     if (phone) {
       const lignesText = lignes
-        .map(l => `• ${l.articleNom}: ${l.quantite} — PA: ${l.prixAchat.toFixed(2)} DH`)
+        .map(l => `• ${l.articleNom}: ${l.quantite} — PA: ${(Number(l.prixAchat) || 0).toFixed(2)} DH`)
         .join("\n")
       const msg = encodeURIComponent(
         `🛒 Nouvelle commande FreshLink Pro\n` +
@@ -873,12 +873,17 @@ export default function BOAchat() {
               </thead>
               <tbody>
                 {articles.map(a => {
-                  const pv = a.pvMethode === "manuel" ? a.pvValeur
-                    : a.pvMethode === "pourcentage" ? a.prixAchat * (1 + a.pvValeur / 100)
-                    : a.prixAchat + a.pvValeur
+                  // ⚠️ Coercition numérique : les champs JSONB peuvent revenir en string
+                  // ("12") ou undefined → sinon "string".toFixed n'est pas une fonction (crash).
+                  const prixAchatN = Number(a.prixAchat) || 0
+                  const pvValeurN = Number(a.pvValeur) || 0
+                  const stockN = Number(a.stockDisponible) || 0
+                  const pv = a.pvMethode === "manuel" ? pvValeurN
+                    : a.pvMethode === "pourcentage" ? prixAchatN * (1 + pvValeurN / 100)
+                    : prixAchatN + pvValeurN
                   const charge = chargesArticle.find(c => c.id === a.chargeArticleId)
-                  const chargeMontant = charge?.montant ?? 0
-                  const coutRevient = a.prixAchat + chargeMontant
+                  const chargeMontant = Number(charge?.montant) || 0
+                  const coutRevient = prixAchatN + chargeMontant
                   const margeNette = pv - coutRevient
                   const margePct = pv > 0 ? (margeNette / pv) * 100 : 0
                   return (
@@ -902,10 +907,10 @@ export default function BOAchat() {
                         <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{a.famille ?? "—"}</span>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{a.unite}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${a.stockDisponible < 50 ? "text-red-600" : "text-green-600"}`}>
-                        {a.stockDisponible}
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${stockN < 50 ? "text-red-600" : "text-green-600"}`}>
+                        {stockN}
                       </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground font-mono text-xs">{a.prixAchat.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground font-mono text-xs">{prixAchatN.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1.5">
                           <select

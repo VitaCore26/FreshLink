@@ -51,7 +51,7 @@ DECLARE
     -- Communication / alertes / compteur
     'fl_messages','fl_notices','fl_notifications','fl_cutoffs','fl_shop_analytics',
     -- Programmes / pricing
-    'fl_gift_materials','fl_bonus_matrix','fl_credits_fournisseurs','fl_pricing_rules',
+    'fl_gift_materials','fl_gift_attributions','fl_bonus_matrix','fl_credits_fournisseurs','fl_pricing_rules',
     -- Finance V2
     'fl_invoices','fl_avoirs','fl_wallet_transactions','fl_paiements',
     -- Parrainage / tracking / promos

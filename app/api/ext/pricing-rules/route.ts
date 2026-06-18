@@ -51,14 +51,19 @@ export async function GET(req: NextRequest) {
 
   const actif    = req.nextUrl.searchParams.get("actif")
   const segment  = req.nextUrl.searchParams.get("segment")
-  let path = "fl_pricing_rules?select=*&order=priorite.asc,nom.asc&limit=300"
-  if (actif != null) path += `&actif=eq.${actif === "true"}`
-  if (segment)       path += `&cible_segment=eq.${encodeURIComponent(segment)}`
 
   try {
-    const res = await sbFetch(path)
+    // Schéma JSONB {id, payload, updated_at} : on lit le payload et on filtre/trie en JS
+    const res = await sbFetch("fl_pricing_rules?select=id,payload,updated_at&limit=500")
     if (!res.ok) throw new Error(await res.text())
-    return NextResponse.json({ ok: true, data: await res.json() }, { headers: cors(origin) })
+    const raw = await res.json() as { id: string; payload: Record<string, unknown> }[]
+    let rows: Record<string, unknown>[] = (Array.isArray(raw) ? raw : [])
+      .filter(r => !String(r.id).startsWith("__"))
+      .map(r => ({ id: r.id, ...(r.payload ?? {}) } as Record<string, unknown>))
+    if (actif != null) rows = rows.filter(r => (r.actif !== false) === (actif === "true"))
+    if (segment)       rows = rows.filter(r => String(r.cible_segment ?? "tous") === segment)
+    rows.sort((a, b) => (Number(a.priorite ?? 100) - Number(b.priorite ?? 100)) || String(a.nom ?? "").localeCompare(String(b.nom ?? "")))
+    return NextResponse.json({ ok: true, data: rows.slice(0, 300) }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
@@ -102,8 +107,7 @@ export async function POST(req: NextRequest) {
   }
 
   const id = body.id ? String(body.id) : "PR" + Date.now().toString(36).toUpperCase()
-  const row = {
-    id,
+  const payload = {
     nom:           String(body.nom).trim(),
     type,
     cible_segment: segment,
@@ -121,12 +125,11 @@ export async function POST(req: NextRequest) {
   try {
     const res = await sbFetch("fl_pricing_rules", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
-      body: JSON.stringify(row),
+      headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, payload, updated_at: new Date().toISOString() }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const created = await res.json()
-    return NextResponse.json({ ok: true, rule: Array.isArray(created) ? created[0] : created }, { headers: cors(origin) })
+    return NextResponse.json({ ok: true, rule: { id, ...payload } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
@@ -158,14 +161,18 @@ export async function PATCH(req: NextRequest) {
   if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: "rien à modifier" }, { status: 400, headers: cors(origin) })
 
   try {
-    const res = await sbFetch(`fl_pricing_rules?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify(patch),
+    // JSONB : lire le payload existant, fusionner le patch, ré-upsert la ligne complète
+    const getRes = await sbFetch(`fl_pricing_rules?id=eq.${encodeURIComponent(id)}&select=payload`)
+    const existing = getRes.ok ? await getRes.json() : []
+    const current = (Array.isArray(existing) && existing[0]?.payload) ? existing[0].payload as Record<string, unknown> : {}
+    const merged = { ...current, ...patch }
+    const res = await sbFetch("fl_pricing_rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, payload: merged, updated_at: new Date().toISOString() }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const updated = await res.json()
-    return NextResponse.json({ ok: true, rule: Array.isArray(updated) ? updated[0] : updated }, { headers: cors(origin) })
+    return NextResponse.json({ ok: true, rule: { id, ...merged } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }

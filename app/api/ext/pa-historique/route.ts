@@ -44,16 +44,22 @@ export async function GET(req: NextRequest) {
   const fournisseur = req.nextUrl.searchParams.get("fournisseur")
   const dateMin     = req.nextUrl.searchParams.get("dateMin")
   const dateMax     = req.nextUrl.searchParams.get("dateMax")
-  let path = "fl_pa_historique?select=*&order=date_marche.desc,created_at.desc&limit=500"
-  if (article)     path += `&article_id=eq.${encodeURIComponent(article)}`
-  if (fournisseur) path += `&fournisseur_id=eq.${encodeURIComponent(fournisseur)}`
-  if (dateMin)     path += `&date_marche=gte.${encodeURIComponent(dateMin)}`
-  if (dateMax)     path += `&date_marche=lte.${encodeURIComponent(dateMax)}`
 
   try {
-    const res = await sbFetch(path)
+    // Schéma JSONB unifié : {id, payload, updated_at}. On lit le payload et on
+    // filtre/trie côté serveur (les colonnes plates date_marche/article_id n'existent pas).
+    const res = await sbFetch("fl_pa_historique?select=id,payload,updated_at&limit=2000")
     if (!res.ok) throw new Error(await res.text())
-    return NextResponse.json({ ok: true, data: await res.json() }, { headers: cors(origin) })
+    const raw = await res.json() as { id: string; payload: Record<string, unknown>; updated_at: string }[]
+    let rows: Record<string, unknown>[] = (Array.isArray(raw) ? raw : [])
+      .filter(r => !String(r.id).startsWith("__"))
+      .map(r => ({ id: r.id, ...(r.payload ?? {}), created_at: (r.payload?.created_at as string) ?? r.updated_at } as Record<string, unknown>))
+    if (article)     rows = rows.filter(r => String(r.article_id ?? "") === article)
+    if (fournisseur) rows = rows.filter(r => String(r.fournisseur_id ?? "") === fournisseur)
+    if (dateMin)     rows = rows.filter(r => String(r.date_marche ?? "") >= dateMin)
+    if (dateMax)     rows = rows.filter(r => String(r.date_marche ?? "") <= dateMax)
+    rows.sort((a, b) => String(b.date_marche ?? "").localeCompare(String(a.date_marche ?? "")) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+    return NextResponse.json({ ok: true, data: rows.slice(0, 500) }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
@@ -74,24 +80,24 @@ export async function POST(req: NextRequest) {
   if (pa <= 0)   return NextResponse.json({ ok: false, error: "pa doit être > 0" }, { status: 400, headers: cors(origin) })
 
   const id = "PA" + Date.now().toString(36).toUpperCase()
-  const row = {
-    id,
+  const now = new Date().toISOString()
+  const payload = {
     article_id:     article,
     fournisseur_id: body.fournisseurId ? String(body.fournisseurId) : null,
     pa,
     volume_kg:      Number(body.volumeKg ?? 0) || 0,
-    date_marche:    body.dateMarche ? String(body.dateMarche) : new Date().toISOString().slice(0, 10),
+    date_marche:    body.dateMarche ? String(body.dateMarche) : now.slice(0, 10),
+    created_at:     now,
   }
 
   try {
     const res = await sbFetch("fl_pa_historique", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify(row),
+      headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, payload, updated_at: now }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const created = await res.json()
-    return NextResponse.json({ ok: true, entry: Array.isArray(created) ? created[0] : created }, { headers: cors(origin) })
+    return NextResponse.json({ ok: true, entry: { id, ...payload } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
