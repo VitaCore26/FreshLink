@@ -937,12 +937,29 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
               </table>
             </div>
           )}
-          {charges.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              <KpiCard label="Total charges" value={`${fmt(charges.reduce((s, c) => s + c.montant, 0))} DH`} color="text-red-600" />
-              <KpiCard label="Charges recurrentes/mois" value={`${fmt(charges.filter(c => c.recurrente).reduce((s, c) => s + c.montant, 0))} DH`} color="text-orange-600" />
-            </div>
-          )}
+          {(() => {
+            // Séparation claire FIXE (récurrente) vs VARIABLE (ponctuelle) + lien RH
+            const fixesFinance = charges.filter(c => c.recurrente).reduce((s, c) => s + c.montant, 0)
+            const variables = charges.filter(c => !c.recurrente).reduce((s, c) => s + c.montant, 0)
+            let rhFixes = 0
+            try {
+              const cf = JSON.parse(localStorage.getItem("fl_charges_fixes") ?? "{}") as Record<string, unknown>
+              rhFixes = Object.values(cf).reduce((s: number, v) => s + (Number(v) || 0), 0)
+            } catch { /* noop */ }
+            return (
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <KpiCard label="Charges fixes (récurrentes)" value={`${fmt(fixesFinance)} DH`} color="text-orange-600" />
+                  <KpiCard label="Charges variables (ponctuelles)" value={`${fmt(variables)} DH`} color="text-slate-600" />
+                  <KpiCard label="Charges fixes RH / mois" value={`${fmt(rhFixes)} DH`} color="text-violet-600" />
+                  <KpiCard label="Total charges fixes / mois" value={`${fmt(fixesFinance + rhFixes)} DH`} color="text-red-600" />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  💡 Les <strong>charges fixes RH</strong> (loyer, assurances, téléphonie…) sont définies dans <strong>Comptabilité RH → Charges fixes mensuelles</strong> et reportées ici automatiquement. Les charges <strong>fixes</strong> (case « récurrente ») et <strong>variables</strong> sont séparées ci-dessus.
+                </p>
+              </div>
+            )
+          })()}
         </div>
       )}
 

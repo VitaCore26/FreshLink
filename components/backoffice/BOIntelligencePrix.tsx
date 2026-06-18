@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import type { User } from "@/lib/store"
+import { store, type User } from "@/lib/store"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,10 @@ const EMPTY: Omit<CompetitorEntry, "id" | "date"> = {
 
 export default function BOIntelligencePrix({ user }: { user: User }) {
   const [entries, setEntries] = useState<CompetitorEntry[]>(getEntries)
+  // Liste des produits du catalogue → liste déroulante pour le relevé de prix
+  const [articleNames] = useState<string[]>(() => {
+    try { return Array.from(new Set(store.getArticles().map(a => a.nom).filter(Boolean))).sort() } catch { return [] }
+  })
   const [form, setForm] = useState({ ...EMPTY })
   const [editing, setEditing] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -356,12 +360,19 @@ export default function BOIntelligencePrix({ user }: { user: User }) {
                   className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
 
-              {/* SKU */}
+              {/* SKU — liste déroulante du catalogue (+ saisie libre = produit hors liste) */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-slate-700">Produit / SKU *</label>
                 <input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))}
-                  placeholder="Ex: Tomates rondes, Bananes cavendish..."
+                  list="ip-article-list"
+                  placeholder="Choisir dans le catalogue, ou saisir un produit hors liste…"
                   className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <datalist id="ip-article-list">
+                  {articleNames.map(n => <option key={n} value={n} />)}
+                </datalist>
+                {form.sku.trim() && !articleNames.some(n => n.toLowerCase() === form.sku.trim().toLowerCase()) && (
+                  <p className="text-[11px] text-amber-600 font-semibold">⏳ Produit hors catalogue — relevé enregistré, mais non ajouté au catalogue sans validation admin.</p>
+                )}
               </div>
 
               {/* Prix concurrent */}
