@@ -144,6 +144,7 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
   }
   const [search, setSearch] = useState("")
   const [famille, setFamille] = useState("")
+  const [sortName, setSortName] = useState<"none" | "az" | "za">("none")
   const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set())
 
   // Article form
@@ -187,6 +188,10 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
     const matchSearch = (a.nom ?? "").toLowerCase().includes(search.toLowerCase()) || (a.nomAr ?? "").includes(search)
     const matchFam = famille === "" || a.famille === famille
     return matchSearch && matchFam
+  }).sort((a, b) => {
+    if (sortName === "none") return 0
+    const cmp = (a.nom ?? "").localeCompare(b.nom ?? "", "fr", { sensitivity: "base" })
+    return sortName === "az" ? cmp : -cmp
   })
 
   // ---- Article CRUD ----
@@ -382,6 +387,13 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
             <option value="">Toutes familles</option>
             {FAMILLES_ARTICLES.map(f => <option key={f} value={f}>{f}</option>)}
           </select>
+          <button type="button"
+            onClick={() => setSortName(s => s === "az" ? "za" : s === "za" ? "none" : "az")}
+            title="Trier les articles par nom"
+            className={`px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition-colors ${sortName !== "none" ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground"}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9M3 12h5m4 0l4 4m0 0l4-4m-4 4V4" /></svg>
+            Nom {sortName === "az" ? "(A→Z)" : sortName === "za" ? "(Z→A)" : ""}
+          </button>
         </div>
       )}
 
