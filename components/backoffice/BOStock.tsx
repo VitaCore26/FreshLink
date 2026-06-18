@@ -194,6 +194,18 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
     return sortName === "az" ? cmp : -cmp
   })
 
+  // Détection des articles EN DOUBLE (même nom normalisé) — pour nettoyage
+  const dupNames = (() => {
+    const counts = new Map<string, number>()
+    for (const a of articles) {
+      const k = (a.nom ?? "").trim().toLowerCase()
+      if (k) counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    return new Set([...counts.entries()].filter(([, n]) => n > 1).map(([k]) => k))
+  })()
+  const isDup = (a: Article) => dupNames.has((a.nom ?? "").trim().toLowerCase())
+  const nbDupArticles = articles.filter(isDup).length
+
   // ---- Article CRUD ----
   const openNewArt = () => {
     setEditArt(null)
@@ -508,6 +520,13 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
 
       {/* Articles (CRUD) */}
       {tab === "articles" && (
+        <div className="flex flex-col gap-3">
+          {nbDupArticles > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 border border-orange-200 text-sm text-orange-800">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
+              <span><strong>{nbDupArticles} article(s) en double</strong> (même nom) — marqués <span className="px-1.5 py-0.5 rounded bg-orange-200 text-orange-900 text-[10px] font-bold">DOUBLON</span> ci-dessous. Pour les fusionner/nettoyer : <strong>Bons d'achat → « Fusionner les doublons »</strong>.</span>
+            </div>
+          )}
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -523,9 +542,12 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
               </thead>
               <tbody>
                 {filtered.map((a, i) => (
-                  <tr key={a.id} style={{ borderTop: "1px solid oklch(0.87 0.012 240)", background: i % 2 === 0 ? "white" : "oklch(0.975 0.003 240)" }}>
+                  <tr key={a.id} style={{ borderTop: "1px solid oklch(0.87 0.012 240)", background: isDup(a) ? "oklch(0.97 0.04 70)" : i % 2 === 0 ? "white" : "oklch(0.975 0.003 240)" }}>
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-foreground">{a.nom}</p>
+                      <p className="font-semibold text-foreground flex items-center gap-1.5">
+                        {a.nom}
+                        {isDup(a) && <span className="px-1.5 py-0.5 rounded bg-orange-200 text-orange-900 text-[10px] font-bold" title="Article en double (même nom)">DOUBLON</span>}
+                      </p>
                       <p className="font-arabic text-sm text-muted-foreground" dir="rtl" lang="ar">{a.nomAr}</p>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{a.famille}</td>
@@ -549,6 +571,7 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 

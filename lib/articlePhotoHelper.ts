@@ -24,9 +24,16 @@ export interface ArticleLike {
  *
  * Ne retourne JAMAIS une chaîne vide.
  */
+// Un "faux" visuel (placeholder/SVG inline) ne doit PAS bloquer la vraie photo
+// par nom : les anciens articles ont souvent une photo = placehold.co/data:svg.
+function isPlaceholder(p: string): boolean {
+  return !p || /placehold|placeholder|dummyimage|via\.placeholder|data:image\/svg/i.test(p)
+}
+
 export function resolveArticlePhoto(article: ArticleLike | null | undefined): string {
   if (!article) return getArticlePhoto("Article", "")
   const stored = (article.photo ?? "").toString().trim()
-  if (stored) return stored
+  if (stored && !isPlaceholder(stored)) return stored
+  // Photo absente OU placeholder → vraie photo mappée par nom/famille (jamais vide)
   return getArticlePhoto(article.nom ?? "Article", article.famille ?? "")
 }
