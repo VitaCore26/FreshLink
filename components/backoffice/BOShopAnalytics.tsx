@@ -7,6 +7,7 @@ import { BarChart3, Eye, MousePointerClick, MapPin, FileText, RefreshCw, Save, G
 
 interface Stats {
   total: { visits: number; clicks: number }
+  online?: number
   aujourdhui: { visits: number; clicks: number }
   parJour: { date: string; visits: number; clicks: number }[]
   topPages: { label: string; count: number }[]
@@ -84,8 +85,9 @@ export default function BOShopAnalytics() {
       {stats && (
         <>
           {/* Cartes */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
+              { l: "🟢 En ligne maintenant", v: stats.online ?? 0, icon: <Eye className="w-4 h-4" />, c: "#16a34a" },
               { l: "Visites (période)", v: stats.total.visits, icon: <Eye className="w-4 h-4" />, c: "#0ea5e9" },
               { l: "Visites aujourd'hui", v: stats.aujourdhui.visits, icon: <Eye className="w-4 h-4" />, c: "#16a34a" },
               { l: "Clics (période)", v: stats.total.clicks, icon: <MousePointerClick className="w-4 h-4" />, c: "#d97706" },

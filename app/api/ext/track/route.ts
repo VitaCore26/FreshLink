@@ -35,8 +35,32 @@ export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin")
   if (!SB_SRV) return NextResponse.json({ ok: false, error: "service_role manquante" }, { status: 500, headers: cors(origin) })
 
-  let body: { type?: string; page?: string; label?: string; lat?: number; lng?: number; acc?: number } = {}
+  let body: { type?: string; page?: string; label?: string; lat?: number; lng?: number; acc?: number; sid?: string } = {}
   try { body = await req.json() } catch { /* tracking best-effort */ }
+
+  // ── Heartbeat « en ligne » : une seule ligne id=__online { sessions: {sid: ts} },
+  //   auto-élaguée (> 3 min). N'incrémente PAS les visites. (Compteur approximatif.)
+  if (body.type === "ping" && body.sid) {
+    const sid = String(body.sid).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)
+    if (sid) {
+      const hdrs = { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}`, "Content-Type": "application/json" }
+      try {
+        const getR = await fetch(`${SB_URL}/rest/v1/fl_shop_analytics?id=eq.__online&select=payload`, { headers: hdrs, cache: "no-store" })
+        const rows = getR.ok ? await getR.json() : []
+        const sessions: Record<string, number> = { ...(rows[0]?.payload?.sessions ?? {}) }
+        const nowMs = Date.now()
+        sessions[sid] = nowMs
+        // élague les sessions inactives depuis > 3 min
+        for (const k of Object.keys(sessions)) if (nowMs - Number(sessions[k]) > 180_000) delete sessions[k]
+        await fetch(`${SB_URL}/rest/v1/fl_shop_analytics`, {
+          method: "POST",
+          headers: { ...hdrs, Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ id: "__online", payload: { sessions }, updated_at: new Date().toISOString() }),
+        })
+      } catch { /* best-effort */ }
+    }
+    return NextResponse.json({ ok: true }, { headers: cors(origin) })
+  }
 
   // "point" = relevé GPS seul (n'incrémente NI visite NI clic — évite le double comptage)
   const type = body.type === "click" ? "click" : body.type === "point" ? "point" : "view"

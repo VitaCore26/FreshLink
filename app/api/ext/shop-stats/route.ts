@@ -46,8 +46,17 @@ export async function GET(req: NextRequest) {
     const events: Record<string, number> = {}
     let points: GpsPoint[] = []
     let totalVisits = 0, totalClicks = 0
+    // Visiteurs EN LIGNE (sessions actives < 3 min, depuis la ligne __online)
+    let online = 0
+    try {
+      const onlineRow = rows.find(r => r.id === "__online")?.payload as { sessions?: Record<string, number> } | undefined
+      const sessions = onlineRow?.sessions ?? {}
+      const nowMs = Date.now()
+      online = Object.values(sessions).filter(ts => nowMs - Number(ts) <= 180_000).length
+    } catch { /* noop */ }
+
     const parJour = rows
-      .filter(r => r.id !== "__config")
+      .filter(r => !String(r.id).startsWith("__"))
       .map(r => {
         const p = r.payload || {}
         totalVisits += p.visits || 0
@@ -70,6 +79,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       periode: { days, depuis: start },
       total: { visits: totalVisits, clicks: totalClicks },
+      online,
       aujourdhui: { visits: todayRow.visits || 0, clicks: todayRow.clicks || 0 },
       parJour,
       topPages: topN(pages),
