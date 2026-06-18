@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { store, type SourcingEntry, type SourcingGrade, type SourcingStatut, type Article } from "@/lib/store"
+import { store, type SourcingEntry, type SourcingGrade, type SourcingStatut, type Article, type Fournisseur } from "@/lib/store"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
 const CATEGORIES = ["Légumes fruits","Légumes racines","Légumes feuilles","Herbes aromatiques","Agrumes","Fruits tropicaux","Fruits rouges","Fruits secs","Céréales","Autre"]
@@ -34,9 +34,12 @@ const EMPTY_FORM = (): Omit<SourcingEntry, "id" | "createdAt" | "updatedAt" | "u
   articleId: "",
   articleNom: "",
   categorie: "Légumes fruits",
+  produitAValider: false,
+  fournisseurId: "",
   fournisseurNom: "",
   fournisseurTel: "",
   fournisseurContact: "",
+  fournisseurAValider: false,
   region: "Casablanca",
   marche: "",
   adresse: "",
@@ -59,6 +62,7 @@ const EMPTY_FORM = (): Omit<SourcingEntry, "id" | "createdAt" | "updatedAt" | "u
 export default function BOSourcing({ user }: { user?: { id: string; name: string } }) {
   const [entries, setEntries]     = useState<SourcingEntry[]>([])
   const [articles, setArticles]   = useState<Article[]>([])
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([])
   const [view, setView]           = useState<"list" | "form" | "detail">("list")
   const [editId, setEditId]       = useState<string | null>(null)
   const [selected, setSelected]   = useState<SourcingEntry | null>(null)
@@ -76,6 +80,7 @@ export default function BOSourcing({ user }: { user?: { id: string; name: string
   const load = useCallback(() => {
     setEntries(store.getSourcingEntries())
     setArticles(store.getArticles())
+    setFournisseurs(store.getFournisseurs())
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -352,21 +357,25 @@ export default function BOSourcing({ user }: { user?: { id: string; name: string
             <div className="sm:col-span-2 flex flex-col gap-1">
               <label className="text-xs font-semibold text-muted-foreground">Nom article *</label>
               <div className="flex gap-2">
-                <input value={form.articleNom} onChange={e => setForm(f => ({ ...f, articleNom: e.target.value }))}
-                  placeholder="Ex: Tomates rondes, Oranges Navel..."
+                <input value={form.articleNom}
+                  onChange={e => setForm(f => ({ ...f, articleNom: e.target.value, articleId: "", produitAValider: !!e.target.value.trim() }))}
+                  placeholder="Choisir dans le catalogue, ou saisir un nouveau produit →"
                   className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 {articles.length > 0 && (
                   <ArticleCombobox
                     articles={articles}
                     value={form.articleId ?? ""}
                     onChange={(artId, art) => {
-                      if (art) setForm(f => ({ ...f, articleId: art.id, articleNom: art.nom, categorie: art.famille ?? f.categorie, unite: art.unite ?? f.unite }))
+                      if (art) setForm(f => ({ ...f, articleId: art.id, articleNom: art.nom, categorie: art.famille ?? f.categorie, unite: art.unite ?? f.unite, produitAValider: false }))
                     }}
                     placeholder="Catalogue..."
                     className="w-48"
                   />
                 )}
               </div>
+              {form.produitAValider && form.articleNom.trim() && (
+                <p className="text-[11px] text-amber-600 font-semibold">⏳ Nouveau produit hors catalogue — sera proposé à la validation d&apos;un admin (non ajouté automatiquement).</p>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-muted-foreground">Catégorie</label>
@@ -396,11 +405,32 @@ export default function BOSourcing({ user }: { user?: { id: string; name: string
             Fournisseur / المورد
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-muted-foreground">Nom fournisseur *</label>
-              <input value={form.fournisseurNom} onChange={e => setForm(f => ({ ...f, fournisseurNom: e.target.value }))}
-                placeholder="Nom du fournisseur / المورد"
-                className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label className="text-xs font-semibold text-muted-foreground">Fournisseur *</label>
+              <select
+                value={form.fournisseurAValider ? "__autre" : (form.fournisseurId || "")}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === "__autre") { setForm(f => ({ ...f, fournisseurId: "", fournisseurNom: "", fournisseurAValider: true })) }
+                  else if (v === "") { setForm(f => ({ ...f, fournisseurId: "", fournisseurNom: "", fournisseurAValider: false })) }
+                  else {
+                    const fr = fournisseurs.find(x => x.id === v)
+                    if (fr) setForm(f => ({ ...f, fournisseurId: fr.id, fournisseurNom: fr.nom, fournisseurTel: fr.telephone ?? f.fournisseurTel, fournisseurContact: fr.contact ?? f.fournisseurContact, fournisseurAValider: false }))
+                  }
+                }}
+                className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">— Choisir un fournisseur —</option>
+                {fournisseurs.map(fr => <option key={fr.id} value={fr.id}>{fr.nom}</option>)}
+                <option value="__autre">➕ Autre / nouveau fournisseur (à valider)</option>
+              </select>
+              {form.fournisseurAValider && (
+                <>
+                  <input value={form.fournisseurNom} onChange={e => setForm(f => ({ ...f, fournisseurNom: e.target.value }))}
+                    placeholder="Nom du nouveau fournisseur / المورد"
+                    className="mt-1 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <p className="text-[11px] text-amber-600 font-semibold">⏳ Nouveau fournisseur hors liste — sera proposé à la validation d&apos;un admin (non ajouté automatiquement).</p>
+                </>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-muted-foreground">Téléphone / WhatsApp</label>

@@ -1396,9 +1396,14 @@ export interface SourcingEntry {
   articleNom: string           // free text name (mandatory)
   categorie: string            // Légumes, Fruits, Herbes, Agrumes...
   // Supplier
+  fournisseurId?: string       // lien optionnel vers fl_fournisseurs
   fournisseurNom: string
   fournisseurTel?: string
   fournisseurContact?: string  // contact person name
+  // Produit/fournisseur HORS liste → proposés, à valider par un admin avant ajout
+  // aux catalogues (le relevé reste utilisable, mais rien n'est créé sans approbation)
+  produitAValider?: boolean
+  fournisseurAValider?: boolean
   // Location
   region: string               // city/region (Casablanca, Agadir, Marrakech...)
   marche: string               // souk/market name
