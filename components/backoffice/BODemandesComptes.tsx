@@ -115,7 +115,7 @@ export default function BODemandesComptes({ user }: Props) {
           const p = r.payload ?? {}
           return {
             id:        r.id,
-            type:      String(p.type ?? "client") as "client" | "fournisseur",
+            type:      String(p.type ?? "client") as "client" | "fournisseur" | "livreur",
             sous_type: p.sous_type ? String(p.sous_type) : undefined,
             nom:       String(p.nom ?? ""),
             email:     String(p.email ?? ""),
@@ -249,13 +249,20 @@ export default function BODemandesComptes({ user }: Props) {
     if (!approveForm.email.trim() || !approveForm.nom.trim() || !approveForm.password.trim()) {
       setMsg({ ok: false, text: "Tous les champs sont requis." }); return
     }
+    const role: User["role"] = selected.type === "client" ? "client" : selected.type === "livreur" ? "livreur" : "fournisseur"
     const newUser: User = {
       id: store.genId(), name: approveForm.nom.trim(), email: approveForm.email.trim(),
       password: approveForm.password.trim(),
-      role: selected.type === "client" ? "client" : "fournisseur",
-      actif: true, accessType: "both",
+      role,
+      actif: true, accessType: selected.type === "livreur" ? "mobile" : "both",
       ...(selected.type === "client" && selected._linkedClientId ? { clientId: selected._linkedClientId } : {}),
       ...(selected.type === "fournisseur" && selected._linkedFournisseurId ? { fournisseurId: selected._linkedFournisseurId } : {}),
+    }
+    // Livreur : activer le compte du livreur lié (créé "en_attente" depuis Dispatch)
+    if (selected.type === "livreur" && selected._linkedLivreurId) {
+      const livreurs = store.getLivreurs().map(l =>
+        l.id === selected._linkedLivreurId ? { ...l, actif: true, compteStatut: "valide" as const } : l)
+      store.saveLivreurs(livreurs)
     }
     if (selected.type === "client" && !selected._linkedClientId) {
       const client: Client = {

@@ -431,6 +431,8 @@ export interface Livreur {
   consommationL100?: number        // consommation moyenne L/100km (estimation)
   notes?: string
   actif: boolean
+  // Compte ERP du livreur : créé en attente, activé après validation admin (Demandes de comptes)
+  compteStatut?: "en_attente" | "valide" | "rejete"
 }
 
 export interface MotifRetour {
@@ -3681,7 +3683,7 @@ export type AccountRequestStatut = "en_attente" | "approuve" | "rejete"
 
 export interface AccountRequest {
   id: string
-  type: "client" | "fournisseur"
+  type: "client" | "fournisseur" | "livreur"
   // Sous-type demandé (chr / marchand / particulier / fournisseur / client…)
   sous_type?: string
   nom: string
@@ -3712,6 +3714,7 @@ export interface AccountRequest {
   _linkedClientId?: string
   _linkedFournisseurId?: string
   _linkedUserId?: string
+  _linkedLivreurId?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

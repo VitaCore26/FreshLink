@@ -257,7 +257,28 @@ export default function BODispatch({ user }: Props) {
       const idx = all.findIndex(l => l.id === editingLivreur.id)
       if (idx >= 0) { all[idx] = { ...all[idx], ...livreurForm }; store.saveLivreurs(all) }
     } else {
-      store.addLivreur({ ...livreurForm, id: store.genId() })
+      // Nouveau livreur → compte ERP EN ATTENTE de validation admin (pas actif tant
+      // que l'admin n'a pas approuvé via « Demandes de comptes »).
+      const livreurId = store.genId()
+      store.addLivreur({ ...livreurForm, id: livreurId, actif: false, compteStatut: "en_attente" })
+      // Demande de compte ERP livreur → file "Demandes de comptes" (lue en localStorage par le BO)
+      try {
+        const reqs = JSON.parse(localStorage.getItem("fl_account_requests") ?? "[]")
+        reqs.push({
+          id: store.genId(),
+          type: "livreur",
+          nom: `${livreurForm.prenom} ${livreurForm.nom}`.trim(),
+          email: "",
+          telephone: livreurForm.telephone ?? "",
+          societe: livreurForm.societe ?? "",
+          message: `Demande de compte ERP livreur (${livreurForm.type}) — créée depuis Dispatch & Livreurs.`,
+          statut: "en_attente",
+          createdAt: new Date().toISOString(),
+          _linkedLivreurId: livreurId,
+        })
+        localStorage.setItem("fl_account_requests", JSON.stringify(reqs))
+      } catch { /* noop */ }
+      alert("Livreur créé — une demande de compte ERP a été envoyée à l'admin pour validation (Demandes de comptes).")
     }
     setShowLivreurForm(false)
     refresh()
