@@ -49,7 +49,15 @@ export async function GET(req: NextRequest) {
       if (res.ok) {
         const data: Record<string, unknown>[] = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          const articles = applyFilters(data, q, tag).sort(byOrdre).map(normalize)
+          // La vue renvoie les colonnes plates + le payload complet (camelCase). On
+          // fusionne le payload pour exposer TOUTES les options marketplace (promo,
+          // description, tags, statut, conditionnement…) — sinon elles restent
+          // enfouies dans payload et n'arrivent jamais à la boutique.
+          const enriched = data.map(row => {
+            const p = (row.payload && typeof row.payload === "object" ? row.payload : {}) as Record<string, unknown>
+            return normalizePayload({ ...p, ...row })
+          })
+          const articles = applyFilters(enriched, q, tag).sort(byOrdre)
           return NextResponse.json(articles, { status: 200, headers: cors(origin) })
         }
       }
@@ -147,20 +155,6 @@ function applyFilters(articles: Record<string, unknown>[], q?: string, tag?: str
 
 function byOrdre(a: Record<string, unknown>, b: Record<string, unknown>) {
   return ((a.ordre as number) ?? 999) - ((b.ordre as number) ?? 999)
-}
-
-function normalize(a: Record<string, unknown>): Record<string, unknown> {
-  return {
-    ...a,
-    nomAr:           darijaName(String(a.nom ?? "")) ?? a.nomAr ?? a.nom_ar ?? "",
-    prix:            a.prix_public ?? a.marketplace_prix_public ?? a.prix ?? 0,
-    prixVente:       a.prix_public ?? a.prix ?? 0,
-    stockDisponible: Number(a.stockDisponible ?? a.stock_disponible ?? a.qte ?? 0),
-    marketplaceActif: a.marketplace_actif ?? true,
-    unite:           a.unite ?? "kg",
-    conditionnement: a.conditionnement ?? a.pack_info ?? null,
-    photo:           resolvePhoto(a.photo as string | undefined, String(a.nom ?? ""), String(a.famille ?? "")),
-  }
 }
 
 /**

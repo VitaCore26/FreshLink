@@ -55,7 +55,7 @@ export default function BOShopAnalytics() {
     } catch { setSavedMsg("Erreur réseau") }
   }
 
-  const maxDay = Math.max(1, ...(stats?.parJour ?? []).map(d => d.visits))
+  const maxDay = Math.max(1, ...(stats?.parJour ?? []).flatMap(d => [d.visits, d.clicks]))
 
   return (
     <div className="flex flex-col gap-4 p-1">
@@ -97,13 +97,22 @@ export default function BOShopAnalytics() {
             ))}
           </div>
 
-          {/* Par jour (mini bar) */}
+          {/* Par jour (visites + clics) */}
           <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">Visites par jour</p>
-            <div className="flex items-end gap-1 h-28">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Visites &amp; clics par jour</p>
+              <div className="flex items-center gap-3 text-[10px] font-semibold">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-sky-500/80" /> Visites</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500/80" /> Clics</span>
+              </div>
+            </div>
+            <div className="flex items-end gap-1.5 h-28">
               {stats.parJour.slice().reverse().map(d => (
                 <div key={d.date} className="flex-1 flex flex-col items-center gap-1" title={`${d.date} : ${d.visits} visites, ${d.clicks} clics`}>
-                  <div className="w-full rounded-t bg-sky-500/80" style={{ height: `${Math.round((d.visits / maxDay) * 100)}%`, minHeight: d.visits > 0 ? 4 : 0 }} />
+                  <div className="w-full flex items-end justify-center gap-0.5 h-full">
+                    <div className="w-1/2 rounded-t bg-sky-500/80" style={{ height: `${Math.round((d.visits / maxDay) * 100)}%`, minHeight: d.visits > 0 ? 4 : 0 }} />
+                    <div className="w-1/2 rounded-t bg-amber-500/80" style={{ height: `${Math.round((d.clicks / maxDay) * 100)}%`, minHeight: d.clicks > 0 ? 4 : 0 }} />
+                  </div>
                   <span className="text-[8px] text-muted-foreground">{d.date.slice(5)}</span>
                 </div>
               ))}
@@ -124,7 +133,7 @@ export default function BOShopAnalytics() {
                 ))}
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Régions</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Lieux des visiteurs</p>
               {stats.regions.length === 0 ? <p className="text-xs text-muted-foreground">—</p> :
                 stats.regions.map(r => (
                   <div key={r.label} className="flex items-center justify-between py-1 text-sm border-b border-border last:border-0">
@@ -133,6 +142,20 @@ export default function BOShopAnalytics() {
                   </div>
                 ))}
             </div>
+          </div>
+
+          {/* Actions / clics détaillés des visiteurs */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5"><MousePointerClick className="w-3.5 h-3.5" /> Actions des visiteurs (clics)</p>
+            {(stats.events ?? []).length === 0 ? <p className="text-xs text-muted-foreground">Aucun clic enregistré sur la période.</p> :
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                {stats.events.slice(0, 16).map(ev => (
+                  <div key={ev.label} className="flex items-center justify-between py-1 text-sm border-b border-border/60 last:border-0">
+                    <span className="text-foreground truncate" title={ev.label}>{ev.label || "—"}</span>
+                    <span className="font-bold text-amber-600 ml-2 shrink-0">{ev.count}</span>
+                  </div>
+                ))}
+              </div>}
           </div>
 
           {/* Config affichage public */}
