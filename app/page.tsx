@@ -55,11 +55,13 @@ export default function App() {
         setView(iface === "mobile" ? "mobile" : "backoffice")
       }
       // Charger les données fraîches depuis Supabase en arrière-plan
-      import("@/lib/supabase/db").then(({ syncFromSupabase }) => {
+      import("@/lib/supabase/db").then(({ syncFromSupabase, hydrateConfigs }) => {
         syncFromSupabase().then(({ ok, tables }) => {
           console.log(`[FreshLink] Sync login — ${tables.length} tables chargées depuis Supabase`)
           if (ok) window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
         }).catch(() => {/* offline OK */})
+        // Configs process/workflow/alertes/emails (cross-device)
+        hydrateConfigs().catch(() => {/* offline OK */})
       })
 
       // ── Auto-push utilisateurs + articles → Supabase si admin ─────────────────

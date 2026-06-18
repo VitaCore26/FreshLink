@@ -24,6 +24,12 @@ const SYNCED_KEYS = new Set<string>([
   "fl_visites",
 ])
 
+// Configs (objets uniques, PAS des tableaux) : process, workflow, alertes, emails.
+// Stockés en base comme une ligne unique id="config" → propagation cross-device.
+const CONFIG_KEYS = new Set<string>([
+  "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config",
+])
+
 type Row = { id: string; [k: string]: unknown }
 
 // Snapshot par table : id → JSON de la ligne déjà connue de Supabase.
@@ -99,9 +105,31 @@ async function flushKey(key: string, raw: string): Promise<void> {
   } catch { markDirty(key) }
 }
 
+// Pousse une config (objet unique) comme une ligne id="config".
+async function flushConfig(key: string, raw: string): Promise<void> {
+  let obj: unknown
+  try { obj = JSON.parse(raw) } catch { return }
+  if (!isOnline()) { markDirty(key); return }
+  try {
+    const res = await fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: key, upserts: [{ id: "config", payload: obj, updated_at: new Date().toISOString() }] }),
+    })
+    const json = await res.json() as { ok: boolean }
+    if (!json.ok) markDirty(key)
+  } catch { markDirty(key) }
+}
+
 /** Appelé par setLS à chaque écriture localStorage. */
 export function onLocalWrite(key: string, raw: string): void {
   ensureReplay()
+  if (CONFIG_KEYS.has(key)) {
+    if (suppressDepth > 0) return    // écriture issue d'une hydratation
+    clearTimeout(timers[key])
+    timers[key] = setTimeout(() => { void flushConfig(key, raw) }, 1000)
+    return
+  }
   if (!SYNCED_KEYS.has(key)) return
 
   if (suppressDepth > 0) {
@@ -125,7 +153,9 @@ function flushQueue(): void {
   localStorage.removeItem(QUEUE_KEY)
   for (const key of q) {
     const raw = localStorage.getItem(key)
-    if (raw) void flushKey(key, raw)
+    if (!raw) continue
+    if (CONFIG_KEYS.has(key)) void flushConfig(key, raw)
+    else void flushKey(key, raw)
   }
 }
 

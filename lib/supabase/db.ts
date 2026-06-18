@@ -451,3 +451,25 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
   window.dispatchEvent(new CustomEvent("fl_store_updated"))
   return { ok: errors.length === 0, tables, errors }
 }
+
+// ── CONFIGS (process / workflow / alertes / emails) ───────────────────────────
+// Objets uniques (ligne id="config"). Lecture via /api/sync-read (service_role) car
+// ces tables n'ont AUCUNE politique anon. Hydrate le cache local sans réécho Supabase.
+const CONFIG_TABLES = ["fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config"]
+
+export async function hydrateConfigs(): Promise<void> {
+  if (typeof window === "undefined") return
+  await Promise.all(CONFIG_TABLES.map(async (table) => {
+    try {
+      const res = await fetch(`/api/sync-read?table=${table}`, { cache: "no-store" })
+      const json = await res.json()
+      if (!json?.ok) return
+      const row = (json.data ?? []).find((r: { id: string }) => r.id === "config")
+      if (row?.payload && typeof row.payload === "object") {
+        // setItem direct (pas setLS) → n'échote pas vers Supabase
+        localStorage.setItem(table, JSON.stringify(row.payload))
+      }
+    } catch { /* offline — le local fait foi */ }
+  }))
+  window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "config" } }))
+}

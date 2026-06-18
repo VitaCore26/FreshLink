@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
       "fl_referrals", "fl_referral_config", "fl_tracking",
       "fl_promotions", "fl_coupons", "fl_notifications",
       "fl_contrats", "fl_organisations",
+      // Process / config (lignes uniques id="config")
+      "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config",
     ]
     if (!ALLOWED_TABLES.includes(body.table)) {
       return NextResponse.json({ ok: false, errors: [`Table non autorisée: ${body.table}`] }, { status: 403 })
