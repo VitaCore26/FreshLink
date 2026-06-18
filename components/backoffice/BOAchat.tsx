@@ -151,6 +151,14 @@ export default function BOAchat() {
     setNewChargeNom(""); setNewChargeMontant(""); setShowChargeForm(false)
   }
 
+  // Édition inline de la valeur (montant) d'une charge — colonne Valeur du tableau
+  const handleUpdateChargeMontant = (id: string, value: string) => {
+    const montant = Number(value)
+    const next = chargesArticle.map(c => c.id === id ? { ...c, montant: Number.isNaN(montant) ? 0 : montant } : c)
+    store.saveChargesArticle(next)
+    setChargesArticle(next)
+  }
+
   const handleDeleteCharge = (id: string) => {
     const next = chargesArticle.filter(c => c.id !== id)
     store.saveChargesArticle(next)
@@ -662,21 +670,56 @@ export default function BOAchat() {
               <span className="text-xs text-amber-600">— choisissez une charge par article dans le tableau ci-dessous</span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {chargesArticle.length === 0 && !showChargeForm && (
-                <span className="text-xs text-amber-600 italic">Aucune charge définie. Ajoutez transport, manutention, perte…</span>
-              )}
-              {chargesArticle.map(c => (
-                <span key={c.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-amber-300 text-xs font-medium text-amber-800">
-                  {c.nom}
-                  <span className="font-mono text-amber-600">+{c.montant.toFixed(2)} DH</span>
-                  <button type="button" onClick={() => handleDeleteCharge(c.id)} title="Supprimer cette charge"
-                    className="text-amber-400 hover:text-destructive ml-0.5">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </span>
-              ))}
+            {chargesArticle.length === 0 && !showChargeForm && (
+              <span className="text-xs text-amber-600 italic">Aucune charge définie. Ajoutez transport, manutention, perte…</span>
+            )}
 
+            {/* Tableau éditable : Charge | Valeur (DH) éditable | suppr. */}
+            {chargesArticle.length > 0 && (
+              <div className="bg-white border border-amber-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-amber-100/60 text-amber-800">
+                      <th className="text-left px-3 py-2 font-bold">Charge</th>
+                      <th className="text-right px-3 py-2 font-bold w-32">Valeur (DH)</th>
+                      <th className="px-2 py-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chargesArticle.map(c => (
+                      <tr key={c.id} className="border-t border-amber-100">
+                        <td className="px-3 py-1.5 font-medium text-amber-900">{c.nom}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input type="number" min={0} step={0.01}
+                            value={c.montant}
+                            onChange={e => handleUpdateChargeMontant(c.id, e.target.value)}
+                            className="w-24 px-2 py-1 rounded-md border border-amber-300 bg-amber-50 text-right font-mono text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                          <span className="ml-1 text-amber-500">DH</span>
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button type="button" onClick={() => handleDeleteCharge(c.id)} title="Supprimer cette charge"
+                            className="text-amber-400 hover:text-destructive">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-amber-300 bg-amber-100/40">
+                      <td className="px-3 py-2 font-bold text-amber-800">TOTAL charges</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
+                        {chargesArticle.reduce((s, c) => s + (Number(c.montant) || 0), 0).toFixed(2)} DH
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Ajouter une charge */}
+            <div className="flex flex-wrap items-center gap-2">
               {showChargeForm ? (
                 <div className="flex items-center gap-1.5 bg-white border border-amber-300 rounded-full pl-3 pr-1.5 py-1">
                   <input autoFocus value={newChargeNom} onChange={e => setNewChargeNom(e.target.value)}

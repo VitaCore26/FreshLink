@@ -19,7 +19,8 @@ function cors(origin: string | null): HeadersInit {
   }
 }
 
-interface DayRow { id: string; payload: { visits?: number; clicks?: number; pages?: Record<string, number>; regions?: Record<string, number>; events?: Record<string, number> } }
+interface GpsPoint { lat: number; lng: number; region?: string; page?: string; t?: string; acc?: number }
+interface DayRow { id: string; payload: { visits?: number; clicks?: number; pages?: Record<string, number>; regions?: Record<string, number>; events?: Record<string, number>; points?: GpsPoint[] } }
 
 const DEFAULT_CONFIG = { afficher: true, showVisits: true, showClicks: false, showRegions: false, titre: "Visiteurs" }
 
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
     const pages: Record<string, number> = {}
     const regions: Record<string, number> = {}
     const events: Record<string, number> = {}
+    let points: GpsPoint[] = []
     let totalVisits = 0, totalClicks = 0
     const parJour = rows
       .filter(r => r.id !== "__config")
@@ -53,8 +55,12 @@ export async function GET(req: NextRequest) {
         for (const [k, v] of Object.entries(p.pages || {})) pages[k] = (pages[k] || 0) + v
         for (const [k, v] of Object.entries(p.regions || {})) regions[k] = (regions[k] || 0) + v
         for (const [k, v] of Object.entries(p.events || {})) events[k] = (events[k] || 0) + v
+        if (Array.isArray(p.points)) points = points.concat(p.points)
         return { date: r.id, visits: p.visits || 0, clicks: p.clicks || 0 }
       })
+    // Points GPS exacts : plus récents d'abord, bornés
+    points = points.filter(pt => pt && typeof pt.lat === "number" && typeof pt.lng === "number")
+      .sort((a, b) => String(b.t ?? "").localeCompare(String(a.t ?? ""))).slice(0, 300)
 
     const todayRow = rows.find(r => r.id === today)?.payload || {}
     const configRow = rows.find(r => r.id === "__config")?.payload as Record<string, unknown> | undefined
@@ -69,6 +75,7 @@ export async function GET(req: NextRequest) {
       topPages: topN(pages),
       regions: topN(regions),
       events: topN(events),
+      points,
       config,
     }, { headers: cors(origin) })
   } catch (e) {

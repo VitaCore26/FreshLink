@@ -12,6 +12,7 @@ interface Stats {
   topPages: { label: string; count: number }[]
   regions: { label: string; count: number }[]
   events: { label: string; count: number }[]
+  points: { lat: number; lng: number; region?: string; page?: string; t?: string; acc?: number }[]
   config: { afficher: boolean; showVisits: boolean; showClicks: boolean; showRegions: boolean; titre: string }
 }
 
@@ -156,6 +157,42 @@ export default function BOShopAnalytics() {
                   </div>
                 ))}
               </div>}
+          </div>
+
+          {/* Points GPS exacts des visiteurs (consentement navigateur) */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Points GPS exacts des visiteurs</p>
+              {(stats.points ?? []).length > 0 && (
+                <a href={`https://www.google.com/maps?q=${stats.points[0].lat},${stats.points[0].lng}`} target="_blank" rel="noopener noreferrer"
+                  className="text-[11px] font-semibold text-sky-600 hover:underline">Voir le plus récent sur la carte →</a>
+              )}
+            </div>
+            {(stats.points ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Aucun point GPS — un point n&apos;est enregistré que si le visiteur autorise la géolocalisation dans son navigateur (sinon seul le pays · ville via IP est connu).</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <th className="py-1.5 pr-2">Quand</th><th className="py-1.5 pr-2">Lieu (IP)</th><th className="py-1.5 pr-2">Page</th>
+                    <th className="py-1.5 pr-2">Coordonnées</th><th className="py-1.5">Carte</th>
+                  </tr></thead>
+                  <tbody>
+                    {stats.points.slice(0, 100).map((pt, i) => (
+                      <tr key={i} className="border-b border-border/50">
+                        <td className="py-1.5 pr-2 text-muted-foreground whitespace-nowrap">{pt.t ? new Date(pt.t).toLocaleString("fr-MA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                        <td className="py-1.5 pr-2 text-foreground truncate max-w-[120px]" title={pt.region}>{pt.region || "—"}</td>
+                        <td className="py-1.5 pr-2 text-muted-foreground truncate max-w-[90px]">{pt.page || "accueil"}</td>
+                        <td className="py-1.5 pr-2 font-mono text-foreground">{pt.lat.toFixed(5)}, {pt.lng.toFixed(5)}{pt.acc ? ` (±${pt.acc}m)` : ""}</td>
+                        <td className="py-1.5">
+                          <a href={`https://www.google.com/maps?q=${pt.lat},${pt.lng}`} target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline font-semibold">Ouvrir</a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Config affichage public */}
