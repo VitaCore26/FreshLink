@@ -146,6 +146,39 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [selected, setSelected]           = useState<CmdUnifiee | null>(null)
   const [updating, setUpdating]           = useState(false)
   const [msg, setMsg]                     = useState<{ ok: boolean; text: string } | null>(null)
+  // ── Création manuelle d'une commande (BO) ──────────────────────────────────
+  const [showNew, setShowNew]             = useState(false)
+  const [noClientId, setNoClientId]       = useState("")
+  const [noHeure, setNoHeure]             = useState("08:00")
+  const [noLignes, setNoLignes]           = useState<{ articleId: string; quantite: string; prixVente: string }[]>([{ articleId: "", quantite: "", prixVente: "" }])
+
+  const saveNewOrder = async () => {
+    const client = store.getClients().find(c => c.id === noClientId)
+    if (!client) { setMsg({ ok: false, text: "Choisissez un client." }); return }
+    const articles = store.getArticles()
+    const lignes: LigneCommande[] = noLignes
+      .filter(l => l.articleId && Number(l.quantite) > 0)
+      .map(l => {
+        const art = articles.find(a => a.id === l.articleId)!
+        const pv = Number(l.prixVente) || store.computePV(art)
+        const q = Number(l.quantite) || 0
+        return { articleId: art.id, articleNom: art.nom, unite: art.unite, quantite: q, prixUnitaire: pv, prixVente: pv, total: q * pv }
+      })
+    if (lignes.length === 0) { setMsg({ ok: false, text: "Ajoutez au moins une ligne valide." }); return }
+    const cmd: Commande = {
+      id: store.genCommande(), date: store.today(),
+      commercialId: user.id, commercialNom: user.name + " (BO)",
+      clientId: client.id, clientNom: client.nom,
+      secteur: client.secteur, zone: client.zone, gpsLat: client.gpsLat ?? 0, gpsLng: client.gpsLng ?? 0,
+      lignes, heurelivraison: noHeure, statut: "valide",
+      emailDestinataire: store.getEmailConfig().commercial,
+    }
+    store.addCommande(cmd)
+    try { const db = await import("@/lib/supabase/db"); await db.upsertCommande(cmd) } catch { /* offline */ }
+    setShowNew(false); setNoClientId(""); setNoLignes([{ articleId: "", quantite: "", prixVente: "" }])
+    setMsg({ ok: true, text: `✅ Commande ${cmd.id} créée (${client.nom}).` })
+    load()
+  }
 
   // ── Chargement ──────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -379,17 +412,84 @@ export default function BOCommandesUnifiees({ user }: Props) {
             Site web <span className="text-blue-600 font-semibold">({webCount} Web)</span>
           </p>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Actualiser
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowNew(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Nouvelle commande
+          </button>
+          <button
+            onClick={load}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Actualiser
+          </button>
+        </div>
       </div>
+
+      {/* ── Modal : nouvelle commande (création manuelle) ── */}
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <h3 className="font-bold text-slate-800">Nouvelle commande</h3>
+              <button onClick={() => setShowNew(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">✕</button>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-slate-600">Client *</label>
+                  <select value={noClientId} onChange={e => setNoClientId(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-slate-200 text-sm">
+                    <option value="">— Choisir —</option>
+                    {store.getClients().slice().sort((a, b) => a.nom.localeCompare(b.nom)).map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-slate-600">Heure de livraison</label>
+                  <input type="time" value={noHeure} onChange={e => setNoHeure(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-600">Articles</label>
+                {noLignes.map((l, i) => {
+                  const art = store.getArticles().find(a => a.id === l.articleId)
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <select value={l.articleId}
+                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, articleId: e.target.value, prixVente: e.target.value ? String(store.computePV(store.getArticles().find(a => a.id === e.target.value)!)) : "" } : x))}
+                        className="flex-1 px-2 py-2 rounded-lg border border-slate-200 text-sm">
+                        <option value="">— Article —</option>
+                        {store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom)).map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                      </select>
+                      <input type="number" min="0" placeholder="Qté" value={l.quantite}
+                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, quantite: e.target.value } : x))}
+                        className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm text-center" />
+                      <input type="number" min="0" step="0.01" placeholder="PV" value={l.prixVente}
+                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, prixVente: e.target.value } : x))}
+                        className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm text-center" />
+                      <span className="w-8 text-[10px] text-slate-400">{art?.unite}</span>
+                      {noLignes.length > 1 && <button onClick={() => setNoLignes(prev => prev.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600">✕</button>}
+                    </div>
+                  )
+                })}
+                <button onClick={() => setNoLignes(prev => [...prev, { articleId: "", quantite: "", prixVente: "" }])}
+                  className="self-start text-sm font-semibold text-emerald-600">+ Ajouter un article</button>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setShowNew(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600">Annuler</button>
+                <button onClick={saveNewOrder} className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold">Créer la commande</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Alerte nouvelles commandes ── */}
       {newCount > 0 && (

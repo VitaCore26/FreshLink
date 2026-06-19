@@ -258,9 +258,11 @@ export function buildRecapJournalier(data: {
   totalAchats: number; totalCommandes: number; totalLivraisons: number
   totalRetours: number; totalCash: number; marge: number
   nbBonsAchat?: number; nbCommandes?: number; nbLivraisons?: number; nbRetours?: number
+  creditFournisseurs?: number; nbCreditFournisseurs?: number
+  creditClients?: number; nbCreditClients?: number
 }): string {
   const line = "─".repeat(48)
-  return [
+  const rows = [
     line,
     "     RÉCAP JOURNALIER — FreshLink Pro",
     `     Date : ${data.date}`,
@@ -272,10 +274,15 @@ export function buildRecapJournalier(data: {
     `  Encaissements (Cash)  : ${fmt(data.totalCash)} DH`,
     "  " + "·".repeat(44),
     `  Marge brute estimée   : ${fmt(data.marge)} DH`,
-    line,
-    "  Rapport généré par FreshLink Pro",
-    line,
-  ].join("\n")
+  ]
+  // Crédits (dettes en cours) — fournisseurs (ce qu'on doit) + clients (ce qu'on nous doit)
+  if (data.creditFournisseurs !== undefined || data.creditClients !== undefined) {
+    rows.push("  " + "·".repeat(44))
+    rows.push(`  Crédit fournisseurs (dû) : ${fmt(data.creditFournisseurs ?? 0)} DH  (${data.nbCreditFournisseurs ?? 0} fourn.)`)
+    rows.push(`  Crédit clients (à recouvrer) : ${fmt(data.creditClients ?? 0)} DH  (${data.nbCreditClients ?? 0} clients)`)
+  }
+  rows.push(line, "  Rapport généré par FreshLink Pro", line)
+  return rows.join("\n")
 }
 
 export function buildAchatEmail(bon: {

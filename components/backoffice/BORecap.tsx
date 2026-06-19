@@ -27,6 +27,10 @@ interface DailyStats {
   nbCommandes: number
   nbLivraisons: number
   nbRetours: number
+  creditFournisseurs: number
+  nbCreditFournisseurs: number
+  creditClients: number
+  nbCreditClients: number
 }
 
 interface BesoinRow extends BesoinLigneEmail {
@@ -55,10 +59,26 @@ function computeStats(date: string): DailyStats {
   const totalCash = bls.filter(b => b.statut === "encaissé").reduce((s, b) => s + b.montantTotal, 0)
   const marge     = totalLivraisons - totalAchats
 
+  // Crédits EN COURS (soldes actuels, non datés) — fournisseurs (dû) + clients (à recouvrer)
+  let creditFournisseurs = 0, nbCreditFournisseurs = 0
+  try {
+    const credits = JSON.parse(localStorage.getItem("fl_credits_fournisseurs") ?? "[]") as { montant?: number; montantPaye?: number; statut?: string }[]
+    const fourSet = new Set<number>()
+    credits.forEach((l, i) => {
+      const reste = (Number(l.montant) || 0) - (Number(l.montantPaye) || 0)
+      if (l.statut !== "solde" && reste > 0) { creditFournisseurs += reste; fourSet.add(i) }
+    })
+    nbCreditFournisseurs = fourSet.size
+  } catch { /* noop */ }
+  const clientsAvecCredit = store.getClients().filter(c => (Number(c.creditSolde) || 0) > 0)
+  const creditClients   = clientsAvecCredit.reduce((s, c) => s + (Number(c.creditSolde) || 0), 0)
+  const nbCreditClients = clientsAvecCredit.length
+
   return {
     date, totalAchats, totalCommandes, totalLivraisons, totalRetours, totalCash, marge,
     nbBonsAchat: bonsAchat.length, nbCommandes: commandes.length,
     nbLivraisons: bls.length, nbRetours: retours.length,
+    creditFournisseurs, nbCreditFournisseurs, creditClients, nbCreditClients,
   }
 }
 
