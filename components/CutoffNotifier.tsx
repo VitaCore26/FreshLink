@@ -63,9 +63,28 @@ export default function CutoffNotifier({ user }: { user: User }) {
         // Atteint l'heure (ou jusqu'à FIRE_WINDOW_MIN après) et pas déjà notifié aujourd'hui
         if (delta >= 0 && delta <= FIRE_WINDOW_MIN && !localStorage.getItem(firedKey(c.id))) {
           localStorage.setItem(firedKey(c.id), "1")
-          void showNotif(`⏰ Cut-off ${c.time} — Vita Fresh`, c.message, `fl-cutoff-${c.id}`)
+          const titre = c.label ? `⏰ ${c.label} (${c.time})` : `⏰ Cut-off ${c.time}`
+          void showNotif(`${titre} — Vita Fresh`, c.message, `fl-cutoff-${c.id}`)
         }
       }
+
+      // ── Alerte SURCHARGE : tonnage commandé du jour > seuil ──────────────────
+      try {
+        const seuil = store.getSeuilAlerte()
+        if (seuil.tonnageMaxJour > 0 && seuil.rolesAlerte?.includes(user.role) && !localStorage.getItem(firedKey("__tonnage"))) {
+          const okStatuts = new Set(["valide", "en_preparation", "charge", "en_transit", "livre"])
+          const today = dayKey()
+          const tonnage = store.getCommandes()
+            .filter(c => String(c.date).slice(0, 10) === today && okStatuts.has(c.statut))
+            .reduce((s, c) => s + (c.lignes ?? []).reduce((ls, l) => ls + (Number(l.quantite) || 0), 0), 0)
+          if (tonnage > seuil.tonnageMaxJour) {
+            localStorage.setItem(firedKey("__tonnage"), "1")
+            void showNotif("⚠️ Surcharge tonnage — Vita Fresh",
+              `Tonnage commandé du jour : ${Math.round(tonnage).toLocaleString("fr-MA")} kg — dépasse le seuil de ${seuil.tonnageMaxJour.toLocaleString("fr-MA")} kg. Anticipez camions/équipe.`,
+              "fl-tonnage-alert")
+          }
+        }
+      } catch { /* noop */ }
     }
 
     check()

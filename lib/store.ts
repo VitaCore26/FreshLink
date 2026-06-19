@@ -3191,6 +3191,8 @@ export const store = {
   // --- Cut-off notifications ---
   getCutoffs: (): CutoffNotification[] => getLS("fl_cutoffs", DEFAULT_CUTOFFS),
   saveCutoffs: (c: CutoffNotification[]) => setLS("fl_cutoffs", c),
+  getSeuilAlerte: (): SeuilAlerteConfig => ({ ...DEFAULT_SEUIL_ALERTE, ...getLS<Partial<SeuilAlerteConfig>>("fl_seuil_alerte", {}) }),
+  saveSeuilAlerte: (c: SeuilAlerteConfig) => setLS("fl_seuil_alerte", c),
 
   // --- Charge clients (acheteur) ---
   getChargesClient: (): ChargeClientAcheteur[] => getLS("fl_charges_client_acheteur", []),
@@ -3313,10 +3315,22 @@ export interface Feedback {
 
 export interface CutoffNotification {
   id: string
+  label?: string        // nom court de l'étape (ex: "Fin achat légumes")
   time: string          // "HH:MM"
   message: string
   active: boolean
   roles: UserRole[]
+}
+
+// Seuil d'alerte tonnage : si le tonnage commandé du jour dépasse ce seuil,
+// on notifie l'équipe d'une surcharge (0 = désactivé).
+export interface SeuilAlerteConfig {
+  tonnageMaxJour: number       // kg — au-delà, alerte surcharge
+  rolesAlerte: UserRole[]      // qui est notifié
+}
+export const DEFAULT_SEUIL_ALERTE: SeuilAlerteConfig = {
+  tonnageMaxJour: 0,
+  rolesAlerte: ["resp_logistique", "dispatcheur", "resp_achat", "admin", "super_admin"],
 }
 
 // Charge acheteur par client (liste déroulante, max 3 types différents)
@@ -3420,28 +3434,33 @@ export interface CmdVsFacturation {
 
 // ─── Default data ─────────────────────────────────────────────────────────────
 export const DEFAULT_CUTOFFS: CutoffNotification[] = [
-  // ── Achat ──
-  { id: "co1",  time: "06:00", message: "Marché ouvert : commencez vos achats. Cut-off POs à 10h.", active: true, roles: ["acheteur", "resp_achat"] },
-  { id: "co2",  time: "09:30", message: "⏰ Plus que 30 min : finalisez et envoyez vos bons d'achat avant 10h.", active: true, roles: ["acheteur", "resp_achat"] },
-  { id: "co3",  time: "10:00", message: "🔒 Cut-off achats atteint. Toute commande après 10h sera traitée demain.", active: true, roles: ["acheteur", "resp_achat", "ctrl_achat"] },
+  // ── Marché / planification achat ──
+  { id: "co13", label: "Préparer espèce marché", time: "03:30", message: "💵 Préparez l'espèce du marché selon le Rapport Besoin Marché (montant + camions).", active: true, roles: ["financier", "cash_man", "resp_achat"] },
+  { id: "co14", label: "Préparer camions", time: "03:45", message: "🛻 Préparez les Honda selon le tonnage du jour (voir Rapport Marché).", active: true, roles: ["resp_logistique", "dispatcheur"] },
+  { id: "co15", label: "Départ marché", time: "04:00", message: "⏰ Départ marché : respectez l'heure recommandée (selon tonnage).", active: true, roles: ["acheteur", "resp_achat"] },
+  // ── Achat (démarrage + fin par famille) ──
+  { id: "co1",  label: "Démarrage achat", time: "06:00", message: "🟢 Démarrage achat : le marché est ouvert, commencez vos achats.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co17", label: "Fin achat Légumes", time: "08:00", message: "🥦 Cut-off achat LÉGUMES atteint — clôturez vos achats légumes.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co18", label: "Fin achat Fruits", time: "08:30", message: "🍎 Cut-off achat FRUITS atteint — clôturez vos achats fruits.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co19", label: "Fin achat Herbes", time: "09:00", message: "🌿 Cut-off achat HERBES atteint — clôturez vos achats herbes.", active: true, roles: ["acheteur", "resp_achat"] },
+  { id: "co3",  label: "Fin achat (global)", time: "10:00", message: "🔒 Cut-off achats global atteint. Tout achat après sera traité demain.", active: true, roles: ["acheteur", "resp_achat", "ctrl_achat"] },
+  { id: "co16", label: "Réception marché", time: "11:00", message: "📦 Réceptionnez et pesez les achats du marché — mettez à jour le stock.", active: true, roles: ["magasinier", "ctrl_achat"] },
   // ── Commercial / Prévente ──
-  { id: "co4",  time: "08:00", message: "Bonne tournée ! Saisissez vos commandes au fil des visites.", active: true, roles: ["prevendeur", "team_leader"] },
-  { id: "co5",  time: "16:00", message: "⏰ Cut-off prévente à 17h : transmettez les commandes de demain.", active: true, roles: ["prevendeur", "team_leader", "resp_commercial"] },
-  { id: "co6",  time: "17:00", message: "🔒 Clôture prévente. Dernier appel pour les commandes du lendemain.", active: true, roles: ["prevendeur", "team_leader"] },
+  { id: "co4",  label: "Démarrage prévente", time: "08:00", message: "Bonne tournée ! Saisissez vos commandes au fil des visites.", active: true, roles: ["prevendeur", "team_leader"] },
+  { id: "co5",  label: "Rappel cut-off prévente", time: "16:00", message: "⏰ Cut-off prévente à 17h : transmettez les commandes de demain.", active: true, roles: ["prevendeur", "team_leader", "resp_commercial"] },
+  { id: "co6",  label: "Fin prévente", time: "17:00", message: "🔒 Clôture prévente. Dernier appel pour les commandes du lendemain.", active: true, roles: ["prevendeur", "team_leader"] },
   // ── Logistique / Préparation ──
-  { id: "co7",  time: "14:00", message: "Préparation de demain : vérifiez le stock et lancez le picking.", active: true, roles: ["magasinier", "ctrl_prep", "chef_depot"] },
-  { id: "co8",  time: "18:00", message: "Clôture préparation : contrôlez les caisses et chargez les véhicules.", active: true, roles: ["magasinier", "ctrl_prep"] },
+  { id: "co7",  label: "Démarrage préparation", time: "14:00", message: "Préparation : vérifiez le stock et lancez le picking.", active: true, roles: ["magasinier", "ctrl_prep", "chef_depot"] },
+  { id: "co20", label: "Fin préparation 1", time: "16:00", message: "✅ Fin préparation 1 — clôturez le 1er lot de préparation.", active: true, roles: ["magasinier", "ctrl_prep", "chef_depot"] },
+  { id: "co8",  label: "Fin préparation (clôture)", time: "18:00", message: "🔒 Clôture préparation : contrôlez les caisses avant chargement.", active: true, roles: ["magasinier", "ctrl_prep"] },
+  { id: "co21", label: "Fin chargement", time: "18:30", message: "🚚 Fin chargement : véhicules chargés, vérifiez le manifeste.", active: true, roles: ["magasinier", "ctrl_prep", "dispatcheur", "resp_logistique"] },
   // ── Dispatch / Livraison ──
-  { id: "co9",  time: "07:00", message: "Tournées prêtes : récupérez votre feuille de route et partez.", active: true, roles: ["livreur", "dispatcheur"] },
-  { id: "co10", time: "19:00", message: "Retour dépôt : déposez caisses, retours et encaissements du jour.", active: true, roles: ["livreur", "dispatcheur", "resp_logistique"] },
+  { id: "co22", label: "Départ 1 (livraison)", time: "06:30", message: "🚐 Départ tournée 1 : partez selon votre feuille de route.", active: true, roles: ["livreur", "dispatcheur"] },
+  { id: "co9",  label: "Tournées prêtes", time: "07:00", message: "Tournées prêtes : récupérez votre feuille de route et partez.", active: true, roles: ["livreur", "dispatcheur"] },
+  { id: "co10", label: "Retour dépôt", time: "19:00", message: "Retour dépôt : déposez caisses, retours et encaissements du jour.", active: true, roles: ["livreur", "dispatcheur", "resp_logistique"] },
   // ── Caisse / Finance ──
-  { id: "co11", time: "18:30", message: "Cut-off caisse : transmettez les encaissements pour clôture.", active: true, roles: ["cash_man"] },
-  { id: "co12", time: "19:30", message: "Clôture financière du jour : rapprochez caisse, BL et crédits.", active: true, roles: ["financier", "comptable"] },
-  // ── Marché / planification achat (Rapport Besoin Marché) ──
-  { id: "co13", time: "03:30", message: "💵 Préparez l'espèce du marché selon le Rapport Besoin Marché (montant + camions).", active: true, roles: ["financier", "cash_man", "resp_achat"] },
-  { id: "co14", time: "03:45", message: "🛻 Préparez les Honda selon le tonnage du jour (voir Rapport Marché).", active: true, roles: ["resp_logistique", "dispatcheur"] },
-  { id: "co15", time: "04:00", message: "⏰ Départ marché : respectez l'heure recommandée par le Rapport Besoin Marché (selon tonnage).", active: true, roles: ["acheteur", "resp_achat"] },
-  { id: "co16", time: "11:00", message: "📦 Réceptionnez et pesez les achats du marché — mettez à jour le stock.", active: true, roles: ["magasinier", "ctrl_achat"] },
+  { id: "co11", label: "Cut-off caisse", time: "18:30", message: "Cut-off caisse : transmettez les encaissements pour clôture.", active: true, roles: ["cash_man"] },
+  { id: "co12", label: "Clôture financière", time: "19:30", message: "Clôture financière : rapprochez caisse, BL et crédits.", active: true, roles: ["financier", "comptable"] },
 ]
 
 export const DEFAULT_FEEDBACKS: Feedback[] = [

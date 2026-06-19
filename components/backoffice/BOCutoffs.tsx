@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { store } from "@/lib/store"
 
 // ══════════════════════════════════════════════════════════════════
 //  BOCutoffs — Centre de régulation des flux (Section 4)
@@ -42,6 +43,12 @@ const CIBLE_CONFIG: Record<Cutoff["cible"], { label: string; icon: string }> = {
 
 export default function BOCutoffs({ currentUserId }: { currentUserId?: string }) {
   const [cutoffs, setCutoffs] = useState<Cutoff[]>([])
+  const [seuilTonnage, setSeuilTonnage] = useState(0)
+  const [seuilSaved, setSeuilSaved] = useState(false)
+  useEffect(() => { try { setSeuilTonnage(store.getSeuilAlerte().tonnageMaxJour) } catch { /* noop */ } }, [])
+  const saveSeuil = () => {
+    try { const c = store.getSeuilAlerte(); store.saveSeuilAlerte({ ...c, tonnageMaxJour: Number(seuilTonnage) || 0 }); setSeuilSaved(true); setTimeout(() => setSeuilSaved(false), 2500) } catch { /* noop */ }
+  }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [showCreate, setShowCreate] = useState(false)
@@ -187,6 +194,23 @@ export default function BOCutoffs({ currentUserId }: { currentUserId?: string })
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/12 backdrop-blur-sm border border-white/20 text-white text-xs font-bold hover:bg-white/20 transition-all shadow-sm">
             ➕ Nouveau cutoff
           </button>
+        </div>
+      </div>
+
+      {/* ── Alerte SURCHARGE tonnage (notifie l'équipe sur téléphone) ── */}
+      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-4 flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[220px]">
+          <p className="text-sm font-black text-amber-800 flex items-center gap-1.5">⚖️ Alerte surcharge — seuil tonnage / jour</p>
+          <p className="text-[11px] text-amber-700 mt-0.5">Si le tonnage commandé du jour dépasse ce seuil, l&apos;équipe (logistique, achat, admin) reçoit une notification « surcharge ». 0 = désactivé.</p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold text-amber-700">Seuil (kg)</label>
+            <input type="number" min={0} value={seuilTonnage} onChange={e => setSeuilTonnage(Number(e.target.value))}
+              className="w-32 px-3 py-2 rounded-xl border border-amber-300 bg-white text-sm font-bold" placeholder="ex: 5000" />
+          </div>
+          <button onClick={saveSeuil} className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">Enregistrer</button>
+          {seuilSaved && <span className="text-xs font-semibold text-emerald-600 self-center">✓ Enregistré</span>}
         </div>
       </div>
 
