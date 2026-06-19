@@ -7,7 +7,7 @@ import { Ticket, Plus, Trash2, RefreshCw, Power } from "lucide-react"
 
 interface Coupon {
   code: string
-  type: "pourcentage" | "montant"
+  type: "pourcentage" | "montant" | "livraison_gratuite" | "article_gratuit"
   valeur: number
   label?: string
   actif: boolean
@@ -100,6 +100,8 @@ export default function BOPromoCodes() {
             className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-sm">
             <option value="pourcentage">% remise</option>
             <option value="montant">Montant (DH)</option>
+            <option value="livraison_gratuite">🚚 Livraison gratuite</option>
+            <option value="article_gratuit">🎁 Article gratuit (valeur DH)</option>
           </select>
         </div>
         <div className="flex flex-col gap-1">
@@ -142,7 +144,12 @@ export default function BOPromoCodes() {
             {coupons.map(c => (
               <div key={c.code} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="font-mono font-bold text-sm bg-muted px-2 py-1 rounded">{c.code}</span>
-                <span className="text-sm text-foreground">{c.type === "montant" ? `−${c.valeur} DH` : `−${c.valeur}%`}</span>
+                <span className="text-sm text-foreground">{
+                  c.type === "livraison_gratuite" ? "🚚 Livraison gratuite"
+                  : c.type === "article_gratuit" ? `🎁 Article offert (−${c.valeur} DH)`
+                  : c.type === "montant" ? `−${c.valeur} DH`
+                  : `−${c.valeur}%`
+                }</span>
                 {c.minCommande ? <span className="text-[11px] text-muted-foreground">min {c.minCommande} DH</span> : null}
                 {c.expiration ? <span className="text-[11px] text-muted-foreground">exp. {c.expiration}</span> : null}
                 {c.usageMax ? <span className="text-[11px] text-muted-foreground">{c.usageCount ?? 0}/{c.usageMax} utilisés</span> : null}

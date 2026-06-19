@@ -54,14 +54,20 @@ export async function GET(req: NextRequest) {
     if (c.minCommande && total > 0 && total < c.minCommande)
                                    return NextResponse.json({ ok: true, valid: false, reason: `Minimum ${c.minCommande} DH` }, { headers: cors(origin) })
 
-    const type = c.type === "montant" ? "montant" : "pourcentage"
+    const validTypes = ["montant", "pourcentage", "livraison_gratuite", "article_gratuit"] as const
+    const type = (validTypes as readonly string[]).includes(String(c.type)) ? String(c.type) : "pourcentage"
     const valeur = Number(c.valeur) || 0
-    const remise = total > 0
-      ? (type === "montant" ? Math.min(valeur, total) : Math.round(total * valeur / 100 * 100) / 100)
-      : 0
+    // Remise sur les articles : montant/% classiques ; article_gratuit = remise = valeur (DH offerts).
+    // livraison_gratuite = aucune remise article mais drapeau livraisonGratuite (le shop met la livraison à 0).
+    let remise = 0
+    if (total > 0) {
+      if (type === "montant" || type === "article_gratuit") remise = Math.min(valeur, total)
+      else if (type === "pourcentage") remise = Math.round(total * valeur / 100 * 100) / 100
+    }
+    const livraisonGratuite = type === "livraison_gratuite"
 
     return NextResponse.json({
-      ok: true, valid: true, code, type, valeur, remise,
+      ok: true, valid: true, code, type, valeur, remise, livraisonGratuite,
       label: c.label ?? "", minCommande: c.minCommande ?? 0,
     }, { headers: cors(origin) })
   } catch (e) {

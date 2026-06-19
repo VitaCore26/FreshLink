@@ -1176,6 +1176,9 @@ export interface ProcessConfig {
   // Photo marchandise obligatoire pour confirmer un achat (mobile acheteur).
   // false = la photo devient facultative. Défaut: true (comportement actuel).
   photoAchatObligatoire?: boolean
+  // Mode crossdocking : commercial saisit → acheteur (PO) → logistique prépare/valide/charge
+  // → rapport d'écart achat vs préparation → livraison → passage cash-man en fin de livraison
+  modeCrossdocking?: boolean
   notes?: string
 }
 
@@ -1201,6 +1204,7 @@ export const DEFAULT_PROCESS_CONFIG: ProcessConfig = {
   cameraRetour: true,
   cameraSignature: true,
   photoAchatObligatoire: true,
+  modeCrossdocking: false,
 }
 
 export const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
