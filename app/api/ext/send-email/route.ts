@@ -52,7 +52,12 @@ export async function POST(req: NextRequest) {
     })
     const data = await res.json().catch(() => ({}))
     if (res.ok) return NextResponse.json({ ok: true, provider: "resend", id: data.id }, { headers: cors(origin) })
-    return NextResponse.json({ error: "resend failed", detail: data }, { status: 502, headers: cors(origin) })
+    const msg = String(data?.message ?? "erreur Resend")
+    const hint = /not verified|domain/i.test(msg)
+      ? "Domaine non vérifié dans Resend : ajoutez le domaine vita-core.org dans Resend → Domains et collez les enregistrements DNS (SPF/DKIM). En attendant, vous pouvez envoyer depuis onboarding@resend.dev (uniquement vers l'email du compte Resend)."
+      : /api key/i.test(msg) ? "Clé RESEND_API_KEY invalide — recréez une clé dans Resend → API Keys."
+      : undefined
+    return NextResponse.json({ error: `Resend: ${msg}`, detail: data, hint }, { status: 502, headers: cors(origin) })
   }
 
   // ── 2. Brevo (Sendinblue) ────────────────────────────────────────────────

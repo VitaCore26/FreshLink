@@ -44,9 +44,16 @@ export async function GET(req: NextRequest) {
   if (!SB_SRV) return NextResponse.json({ ok: false, error: "service_role manquante" }, { status: 500, headers: cors(origin) })
 
   try {
-    const res = await sbFetch("fl_bonus_matrix?select=*&order=segment.asc,famille.asc&limit=500")
+    // Schéma JSONB {id, payload, updated_at} : les colonnes plates segment/famille
+    // n'existent pas (→ 42703). On lit le payload et on trie en JS.
+    const res = await sbFetch("fl_bonus_matrix?select=id,payload&limit=500")
     if (!res.ok) throw new Error(await res.text())
-    return NextResponse.json({ ok: true, data: await res.json() }, { headers: cors(origin) })
+    const raw = await res.json() as { id: string; payload: Record<string, unknown> }[]
+    const data = (Array.isArray(raw) ? raw : [])
+      .filter(r => !String(r.id).startsWith("__"))
+      .map(r => ({ id: r.id, ...(r.payload ?? {}) }) as Record<string, unknown>)
+      .sort((a, b) => String(a.segment ?? "").localeCompare(String(b.segment ?? "")) || String(a.famille ?? "").localeCompare(String(b.famille ?? "")))
+    return NextResponse.json({ ok: true, data }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
@@ -67,11 +74,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: `segment invalide (${VALID_SEGMENTS.join(", ")})` }, { status: 400, headers: cors(origin) })
   }
 
-  const id = body.id ? String(body.id) : "BM" + Date.now().toString(36).toUpperCase()
-  const row = {
-    id,
+  const famille = body.famille ? String(body.famille) : "TOUTES"
+  // Unicité (segment, famille) → id déterministe (remplace la contrainte unique SQL)
+  const slug = (s: string) => s.normalize("NFD").replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()
+  const id = body.id ? String(body.id) : `BM_${slug(segment)}_${slug(famille)}`
+  const payload = {
     segment,
-    famille:      body.famille ? String(body.famille) : "TOUTES",
+    famille,
     taux_ca:      Number(body.tauxCa ?? 0)      || 0,
     taux_tonnage: Number(body.tauxTonnage ?? 0) || 0,
     coef_marge:   Number(body.coefMarge ?? 1)   || 1,
@@ -79,15 +88,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // ⚠️ Contrainte unique (segment, famille) → on utilise upsert
-    const res = await sbFetch("fl_bonus_matrix?on_conflict=segment,famille", {
+    const res = await sbFetch("fl_bonus_matrix", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
-      body: JSON.stringify(row),
+      headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, payload, updated_at: new Date().toISOString() }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const created = await res.json()
-    return NextResponse.json({ ok: true, cell: Array.isArray(created) ? created[0] : created }, { headers: cors(origin) })
+    return NextResponse.json({ ok: true, cell: { id, ...payload } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
@@ -114,14 +121,18 @@ export async function PATCH(req: NextRequest) {
   if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: "rien à modifier" }, { status: 400, headers: cors(origin) })
 
   try {
-    const res = await sbFetch(`fl_bonus_matrix?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify(patch),
+    // JSONB : lire le payload existant, fusionner, ré-upsert
+    const getRes = await sbFetch(`fl_bonus_matrix?id=eq.${encodeURIComponent(id)}&select=payload`)
+    const existing = getRes.ok ? await getRes.json() : []
+    const current = (Array.isArray(existing) && existing[0]?.payload) ? existing[0].payload as Record<string, unknown> : {}
+    const merged = { ...current, ...patch }
+    const res = await sbFetch("fl_bonus_matrix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, payload: merged, updated_at: new Date().toISOString() }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const updated = await res.json()
-    return NextResponse.json({ ok: true, cell: Array.isArray(updated) ? updated[0] : updated }, { headers: cors(origin) })
+    return NextResponse.json({ ok: true, cell: { id, ...merged } }, { headers: cors(origin) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500, headers: cors(origin) })
   }
