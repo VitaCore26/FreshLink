@@ -707,7 +707,9 @@ export interface PurchaseOrder {
   notePaiement?: string
   // Charges par article (coût de revient) — saisies/confirmées à l'achat
   chargeArticleId?: string
-  chargeMontant?: number        // DH par unité, ajouté au prix d'achat
+  chargesIds?: string[]                            // plusieurs charges par article (chariot, manutention…)
+  chargesDetail?: { nom: string; montant: number }[]  // détail des charges retenues (pour affichage)
+  chargeMontant?: number        // DH par unité = SOMME des charges retenues
   coutRevientUnitaire?: number  // prixUnitaire + chargeMontant
   totalCharges?: number         // chargeMontant × quantité
   // Multi-depot

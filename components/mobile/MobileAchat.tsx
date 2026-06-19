@@ -243,23 +243,32 @@ export default function MobileAchat({ user }: Props) {
     statutPaiement: "impaye" as "impaye" | "partiel" | "solde",
     notePaiement: "",
     photoAchat: "",       // photo obligatoire avant validation
-    chargeArticleId: "",  // charge par article (coût de revient) — cf. BO Articles
+    chargeIds: [] as string[],  // plusieurs charges par article (chariot, manutention…)
   })
   const [chargesArticle, setChargesArticle] = useState(store.getChargesArticle())
   const [poSaving, setPoSaving] = useState(false)
 
-  // Ajout d'une charge (catalogue fl_charges_article) directement depuis le PO
-  const addChargeArticleInline = () => {
-    const nom = window.prompt("Nom de la charge (ex: Transport, Manutention) :", "")?.trim()
+  // Ajoute une LIGNE de charge vide (l'acheteur choisit ensuite la charge dans le select)
+  const addChargeRow = () => setPoDetail(p => ({ ...p, chargeIds: [...p.chargeIds, ""] }))
+  const setChargeRow = (idx: number, id: string) => setPoDetail(p => {
+    const next = [...p.chargeIds]; next[idx] = id; return { ...p, chargeIds: next }
+  })
+  const removeChargeRow = (idx: number) => setPoDetail(p => ({ ...p, chargeIds: p.chargeIds.filter((_, i) => i !== idx) }))
+  // Crée une NOUVELLE charge dans le catalogue (si elle n'existe pas) et l'ajoute en ligne
+  const createNewCharge = () => {
+    const nom = window.prompt("Nom de la nouvelle charge (ex: Chariot, Manutention) :", "")?.trim()
     if (!nom) return
     const montantStr = window.prompt(`Montant de « ${nom} » (DH par unité) :`, "0")
     const montant = Number(montantStr)
     if (Number.isNaN(montant) || montant < 0) return
-    const next = [...store.getChargesArticle(), { id: store.genId(), nom, montant }]
+    const created = { id: store.genId(), nom, montant }
+    const next = [...store.getChargesArticle(), created]
     store.saveChargesArticle(next)
     setChargesArticle(next)
-    setPoDetail(p => ({ ...p, chargeArticleId: next[next.length - 1].id }))
+    setPoDetail(p => ({ ...p, chargeIds: [...p.chargeIds, created.id] }))
   }
+  const chargeMontantOf = (id: string) => Number(chargesArticle.find(c => c.id === id)?.montant) || 0
+  const totalChargeUnit = () => poDetail.chargeIds.reduce((s, id) => s + chargeMontantOf(id), 0)
 
   const openPOModal = (po: typeof pendingPOs[0]) => {
     // Charge par défaut = celle affectée à l'article (back-office), modifiable ici
@@ -272,7 +281,7 @@ export default function MobileAchat({ user }: Props) {
       statutPaiement: "impaye",
       notePaiement: "",
       photoAchat: "",
-      chargeArticleId: po.chargeArticleId ?? art?.chargeArticleId ?? "",
+      chargeIds: (po.chargeArticleId ?? art?.chargeArticleId) ? [po.chargeArticleId ?? art?.chargeArticleId ?? ""] : [],
     })
     setPoModalId(po.id)
   }
@@ -291,9 +300,11 @@ export default function MobileAchat({ user }: Props) {
     const total = qty * pu
     const fourNom = fournisseurs.find(f => f.id === poDetail.fournisseurId)?.nom ?? ""
     const po = store.getPurchaseOrders().find(p => p.id === poModalId)
-    // Charge par article (coût de revient)
-    const charge = chargesArticle.find(c => c.id === poDetail.chargeArticleId)
-    const chargeMontant = charge?.montant ?? 0
+    // Charges par article (plusieurs possibles) — coût de revient
+    const selectedCharges = poDetail.chargeIds
+      .map(id => chargesArticle.find(c => c.id === id))
+      .filter((c): c is { id: string; nom: string; montant: number } => !!c)
+    const chargeMontant = selectedCharges.reduce((s, c) => s + (Number(c.montant) || 0), 0)
     store.updatePurchaseOrder(poModalId, {
       statut: "envoyé",
       quantite: qty,
@@ -304,7 +315,9 @@ export default function MobileAchat({ user }: Props) {
       montantPaye: Number(poDetail.montantPaye) || 0,
       statutPaiement: poDetail.statutPaiement,
       notePaiement: poDetail.notePaiement,
-      chargeArticleId: poDetail.chargeArticleId || undefined,
+      chargeArticleId: selectedCharges[0]?.id || undefined,   // back-compat
+      chargesIds: selectedCharges.map(c => c.id),
+      chargesDetail: selectedCharges.map(c => ({ nom: c.nom, montant: Number(c.montant) || 0 })),
       chargeMontant,
       coutRevientUnitaire: pu + chargeMontant,
       totalCharges: chargeMontant * qty,
@@ -1333,31 +1346,54 @@ export default function MobileAchat({ user }: Props) {
                   </div>
                 </div>
 
-                {/* Charge par article (coût de revient) + ajout inline */}
+                {/* Charges par article (plusieurs possibles) — charge | coût + "+" */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Charge / unité (coût de revient)</label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={poDetail.chargeArticleId}
-                      onChange={e => setPoDetail(p => ({ ...p, chargeArticleId: e.target.value }))}
-                      className="flex-1 px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-                      <option value="">— Aucune charge —</option>
-                      {chargesArticle.map(c => (
-                        <option key={c.id} value={c.id}>{c.nom} (+{c.montant} DH)</option>
-                      ))}
-                    </select>
-                    <button type="button" onClick={addChargeArticleInline}
-                      title="Ajouter une charge"
-                      className="shrink-0 w-10 h-10 rounded-xl bg-amber-500 text-white text-xl font-bold flex items-center justify-center hover:bg-amber-600">+</button>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">Charges (coût de revient)</label>
+                    <button type="button" onClick={createNewCharge} className="text-[11px] font-bold text-amber-600 underline">+ Nouvelle charge</button>
                   </div>
-                  <p className="text-[11px] text-amber-600 mt-1">
-                    {chargesArticle.length === 0 ? "Aucune charge — appuyez sur + pour en ajouter (Transport, Manutention…)." : "+ pour ajouter une autre charge."}
-                  </p>
+                  {/* En-têtes Charge | Coût */}
+                  {poDetail.chargeIds.length > 0 && (
+                    <div className="flex items-center gap-2 px-1 mb-1">
+                      <span className="flex-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Charge</span>
+                      <span className="w-24 text-right text-[10px] font-bold uppercase tracking-wide text-slate-400">Coût (DH/u)</span>
+                      <span className="w-7" />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    {poDetail.chargeIds.map((cid, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <select
+                          value={cid}
+                          onChange={e => setChargeRow(idx, e.target.value)}
+                          className="flex-1 px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                          <option value="">— Choisir —</option>
+                          {chargesArticle.map(c => (
+                            <option key={c.id} value={c.id}>{c.nom}</option>
+                          ))}
+                        </select>
+                        <span className="w-24 text-right text-sm font-bold font-mono text-amber-700">{chargeMontantOf(cid).toFixed(2)}</span>
+                        <button type="button" onClick={() => removeChargeRow(idx)} title="Retirer"
+                          className="shrink-0 w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-red-100 hover:text-red-600">×</button>
+                      </div>
+                    ))}
+                  </div>
+                  {/* + ajouter une charge (chariot, manutention…) */}
+                  <button type="button" onClick={addChargeRow}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-amber-300 text-amber-700 text-sm font-bold hover:bg-amber-50">
+                    <span className="text-lg leading-none">+</span> Ajouter une charge (chariot, manutention…)
+                  </button>
+                  {poDetail.chargeIds.length > 0 && (
+                    <div className="flex items-center justify-between mt-2 px-1">
+                      <span className="text-xs font-semibold text-slate-600">Total charges / unité</span>
+                      <span className="text-sm font-black text-amber-800 font-mono">{totalChargeUnit().toFixed(2)} DH</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Total preview + coût de revient */}
                 {totalCalc > 0 && (() => {
-                  const cm = chargesArticle.find(c => c.id === poDetail.chargeArticleId)?.montant ?? 0
+                  const cm = totalChargeUnit()
                   const qte = Number(poDetail.quantite) || 0
                   const pu = Number(poDetail.prixUnitaire) || 0
                   const totalCharges = cm * qte
