@@ -102,6 +102,7 @@ const BOComptabiliteRH       = dynamic(() => import("./BOComptabiliteRH"),      
 const BODatabase             = dynamic(() => import("./BODatabase"),             { ssr: false, loading: L("Chargement base de donnees...") })
 const BOIntelligencePrix     = dynamic(() => import("./BOIntelligencePrix"),     { ssr: false, loading: L("Chargement intelligence prix...") })
 const BOConcurrence          = dynamic(() => import("./BOConcurrence"),          { ssr: false, loading: L("Chargement concurrence...") })
+const BOCoutLivraison        = dynamic(() => import("./BOCoutLivraison"),        { ssr: false, loading: L("Chargement coûts livraison...") })
 const BOBonLivraison         = dynamic(() => import("./BOBonLivraison"),         { ssr: false, loading: L("Chargement bons de livraison...") })
 const BOHRDocuments          = dynamic(() => import("./BOHRDocuments"),          { ssr: false, loading: L("Chargement documents RH...") })
 const BOLoyalty              = dynamic(() => import("./BOLoyalty"),              { ssr: false, loading: L("Chargement fidelite...") })
@@ -149,7 +150,7 @@ export type Tab =
   | "azmi_agent" | "hicham_agent" | "ourai_agent"
   | "depots"
   | "rh_productivite" | "rh_comptabilite"
-  | "intelligence_prix" | "concurrence" | "bon_livraison" | "hr_documents"
+  | "intelligence_prix" | "concurrence" | "cout_livraison" | "bon_livraison" | "hr_documents"
   | "loyalty" | "performance_incentives" | "template_editor"
   | "investissement" | "sourcing" | "pricing" | "finance_cdg"
   | "demandes_comptes" | "web_integration" | "permissions_matrix"
@@ -321,6 +322,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "bon_livraison",label: "Bons de Livraison",    labelAr: "وصولات التوصيل",   permKey: "canViewLogistique", icon: <Icon d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /> },
       { id: "retour",       label: "Retours",              labelAr: "المرتجعات",        permKey: "canViewLogistique", icon: <Icon d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /> },
       { id: "trip_charges", label: "Coût Trajet",          labelAr: "تكلفة المسار",     permKey: "canViewLogistique", icon: <Icon d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M12 7h.01M15 7h.01M9 7H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M7 7V5a2 2 0 012-2h8a2 2 0 012 2v2" /> },
+      { id: "cout_livraison", label: "Coût Livraison",     labelAr: "تكلفة التوصيل",    permKey: "canViewLogistique", icon: <Icon d="M3 3v18h18M9 17V9m4 8V5m4 12v-6" /> },
       { id: "gps_tracker",  label: "GPS Livreurs",         labelAr: "تتبع GPS",         icon: (
         <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -453,6 +455,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   rh_comptabilite:   (u) => <BOComptabiliteRH user={u} />,
   intelligence_prix: (u) => <BOIntelligencePrix user={u} />,
   concurrence: (u) => <BOConcurrence user={u} />,
+  cout_livraison: (_u) => <BOCoutLivraison />,
   bon_livraison:     (u) => <BOBonLivraison user={u} />,
   hr_documents:          (u) => <BOHRDocuments user={u} />,
   loyalty:               (u) => <BOLoyalty user={u} />,
