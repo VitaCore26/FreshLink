@@ -423,8 +423,12 @@ export interface Livreur {
   capaciteTonnage?: number    // en kg
   photoCartGrise?: string
   photoPermis?: string
-  // externe
+  // externe / transporteur (auto-entrepreneur ou société)
   societe?: string
+  ice?: string        // Identifiant Commun de l'Entreprise
+  rc?: string         // Registre de Commerce (ex: 12345/Casa)
+  ifFiscal?: string   // Identifiant Fiscal
+  cnss?: string       // N° CNSS
   // Carburant : avec = on fournit/paie le carburant (→ analyse conso) ;
   // sans = forfait, carburant à la charge du transporteur/livreur.
   carburantInclus?: boolean        // true = "avec carburant"

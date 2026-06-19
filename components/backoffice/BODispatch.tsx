@@ -670,6 +670,76 @@ export default function BODispatch({ user }: Props) {
                     )}
                   </div>
 
+                  {/* Véhicule (matricule + marque) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-foreground">Matricule véhicule</label>
+                      <input type="text" placeholder="A-12345" value={livreurForm.matricule || ""}
+                        onChange={e => setLivreurForm({ ...livreurForm, matricule: e.target.value })}
+                        className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-foreground">Marque / modèle</label>
+                      <input type="text" placeholder="Hyundai H100" value={livreurForm.marqueVehicule || ""}
+                        onChange={e => setLivreurForm({ ...livreurForm, marqueVehicule: e.target.value })}
+                        className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                  </div>
+
+                  {/* Pièces du conducteur — photo / upload (CIN, permis, carte grise) */}
+                  <div className="rounded-xl border border-border p-3 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-foreground">Pièces du conducteur (photo ou fichier)</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { key: "photoCin" as const, label: "CIN" },
+                        { key: "photoPermis" as const, label: "Permis" },
+                        { key: "photoCartGrise" as const, label: "Carte grise" },
+                      ]).map(doc => (
+                        <div key={doc.key} className="flex flex-col gap-1">
+                          <label className="text-[11px] font-semibold text-muted-foreground">{doc.label}</label>
+                          <label className="relative cursor-pointer rounded-lg border border-dashed border-border h-20 flex items-center justify-center overflow-hidden bg-muted/40 hover:bg-muted">
+                            {(livreurForm as Record<string, unknown>)[doc.key]
+                              ? <img src={(livreurForm as Record<string, unknown>)[doc.key] as string} alt={doc.label} className="w-full h-full object-cover" />
+                              : <span className="text-[10px] text-muted-foreground text-center px-1">📷 Photo / Upload</span>}
+                            <input type="file" accept="image/*" capture="environment" className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0]; if (!file) return
+                                const reader = new FileReader()
+                                reader.onload = ev => setLivreurForm(f => ({ ...f, [doc.key]: ev.target?.result as string }))
+                                reader.readAsDataURL(file)
+                              }} />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Transporteur (auto-entrepreneur / société) — ICE, RC, IF, CNSS */}
+                  {livreurForm.type === "externe" && (
+                    <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-3 flex flex-col gap-2">
+                      <p className="text-xs font-bold text-purple-800">Transporteur (auto-entrepreneur / société)</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" placeholder="Société (raison sociale)" value={livreurForm.societe || ""}
+                          onChange={e => setLivreurForm({ ...livreurForm, societe: e.target.value })}
+                          className="col-span-2 px-3 py-2 rounded-lg border border-purple-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                        {([
+                          { key: "ice" as const, label: "ICE", ph: "000000000000000" },
+                          { key: "rc" as const, label: "RC", ph: "12345/Casa" },
+                          { key: "ifFiscal" as const, label: "IF Fiscal", ph: "12345678" },
+                          { key: "cnss" as const, label: "CNSS", ph: "N° CNSS" },
+                        ]).map(f => (
+                          <div key={f.key} className="flex flex-col gap-1">
+                            <label className="text-[11px] font-semibold text-purple-700">{f.label}</label>
+                            <input type="text" placeholder={f.ph}
+                              value={(livreurForm as Record<string, unknown>)[f.key] as string || ""}
+                              onChange={e => setLivreurForm({ ...livreurForm, [f.key]: e.target.value })}
+                              className="px-3 py-2 rounded-lg border border-purple-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="actif" checked={livreurForm.actif}
                       onChange={e => setLivreurForm({ ...livreurForm, actif: e.target.checked })}
