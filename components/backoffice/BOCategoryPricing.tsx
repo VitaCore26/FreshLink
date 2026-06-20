@@ -16,7 +16,7 @@ const CAT_COLORS: Record<Cat, string> = {
 // ── CSV helpers ──────────────────────────────────────────────────────────────
 function exportCSV(articles: Article[]) {
   const rows = [
-    ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier"],
+    ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier","ajustCHR","ajustMarchand","ajustParticulier"],
     ...articles.map(a => [
       a.id, a.nom, a.famille, a.unite,
       a.prixAchat ?? "",
@@ -26,6 +26,9 @@ function exportCSV(articles: Article[]) {
       (a as unknown as Record<string,unknown>).promoCHR ?? "",
       (a as unknown as Record<string,unknown>).promoMarchand ?? "",
       (a as unknown as Record<string,unknown>).promoParticulier ?? "",
+      (a as unknown as Record<string,unknown>).ajustCHR ?? "",
+      (a as unknown as Record<string,unknown>).ajustMarchand ?? "",
+      (a as unknown as Record<string,unknown>).ajustParticulier ?? "",
     ]),
   ]
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n")
@@ -50,16 +53,20 @@ function importCSV(text: string): Partial<Article>[] {
       promoCHR:        row.promoCHR       ? Number(row.promoCHR)        : undefined,
       promoMarchand:   row.promoMarchand  ? Number(row.promoMarchand)   : undefined,
       promoParticulier:row.promoParticulier? Number(row.promoParticulier): undefined,
+      ajustCHR:        row.ajustCHR       ? Number(row.ajustCHR)        : undefined,
+      ajustMarchand:   row.ajustMarchand  ? Number(row.ajustMarchand)   : undefined,
+      ajustParticulier:row.ajustParticulier? Number(row.ajustParticulier): undefined,
     } as Partial<Article>
   }).filter(r => r.id)
 }
 
-const FIELD_MAP: Record<Cat, { prix: keyof Article; promo: keyof Article }> = {
-  chr:         { prix: "prixCHR" as keyof Article,         promo: "promoCHR" as keyof Article },
-  marchand:    { prix: "prixMarchand" as keyof Article,    promo: "promoMarchand" as keyof Article },
-  particulier: { prix: "prixParticulier" as keyof Article, promo: "promoParticulier" as keyof Article },
+type PriceField = "prix" | "promo" | "ajust"
+const FIELD_MAP: Record<Cat, { prix: keyof Article; promo: keyof Article; ajust: keyof Article }> = {
+  chr:         { prix: "prixCHR" as keyof Article,         promo: "promoCHR" as keyof Article,         ajust: "ajustCHR" as keyof Article },
+  marchand:    { prix: "prixMarchand" as keyof Article,    promo: "promoMarchand" as keyof Article,    ajust: "ajustMarchand" as keyof Article },
+  particulier: { prix: "prixParticulier" as keyof Article, promo: "promoParticulier" as keyof Article, ajust: "ajustParticulier" as keyof Article },
 }
-const getField = (cat: Cat): { prix: keyof Article; promo: keyof Article } => FIELD_MAP[cat]
+const getField = (cat: Cat): { prix: keyof Article; promo: keyof Article; ajust: keyof Article } => FIELD_MAP[cat]
 
 export default function BOCategoryPricing() {
   const [articles, setArticles]     = useState<Article[]>([])
@@ -69,20 +76,35 @@ export default function BOCategoryPricing() {
   const [mode, setMode]             = useState<Mode>("segment")
   const [activeCat, setActiveCat]   = useState<Cat>("chr")
   const [selectedClient, setSelectedClient] = useState<string>("")
-  const [edits, setEdits]           = useState<Record<string, { prix?: number; promo?: number }>>({})
+  const [edits, setEdits]           = useState<Record<string, { prix?: number; promo?: number; ajust?: number }>>({})
   const [saved, setSaved]           = useState(false)
   const [importMsg, setImportMsg]   = useState<{ ok: boolean; text: string } | null>(null)
   const fileRef                     = useRef<HTMLInputElement>(null)
   // Pricing par famille (application en masse sur le segment actif)
   const [famPanel, setFamPanel]     = useState(false)
   const [famSel, setFamSel]         = useState("")
-  const [famMethode, setFamMethode] = useState<"marge" | "fixe">("marge")
+  // Base de marge : "cout" = PA+charge · "pv" = prix de vente standard · "fixe" = prix absolu
+  const [famBase, setFamBase]       = useState<"cout" | "pv" | "fixe">("cout")
+  // Type de marge : "pct" = pourcentage % · "dh" = montant fixe en DH (+x DH)
+  const [famType, setFamType]       = useState<"pct" | "dh">("pct")
   const [famValeur, setFamValeur]   = useState("")
+  // Charges article (PA+charge) — pour la base "cout"
+  const [chargesArt, setChargesArt] = useState<{ id: string; nom: string; montant: number }[]>([])
+
+  // Ajustement PV par segment (colonne « Ajust. PV (DH) ») — interprétation d'affichage
+  // du signe : on stocke un nombre signé par article (négatif = remise, positif = marge).
 
   useEffect(() => {
     setArticles(store.getArticles())
     setClients(store.getClients().filter(c => (c as unknown as Record<string,unknown>).actif !== false))
+    try { setChargesArt(store.getChargesArticle()) } catch { setChargesArt([]) }
   }, [])
+
+  // Charge unitaire (DH) appliquée à un article via son chargeArticleId
+  const chargeOf = (art: Article): number => {
+    if (!art.chargeArticleId) return 0
+    return Number(chargesArt.find(c => c.id === art.chargeArticleId)?.montant ?? 0) || 0
+  }
 
   const filtered = articles.filter(a => {
     const matchSearch = (a.nom ?? "").toLowerCase().includes(search.toLowerCase()) ||
@@ -112,6 +134,9 @@ export default function BOCategoryPricing() {
           if (row.promoCHR !== undefined)         a.promoCHR        = row.promoCHR
           if (row.promoMarchand !== undefined)    a.promoMarchand   = row.promoMarchand
           if (row.promoParticulier !== undefined) a.promoParticulier = row.promoParticulier
+          if ((row as Record<string,unknown>).ajustCHR !== undefined)         a.ajustCHR         = (row as Record<string,unknown>).ajustCHR
+          if ((row as Record<string,unknown>).ajustMarchand !== undefined)    a.ajustMarchand    = (row as Record<string,unknown>).ajustMarchand
+          if ((row as Record<string,unknown>).ajustParticulier !== undefined) a.ajustParticulier = (row as Record<string,unknown>).ajustParticulier
           updated++
         })
         store.saveArticles(all)
@@ -128,14 +153,14 @@ export default function BOCategoryPricing() {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  const getSegVal = (art: Article, cat: Cat, field: "prix" | "promo"): string => {
+  const getSegVal = (art: Article, cat: Cat, field: PriceField): string => {
     const key = getField(cat)[field]
     const edited = edits[art.id]?.[field]
     if (edited !== undefined) return String(edited)
     return String((art as unknown as Record<string, unknown>)[key as string] ?? "")
   }
 
-  const getClientVal = (art: Article, field: "prix" | "promo"): string => {
+  const getClientVal = (art: Article, field: PriceField): string => {
     if (!selectedClient) return ""
     const edited = edits[art.id]?.[field]
     if (edited !== undefined) return String(edited)
@@ -144,7 +169,7 @@ export default function BOCategoryPricing() {
     return ""
   }
 
-  const setVal = (artId: string, field: "prix" | "promo", val: string) => {
+  const setVal = (artId: string, field: PriceField, val: string) => {
     setEdits(prev => ({
       ...prev,
       [artId]: { ...prev[artId], [field]: val === "" ? undefined : Number(val) },
@@ -158,20 +183,28 @@ export default function BOCategoryPricing() {
   // les edits du segment actif (l'utilisateur valide ensuite avec « Enregistrer »).
   const applyFamillePricing = () => {
     const v = Number(famValeur)
-    if (!famSel || isNaN(v) || v <= 0) return
+    if (!famSel || isNaN(v)) return
     const cible = articles.filter(a => a.famille === famSel)
     setEdits(prev => {
       const next = { ...prev }
       cible.forEach(a => {
-        const pa = Number(a.prixAchat) || 0
-        const prix = famMethode === "marge"
-          ? Math.round(pa * (1 + v / 100) * 100) / 100   // marge % sur PA
-          : Math.round(v * 100) / 100                     // prix fixe
-        next[a.id] = { ...next[a.id], prix }
+        const pa     = Number(a.prixAchat) || 0
+        const cout   = pa + chargeOf(a)              // PA + charge
+        const pv     = store.computePV(a)            // prix de vente standard
+        let prix: number
+        if (famBase === "fixe") {
+          prix = v                                    // prix absolu en DH
+        } else {
+          const base = famBase === "cout" ? cout : pv
+          prix = famType === "pct" ? base * (1 + v / 100) : base + v
+        }
+        next[a.id] = { ...next[a.id], prix: Math.round(prix * 100) / 100 }
       })
       return next
     })
-    setImportMsg({ ok: true, text: `${cible.length} article(s) de « ${famSel} » → ${famMethode === "marge" ? `PA +${v}%` : `${v} DH`} sur ${CAT_LABELS[activeCat]}. Cliquez « Enregistrer » pour appliquer.` })
+    const baseLbl = famBase === "fixe" ? "Prix fixe" : famBase === "cout" ? "PA+charge" : "PV"
+    const valLbl  = famBase === "fixe" ? `${v} DH` : famType === "pct" ? `${v >= 0 ? "+" : ""}${v}%` : `${v >= 0 ? "+" : ""}${v} DH`
+    setImportMsg({ ok: true, text: `${cible.length} article(s) de « ${famSel} » → ${baseLbl} ${valLbl} sur ${CAT_LABELS[activeCat]}. Cliquez « Enregistrer » pour appliquer.` })
     setTimeout(() => setImportMsg(null), 6000)
   }
 
@@ -183,15 +216,22 @@ export default function BOCategoryPricing() {
   const effectivePrix = (art: Article): number => {
     if (mode === "client" && selectedClient) {
       const override = edits[art.id]?.prix ?? art.clientPrices?.[selectedClient]?.prix
-      if (override && override > 0) return override
-      const cat = clientCat(selectedClient)
-      const catPrix = (art as unknown as Record<string, unknown>)[getField(cat).prix as string] as number
-      return catPrix > 0 ? catPrix : store.computePV(art)
+      const promo  = Number(getClientVal(art, "promo")) || 0
+      const ajust  = Number(getClientVal(art, "ajust")) || 0
+      let base: number
+      if (override && override > 0) base = override
+      else {
+        const cat = clientCat(selectedClient)
+        const catPrix = (art as unknown as Record<string, unknown>)[getField(cat).prix as string] as number
+        base = catPrix > 0 ? catPrix : store.computePV(art)
+      }
+      return Math.round((base * (1 - promo / 100) + ajust) * 100) / 100
     }
     const catPrix = Number(getSegVal(art, activeCat, "prix")) || 0
     const promo   = Number(getSegVal(art, activeCat, "promo")) || 0
+    const ajust   = Number(getSegVal(art, activeCat, "ajust")) || 0
     const base    = catPrix > 0 ? catPrix : store.computePV(art)
-    return base * (1 - promo / 100)
+    return Math.round((base * (1 - promo / 100) + ajust) * 100) / 100
   }
 
   // ── Save ─────────────────────────────────────────────────────────────────
@@ -204,9 +244,10 @@ export default function BOCategoryPricing() {
       if (idx < 0) continue
       touchedIds.push(artId)
       if (mode === "segment") {
-        const { prix: prixKey, promo: promoKey } = getField(activeCat)
+        const { prix: prixKey, promo: promoKey, ajust: ajustKey } = getField(activeCat)
         if (edit.prix  !== undefined) (all[idx] as unknown as Record<string, unknown>)[prixKey  as string] = edit.prix
         if (edit.promo !== undefined) (all[idx] as unknown as Record<string, unknown>)[promoKey as string] = edit.promo
+        if (edit.ajust !== undefined) (all[idx] as unknown as Record<string, unknown>)[ajustKey as string] = edit.ajust
       } else if (selectedClient) {
         if (!all[idx].clientPrices) all[idx].clientPrices = {}
         const prev = all[idx].clientPrices![selectedClient] ?? {}
@@ -214,8 +255,9 @@ export default function BOCategoryPricing() {
           ...prev,
           ...(edit.prix  !== undefined ? { prix:  edit.prix  } : {}),
           ...(edit.promo !== undefined ? { promo: edit.promo } : {}),
+          ...(edit.ajust !== undefined ? { ajust: edit.ajust } : {}),
         }
-        if (edit.prix === undefined && edit.promo === undefined)
+        if (edit.prix === undefined && edit.promo === undefined && edit.ajust === undefined)
           delete all[idx].clientPrices![selectedClient]
       }
     }
@@ -403,7 +445,7 @@ export default function BOCategoryPricing() {
             <h3 className="text-sm font-bold text-foreground">🏷️ Prix de vente par famille — segment {CAT_LABELS[activeCat]}</h3>
             <span className="text-[11px] text-muted-foreground">Applique un prix/marge à tous les articles d&apos;une famille en une fois</span>
           </div>
-          <div className="grid sm:grid-cols-4 gap-2 items-end">
+          <div className="grid sm:grid-cols-5 gap-2 items-end">
             <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
               Famille
               <select value={famSel} onChange={e => setFamSel(e.target.value)}
@@ -413,23 +455,37 @@ export default function BOCategoryPricing() {
               </select>
             </label>
             <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
-              Méthode
-              <select value={famMethode} onChange={e => setFamMethode(e.target.value as "marge" | "fixe")}
+              Base de marge
+              <select value={famBase} onChange={e => setFamBase(e.target.value as "cout" | "pv" | "fixe")}
                 className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="marge">Marge % sur PA</option>
+                <option value="cout">Sur PA + charge</option>
+                <option value="pv">Sur PV standard</option>
                 <option value="fixe">Prix fixe (DH)</option>
               </select>
             </label>
             <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
-              {famMethode === "marge" ? "Marge (%)" : "Prix (DH)"}
-              <input type="number" min={0} step="0.01" value={famValeur} onChange={e => setFamValeur(e.target.value)}
+              Type de marge
+              <select value={famType} onChange={e => setFamType(e.target.value as "pct" | "dh")}
+                disabled={famBase === "fixe"}
+                className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50">
+                <option value="pct">Pourcentage %</option>
+                <option value="dh">Montant + DH</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-foreground">
+              {famBase === "fixe" ? "Prix (DH)" : famType === "pct" ? "Marge (%)" : "Marge (DH)"}
+              <input type="number" step="0.01" value={famValeur} onChange={e => setFamValeur(e.target.value)}
                 className="px-3 py-2 rounded-xl border border-border bg-background text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary" />
             </label>
-            <button onClick={applyFamillePricing} disabled={!famSel || !famValeur}
+            <button onClick={applyFamillePricing} disabled={!famSel || famValeur === ""}
               className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary disabled:opacity-50">
               Appliquer
             </button>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            <strong>Base</strong> : « PA + charge » = coût de revient (prix d&apos;achat + charge article) · « PV standard » = prix de vente calculé · « Prix fixe » = montant absolu.
+            <strong> Type</strong> : % (ex : +25 %) ou montant en DH (ex : +3 DH). Valeur négative = remise.
+          </p>
           <p className="text-[11px] text-amber-700">⚠️ « Appliquer » pré-remplit les prix ; cliquez ensuite <strong>Enregistrer</strong> pour sauvegarder.</p>
         </div>
       )}
@@ -460,6 +516,7 @@ export default function BOCategoryPricing() {
                         {" "}Prix (DH)
                       </th>
                       <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Remise %</th>
+                      <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Ajust. PV (DH)</th>
                     </>
                   ) : (
                     <>
@@ -469,6 +526,7 @@ export default function BOCategoryPricing() {
                       </th>
                       <th className="text-center px-4 py-3 font-semibold text-amber-700">Override prix (DH)</th>
                       <th className="text-center px-4 py-3 font-semibold text-amber-700">Override remise %</th>
+                      <th className="text-center px-4 py-3 font-semibold text-amber-700">Ajust. PV (DH)</th>
                     </>
                   )}
                   <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Prix final</th>
@@ -484,7 +542,8 @@ export default function BOCategoryPricing() {
                   if (mode === "segment") {
                     const catPrix  = Number(getSegVal(art, activeCat, "prix"))  || 0
                     const catPromo = Number(getSegVal(art, activeCat, "promo")) || 0
-                    const hasCustom = catPrix > 0 || catPromo > 0
+                    const catAjust = Number(getSegVal(art, activeCat, "ajust")) || 0
+                    const hasCustom = catPrix > 0 || catPromo > 0 || catAjust !== 0
                     return (
                       <tr key={art.id} className={`border-b border-border last:border-0 hover:bg-muted/20 ${hasCustom ? "bg-primary/[0.03]" : ""} ${!art.actif ? "opacity-60" : ""}`}>
                         <td className="px-4 py-3">
@@ -510,6 +569,17 @@ export default function BOCategoryPricing() {
                               placeholder="0"
                               className="w-16 px-2 py-1.5 rounded-lg border border-border bg-background text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
                             <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <input type="number" step={0.5}
+                              value={getSegVal(art, activeCat, "ajust")}
+                              onChange={e => setVal(art.id, "ajust", e.target.value)}
+                              placeholder="0"
+                              title="Ajustement PV en DH : négatif = remise, positif = marge (appliqué après la remise %)"
+                              className="w-20 px-2 py-1.5 rounded-lg border border-border bg-background text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <span className="text-xs text-muted-foreground">DH</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -553,6 +623,17 @@ export default function BOCategoryPricing() {
                             placeholder="—"
                             className="w-16 px-2 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
                           <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <input type="number" step={0.5}
+                            value={getClientVal(art, "ajust")}
+                            onChange={e => setVal(art.id, "ajust", e.target.value)}
+                            placeholder="—"
+                            title="Ajustement PV en DH : négatif = remise, positif = marge (appliqué après la remise %)"
+                            className="w-20 px-2 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                          <span className="text-xs text-muted-foreground">DH</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">

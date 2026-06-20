@@ -38,11 +38,12 @@ interface LigneCmd {
 // ── Config statuts ───────────────────────────────────────────────────────────
 
 const STATUTS_WEB: Record<string, { label: string; color: string; icon: string }> = {
-  nouveau:    { label: "Nouveau",   color: "bg-blue-100 text-blue-700 border-blue-200",    icon: "🆕" },
-  en_cours:   { label: "En cours",  color: "bg-amber-100 text-amber-700 border-amber-200",  icon: "⏳" },
-  prepare:    { label: "Préparé",   color: "bg-purple-100 text-purple-700 border-purple-200",icon: "📦" },
-  livre:      { label: "Livré",     color: "bg-green-100 text-green-700 border-green-200",  icon: "✅" },
-  annule:     { label: "Annulé",    color: "bg-red-100 text-red-700 border-red-200",        icon: "❌" },
+  nouveau:     { label: "Nouveau",      color: "bg-blue-100 text-blue-700 border-blue-200",       icon: "🆕" },
+  a_confirmer: { label: "À confirmer",  color: "bg-orange-100 text-orange-700 border-orange-200", icon: "⏳" },
+  en_cours:    { label: "En cours",     color: "bg-amber-100 text-amber-700 border-amber-200",    icon: "⏳" },
+  prepare:     { label: "Préparé",      color: "bg-purple-100 text-purple-700 border-purple-200", icon: "📦" },
+  livre:       { label: "Livré",        color: "bg-green-100 text-green-700 border-green-200",    icon: "✅" },
+  annule:      { label: "Annulé",       color: "bg-red-100 text-red-700 border-red-200",          icon: "❌" },
 }
 
 const STATUTS_ERP: Record<string, { label: string; color: string; icon: string }> = {
@@ -57,7 +58,7 @@ const STATUTS_ERP: Record<string, { label: string; color: string; icon: string }
   retour:                 { label: "Retour",         color: "bg-orange-100 text-orange-700 border-orange-200", icon: "↩️" },
 }
 
-const NEXT_WEB = ["nouveau", "en_cours", "prepare", "livre", "annule"]
+const NEXT_WEB = ["nouveau", "a_confirmer", "en_cours", "prepare", "livre", "annule"]
 const NEXT_ERP = ["en_attente", "en_attente_approbation", "valide", "en_preparation", "charge", "en_transit", "livre", "refuse", "retour"]
 
 function getStatutCfg(statut: string, source: "web" | "erp") {

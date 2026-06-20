@@ -279,7 +279,12 @@ export interface Article {
   promoCHR?: number       // remise % CHR
   promoMarchand?: number  // remise % marchand
   promoParticulier?: number // remise % particulier
-  clientPrices?: Record<string, { prix?: number; promo?: number }> // overrides par client individuel
+  // Ajustement PV en DH (signé : négatif = remise, positif = marge) — s'ajoute
+  // au prix de vente du segment APRÈS la remise %. Indépendant de promo* (% pur).
+  ajustCHR?: number
+  ajustMarchand?: number
+  ajustParticulier?: number
+  clientPrices?: Record<string, { prix?: number; promo?: number; ajust?: number }> // overrides par client individuel
   // Charge appliquée à cet article pour le calcul du coût de revient
   // (transport, manutention, perte…) — référence un ChargeArticle du catalogue.
   chargeArticleId?: string

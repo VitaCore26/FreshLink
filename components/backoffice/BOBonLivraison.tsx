@@ -93,8 +93,68 @@ const STATUT_COLORS: Record<BLStatut, string> = {
 // Unified key — matches store.getBonsLivraison() / store.saveBonsLivraison()
 const LS_BL = "fl_bons_livraison"
 
+// Statuts valides reconnus par cet écran (clés de STATUT_LABELS)
+const VALID_STATUTS = new Set<BLStatut>(["brouillon", "valide", "en_livraison", "livre", "retour_partiel", "annule"])
+
+// ── Normalisation défensive ───────────────────────────────────────────────────
+// Les BL peuvent arriver de plusieurs sources (éditeur BO, import préparation,
+// injection trip/dispatch, commandes web). Certains payloads n'ont PAS le format
+// attendu (ex: pas de `numero`, lignes en {prixUnitaire,quantite,total}, statut
+// "émis"…). On normalise à la LECTURE pour ne jamais crasher (`b.numero.includes`)
+// et pour que ces BL deviennent visibles dans la liste.
+function normalizeLigne(l: Record<string, unknown>): BLLigne {
+  const prixUnit    = Number(l.prixUnit ?? l.prixUnitaire ?? 0) || 0
+  const qteLivree   = Number(l.qteLivree ?? l.quantite ?? 0) || 0
+  const qteCommande = Number(l.qteCommande ?? l.quantite ?? qteLivree) || 0
+  const totalLigne  = Number(l.totalLigne ?? l.total ?? qteLivree * prixUnit) || 0
+  return {
+    id:          String(l.id ?? genId()),
+    articleId:   String(l.articleId ?? ""),
+    articleNom:  String(l.articleNom ?? l.nom ?? "Article"),
+    unite:       String(l.unite ?? "kg"),
+    qteCommande, qteLivree, prixUnit, totalLigne,
+    noteQC:      l.noteQC ? String(l.noteQC) : undefined,
+    qcOk:        l.qcOk !== false,
+  }
+}
+
+function normalizeBL(raw: Record<string, unknown>): BonLivraison {
+  const lignes = (Array.isArray(raw.lignes) ? raw.lignes : []).map(l => normalizeLigne(l as Record<string, unknown>))
+  // Statut : mappe les valeurs externes ("émis", statutLivraison…) vers un BLStatut valide
+  let statut = String(raw.statut ?? "")
+  if (statut === "émis" || statut === "emis") statut = "valide"
+  if (!VALID_STATUTS.has(statut as BLStatut)) {
+    const sl = String(raw.statutLivraison ?? "")
+    statut = sl === "livre" ? "livre" : (VALID_STATUTS.has(statut as BLStatut) ? statut : "valide")
+  }
+  // TVA : certaines sources stockent 0.2 (fraction) au lieu de 20 (%)
+  let tva = Number(raw.tva ?? 20)
+  if (tva > 0 && tva < 1) tva = Math.round(tva * 100)
+  const totalHT  = Number(raw.totalHT  ?? raw.montantTotal ?? lignes.reduce((s, l) => s + l.totalLigne, 0)) || 0
+  const totalTTC = Number(raw.totalTTC ?? raw.montantTTC   ?? totalHT) || 0
+  return {
+    ...(raw as object),
+    id:           String(raw.id ?? genId()),
+    numero:       String(raw.numero ?? raw.id ?? ""),
+    clientId:     String(raw.clientId ?? ""),
+    clientNom:    String(raw.clientNom ?? raw.client ?? "—"),
+    transporteur: (raw.transporteur as BonLivraison["transporteur"]) ?? "non_affecte",
+    statut:       statut as BLStatut,
+    date:         String(raw.date ?? raw.created_at ?? new Date().toISOString().split("T")[0]),
+    lignes,
+    totalHT, totalTTC, tva,
+    qcObligatoire: raw.qcObligatoire === true,
+    createdBy:    String(raw.createdBy ?? ""),
+    updatedAt:    String(raw.updatedAt ?? raw.updated_at ?? new Date().toISOString()),
+  } as BonLivraison
+}
+
 function getBLs(): BonLivraison[] {
-  try { return JSON.parse(localStorage.getItem(LS_BL) ?? "[]") } catch { return [] }
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_BL) ?? "[]")
+    if (!Array.isArray(raw)) return []
+    return raw.map(b => normalizeBL(b as Record<string, unknown>))
+  } catch { return [] }
 }
 function saveBLs(bls: BonLivraison[]) {
   localStorage.setItem(LS_BL, JSON.stringify(bls))
@@ -102,7 +162,7 @@ function saveBLs(bls: BonLivraison[]) {
 function genId() { return `VFBL${Date.now().toString(36).toUpperCase().slice(-3)}${Math.floor(Math.random()*9999).toString().padStart(4,"0")}` }
 function genNumero() {
   const y = new Date().getFullYear()
-  const existing = getBLs().filter(b => b.numero.includes(`BL-${y}`))
+  const existing = getBLs().filter(b => (b.numero ?? "").includes(`BL-${y}`))
   const n = (existing.length + 1).toString().padStart(4, "0")
   return `BL-${y}-${n}`
 }
@@ -1041,12 +1101,12 @@ export default function BOBonLivraison({ user }: { user: User }) {
 
   const applyFilters = (list: BonLivraison[]) => list.filter(b => {
     const q = search.toLowerCase()
-    return (!q || b.clientNom.toLowerCase().includes(q) || b.numero.toLowerCase().includes(q) || (b.livreurNom ?? "").toLowerCase().includes(q)) &&
+    return (!q || (b.clientNom ?? "").toLowerCase().includes(q) || (b.numero ?? "").toLowerCase().includes(q) || (b.livreurNom ?? "").toLowerCase().includes(q)) &&
       (!filterStatut || b.statut === filterStatut) &&
       (!filterClient || b.clientNom === filterClient) &&
       (!filterLivreur || b.livreurNom === filterLivreur) &&
       (!filterTrip || (b as unknown as { tripId?: string }).tripId === filterTrip) &&
-      (!filterArticle || b.lignes.some(l => l.articleNom === filterArticle))
+      (!filterArticle || (b.lignes ?? []).some(l => l.articleNom === filterArticle))
   })
 
   const enCours   = useMemo(() => applyFilters(bls.filter(b => EN_COURS_STATUTS.includes(b.statut))), [bls, search, filterStatut, filterClient, filterLivreur, filterTrip, filterArticle])
