@@ -860,6 +860,11 @@ export default function BOBonLivraison({ user }: { user: User }) {
   const [importClientId, setImportClientId] = useState("")
   const [importArticleId, setImportArticleId] = useState("")
   const [factureSuccess, setFactureSuccess] = useState<string | null>(null)
+  // ── Facturation groupée (multi-BL + plage de dates) ────────────────────────
+  const [showFactureGroup, setShowFactureGroup] = useState(false)
+  const [factureFrom, setFactureFrom] = useState("")
+  const [factureTo, setFactureTo] = useState("")
+  const [selectedFacture, setSelectedFacture] = useState<Set<string>>(new Set())
 
   // ── Print customization ────────────────────────────────────────────────────
   const [printOpts, setPrintOpts] = useState<PrintBLOpts>(() => {
@@ -1093,6 +1098,54 @@ export default function BOBonLivraison({ user }: { user: User }) {
     setTimeout(() => setFactureSuccess(null), 4000)
   }
 
+  // ── Facturation groupée : transfert de PLUSIEURS BL en facture d'un coup ────
+  const transferManyToFacture = (ids: string[]) => {
+    if (!canFacture || ids.length === 0) return
+    const idSet = new Set(ids)
+    const now = new Date().toISOString()
+    let n = 0
+    const updated = bls.map(b => {
+      if (!idSet.has(b.id) || b.statut !== "livre" || (b as unknown as { factureCreee?: boolean }).factureCreee) return b
+      n++
+      const cleanNum = (b.numero ?? b.id.slice(-6).toUpperCase()).replace(/^(BL[-_])+/i, "")
+      return {
+        ...b,
+        factureCreee: true,
+        factureCreeeAt: now,
+        factureCreeeBy: user.name,
+        factureNumero: `Facture N° ${cleanNum}`,
+        blSource: `Bon de livraison ${cleanNum}`,
+        updatedAt: now,
+      } as unknown as BonLivraison
+    })
+    if (n === 0) { setFactureSuccess("Aucun BL éligible dans la sélection (déjà facturé ou non livré)."); setTimeout(() => setFactureSuccess(null), 4000); return }
+    saveBLs(updated)
+    store.saveBonsLivraison(updated as unknown as import("@/lib/store").BonLivraison[])
+    setBLs(updated)
+    setSelectedFacture(new Set())
+    setFactureSuccess(`✅ ${n} facture(s) créée(s) à partir des BL sélectionnés.`)
+    setTimeout(() => setFactureSuccess(null), 5000)
+  }
+
+  // BL éligibles à la facturation groupée : livrés, non encore facturés, dans la plage
+  const facturables = useMemo(() => {
+    return bls.filter(b => {
+      if (b.statut !== "livre" || (b as unknown as { factureCreee?: boolean }).factureCreee) return false
+      const d = String(b.date ?? "").slice(0, 10)
+      if (factureFrom && d < factureFrom) return false
+      if (factureTo && d > factureTo) return false
+      return true
+    }).sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  }, [bls, factureFrom, factureTo])
+
+  const toggleFactureSel = (id: string) => {
+    setSelectedFacture(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  const selectAllFacturables = () => setSelectedFacture(new Set(facturables.map(b => b.id)))
+  const clearFactureSel = () => setSelectedFacture(new Set())
+  const selectedFactureList = useMemo(() => facturables.filter(b => selectedFacture.has(b.id)), [facturables, selectedFacture])
+  const selectedFactureTotal = useMemo(() => selectedFactureList.reduce((s, b) => s + (Number(b.totalTTC) || 0), 0), [selectedFactureList])
+
   // ── Filtering ─────────────────────────────────────────────────────────────
   const allClients = useMemo(() => [...new Set(bls.map(b => b.clientNom).filter(Boolean))].sort(), [bls])
   const allLivreurs = useMemo(() => [...new Set(bls.map(b => b.livreurNom).filter(Boolean))].sort(), [bls])
@@ -1139,6 +1192,16 @@ export default function BOBonLivraison({ user }: { user: User }) {
               </svg>
               Impression
             </button>
+            {canFacture && (
+              <button
+                onClick={() => { setShowFactureGroup(s => !s); setMainTab("historique") }}
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-xl border transition-colors ${showFactureGroup ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+                </svg>
+                Facturation groupée
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={() => setShowImportPrep(s => !s)}
@@ -1318,6 +1381,83 @@ export default function BOBonLivraison({ user }: { user: User }) {
               </label>
             </div>
             <p className="text-[10px] text-amber-600 mt-2">Ce choix s&apos;applique à l&apos;impression et au téléchargement (BL ou Facture, avec ou sans identifiants légaux).</p>
+          </div>
+        )}
+
+        {/* ── Panneau Facturation groupée (multi-BL + plage de dates) ───────── */}
+        {showFactureGroup && canFacture && (
+          <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <div>
+                <p className="text-sm font-black text-emerald-800">Facturation groupée — sélectionnez plusieurs BL livrés sur une plage de dates</p>
+                <p className="text-xs text-emerald-600 mt-0.5">Seuls les BL <strong>livrés</strong> et <strong>non encore facturés</strong> sont éligibles.</p>
+              </div>
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">{facturables.length} BL éligible{facturables.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            {/* Plage de dates */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Du (date BL)</label>
+                <input type="date" value={factureFrom} onChange={e => setFactureFrom(e.target.value)}
+                  className="px-3 py-2 text-sm border border-emerald-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Au (date BL)</label>
+                <input type="date" value={factureTo} onChange={e => setFactureTo(e.target.value)}
+                  className="px-3 py-2 text-sm border border-emerald-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
+              </div>
+              <div className="flex items-end gap-2 col-span-2">
+                <button onClick={selectAllFacturables}
+                  className="flex-1 px-3 py-2 text-xs font-bold text-emerald-700 bg-white border border-emerald-300 rounded-xl hover:bg-emerald-100 transition-colors">
+                  Tout sélectionner ({facturables.length})
+                </button>
+                <button onClick={clearFactureSel}
+                  className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-500 bg-white border border-slate-200 rounded-xl transition-colors">
+                  Vider
+                </button>
+              </div>
+            </div>
+            {(factureFrom || factureTo) && (
+              <button onClick={() => { setFactureFrom(""); setFactureTo("") }}
+                className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 mb-2">↺ Réinitialiser la plage de dates</button>
+            )}
+
+            {/* Liste BL éligibles avec cases à cocher */}
+            <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto mb-3">
+              {facturables.length === 0 ? (
+                <p className="text-sm text-emerald-600 font-medium py-3 text-center">Aucun BL livré non facturé sur cette plage.</p>
+              ) : facturables.map(b => {
+                const checked = selectedFacture.has(b.id)
+                const cleanNum = (b.numero ?? b.id.slice(-6).toUpperCase()).replace(/^(BL[-_])+/i, "")
+                return (
+                  <label key={b.id}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${checked ? "bg-emerald-100 border-emerald-300" : "bg-white border-emerald-100 hover:border-emerald-300"}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleFactureSel(b.id)} className="w-4 h-4 accent-emerald-600" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-700 truncate">BL N° {cleanNum} — {b.clientNom}</p>
+                      <p className="text-[10px] text-slate-500">{new Date(b.date).toLocaleDateString("fr-FR")} · {b.lignes.length} article(s) · {b.livreurNom ?? "—"}</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-700 shrink-0">{(Number(b.totalTTC) || 0).toFixed(2)} DH</span>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* Récap + action */}
+            <div className="flex items-center justify-between gap-3 flex-wrap border-t border-emerald-200 pt-3">
+              <div className="text-sm text-emerald-800">
+                <strong>{selectedFacture.size}</strong> BL sélectionné{selectedFacture.size !== 1 ? "s" : ""} —
+                Total TTC : <strong>{selectedFactureTotal.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} DH</strong>
+              </div>
+              <button onClick={() => transferManyToFacture([...selectedFacture])} disabled={selectedFacture.size === 0}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-40">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+                </svg>
+                Facturer la sélection ({selectedFacture.size})
+              </button>
+            </div>
           </div>
         )}
 
