@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
       "fl_contrats", "fl_organisations",
       // Process / config (lignes uniques id="config")
       "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config",
+      // Intelligence concurrent (import Excel Iziry) — partagé entre appareils
+      "fl_intel_prix", "fl_conc_pv", "fl_conc_ventes_daily",
     ]
     if (!ALLOWED_TABLES.includes(body.table)) {
       return NextResponse.json({ ok: false, errors: [`Table non autorisée: ${body.table}`] }, { status: 403 })

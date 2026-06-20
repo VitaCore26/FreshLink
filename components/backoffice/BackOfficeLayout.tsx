@@ -102,6 +102,7 @@ const BOComptabiliteRH       = dynamic(() => import("./BOComptabiliteRH"),      
 const BODatabase             = dynamic(() => import("./BODatabase"),             { ssr: false, loading: L("Chargement base de donnees...") })
 const BOIntelligencePrix     = dynamic(() => import("./BOIntelligencePrix"),     { ssr: false, loading: L("Chargement intelligence prix...") })
 const BOConcurrence          = dynamic(() => import("./BOConcurrence"),          { ssr: false, loading: L("Chargement concurrence...") })
+const BOPricingConcurrence   = dynamic(() => import("./BOPricingConcurrence"),   { ssr: false, loading: L("Chargement pricing...") })
 const BOCoutLivraison        = dynamic(() => import("./BOCoutLivraison"),        { ssr: false, loading: L("Chargement coûts livraison...") })
 const BOBonLivraison         = dynamic(() => import("./BOBonLivraison"),         { ssr: false, loading: L("Chargement bons de livraison...") })
 const BOHRDocuments          = dynamic(() => import("./BOHRDocuments"),          { ssr: false, loading: L("Chargement documents RH...") })
@@ -152,7 +153,7 @@ export type Tab =
   | "rh_productivite" | "rh_comptabilite"
   | "intelligence_prix" | "concurrence" | "cout_livraison" | "bon_livraison" | "hr_documents"
   | "loyalty" | "performance_incentives" | "template_editor"
-  | "investissement" | "sourcing" | "pricing" | "finance_cdg"
+  | "investissement" | "sourcing" | "pricing" | "pricing_concurrent" | "finance_cdg"
   | "demandes_comptes" | "web_integration" | "permissions_matrix"
   | "marketplace"
   | "documents"
@@ -280,6 +281,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "prospection",        label: "Prospection IA",         labelAr: "الاستهداف الذكي",  permKey: "canViewCommercial", icon: <Icon d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /> },
       { id: "intelligence_prix",  label: "Intelligence Prix",      labelAr: "استخبارات الأسعار",permKey: "canViewCommercial", icon: <Icon d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /> },
       { id: "concurrence",        label: "Concurrence & Perf.",    labelAr: "المنافسة والأداء", permKey: "canViewCommercial", icon: <Icon d="M3 3v18h18 M7 14l3-3 3 3 4-4" /> },
+      { id: "pricing_concurrent", label: "Pricing",                labelAr: "التسعير",          permKey: "canViewCommercial", icon: <Icon d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
       { id: "whatsapp",           label: "WhatsApp Pro",           labelAr: "واتساب",            permKey: "canViewCommercial", icon: (
         <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
@@ -456,6 +458,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   rh_comptabilite:   (u) => <BOComptabiliteRH user={u} />,
   intelligence_prix: (u) => <BOIntelligencePrix user={u} />,
   concurrence: (u) => <BOConcurrence user={u} />,
+  pricing_concurrent: (u) => <BOPricingConcurrence user={u} />,
   cout_livraison: (_u) => <BOCoutLivraison />,
   bon_livraison:     (u) => <BOBonLivraison user={u} />,
   hr_documents:          (u) => <BOHRDocuments user={u} />,

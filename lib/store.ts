@@ -288,6 +288,9 @@ export interface Article {
   // Charge appliquée à cet article pour le calcul du coût de revient
   // (transport, manutention, perte…) — référence un ChargeArticle du catalogue.
   chargeArticleId?: string
+  // ── Pricing concurrentiel (module Pricing) ───────────────────────────────
+  pvImbattable?: number        // PV imbattable conseillé (calculé vs concurrent), diffusé à la force de vente
+  pvImbattableMaj?: string     // date ISO de la dernière diffusion à la force de vente
 }
 
 // Catalogue de charges applicables par article (coût de revient).

@@ -27,7 +27,7 @@ interface CompetitorEntry {
   id: string; concurrentNom: string; sku: string; prixConcurrent: number
   prixNotre: number; unite: string; source?: string; lieu?: string; date: string; note?: string
 }
-interface ConcPV { ref: string; libelle: string; libelleRaw: string; unite: string; pv: number }
+interface ConcPV { ref: string; libelle: string; libelleRaw: string; unite: string; pv: number; date?: string; history?: { date: string; pv: number }[] }
 interface ConcVente {
   id: string; type: string; commercial: string; client: string; secteur: string
   codeClient: string; document: string; date: string; article: string; articleRaw: string
@@ -75,6 +75,21 @@ function readSheet(buf: ArrayBuffer, sheetMatch?: string) {
 
 const CONCURRENT_NOM = "Iziry"
 
+// Partage entre appareils : pousse des lignes {id, payload} vers Supabase (service-role).
+async function sbPush(table: string, rows: { id: string; payload: Record<string, unknown> }[]): Promise<boolean> {
+  if (rows.length === 0) return true
+  try {
+    let ok = true
+    for (let i = 0; i < rows.length; i += 200) {
+      const batch = rows.slice(i, i + 200).map(r => ({ ...r, updated_at: new Date().toISOString() }))
+      const res = await fetch("/api/sync-write", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ table, upserts: batch }) })
+      const d = await res.json().catch(() => ({ ok: false }))
+      if (!d.ok) ok = false
+    }
+    return ok
+  } catch { return false }
+}
+
 // ─── Composant ──────────────────────────────────────────────────────────────
 export default function BOImportConcurrence() {
   const [pv, setPv]         = useState<ConcPV[]>(() => getJSON<ConcPV>(LS_PV))
@@ -89,7 +104,7 @@ export default function BOImportConcurrence() {
 
   const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 6000) }
 
-  // ── 1) Prix de vente (catalogue, remplace tout) ─────────────────────────────
+  // ── 1) Prix de vente (QUOTIDIEN — garde l'historique du PV par article) ──────
   const importPV = async (file: File) => {
     setBusy(true)
     try {
@@ -98,15 +113,29 @@ export default function BOImportConcurrence() {
       const iLib = idx("Libellé") >= 0 ? idx("Libellé") : idx("Libelle")
       const iUni = idx("Unité") >= 0 ? idx("Unité") : idx("Unite")
       const iPv  = idx("Prix vente (MAD)") >= 0 ? idx("Prix vente (MAD)") : idx("Prix vente")
-      const out: ConcPV[] = []
+      // Fusion avec l'existant : met à jour le PV + ajoute un point d'historique daté
+      const existing = new Map(getJSON<ConcPV>(LS_PV).map(e => [e.ref, e]))
+      let n = 0
       for (const r of rows) {
         const ref = String(r[iRef] ?? "").trim()
         const lib = String(r[iLib] ?? "").trim()
         if (!ref && !lib) continue
-        out.push({ ref: ref || lib, libelle: cleanName(lib), libelleRaw: lib, unite: String(r[iUni] ?? "kg").trim() || "kg", pv: num(r[iPv]) })
+        const key = ref || lib
+        const pvv = num(r[iPv])
+        const prev = existing.get(key)
+        const hist = (prev?.history ?? []).filter(h => h.date !== jour)
+        hist.push({ date: jour, pv: pvv })
+        existing.set(key, {
+          ref: key, libelle: cleanName(lib), libelleRaw: lib,
+          unite: String(r[iUni] ?? prev?.unite ?? "kg").trim() || "kg",
+          pv: pvv, date: jour, history: hist.sort((a, b) => a.date.localeCompare(b.date)).slice(-60),
+        })
+        n++
       }
+      const out = [...existing.values()]
       setJSON(LS_PV, out); setPv(out)
-      flash(true, `✅ Catalogue prix de vente concurrent importé : ${out.length} article(s).`)
+      const okSb = await sbPush(LS_PV, out.map(e => ({ id: e.ref, payload: e as unknown as Record<string, unknown> })))
+      flash(true, `✅ Prix de vente concurrent importé : ${n} article(s) pour le ${jour}.${okSb ? " (partagé)" : " (local — Supabase indispo)"}`)
     } catch (e) { flash(false, `❌ Erreur lecture fichier prix-vente : ${String(e).slice(0, 120)}`) }
     finally { setBusy(false); if (refPV.current) refPV.current.value = "" }
   }
@@ -180,7 +209,8 @@ export default function BOImportConcurrence() {
       const others = getJSON<CompetitorEntry>(LS_PRIX).filter(e => !(e.source === "synthese_achats" && e.date === jour))
       const merged = [...others, ...out]
       setJSON(LS_PRIX, merged); setAchats(merged.filter(e => e.source === "synthese_achats"))
-      flash(true, `✅ Synthèse achats concurrent importée : ${out.length} article(s) pour le ${jour}.`)
+      const okSb = await sbPush(LS_PRIX, merged.map(e => ({ id: e.id, payload: e as unknown as Record<string, unknown> })))
+      flash(true, `✅ Synthèse achats concurrent importée : ${out.length} article(s) pour le ${jour}.${okSb ? " (partagé)" : " (local — Supabase indispo)"}`)
     } catch (e) { flash(false, `❌ Erreur lecture synthèse achats : ${String(e).slice(0, 120)}`) }
     finally { setBusy(false); if (refSA.current) refSA.current.value = "" }
   }
@@ -219,8 +249,8 @@ export default function BOImportConcurrence() {
       <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 text-white">
         <h2 className="text-lg font-black">📥 Import Excel — Données concurrent</h2>
         <p className="text-sm text-white/75 mt-1">
-          Importe les extractions Excel (.xlsx) du concurrent. <strong>Catalogue prix</strong> = 1 seule fois ·
-          <strong> Facturation</strong> &amp; <strong>Synthèse achats</strong> = chaque jour.
+          Importe les extractions Excel (.xlsx) du concurrent. <strong>Prix de vente</strong> &amp; <strong>Synthèse achats</strong> = chaque jour ·
+          <strong> Facturation globale</strong> (historique) = 1 seule fois. Données partagées entre appareils.
         </p>
       </div>
 
@@ -239,22 +269,22 @@ export default function BOImportConcurrence() {
       {/* 3 zones d'import */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Prix de vente */}
-        <Card title="① Prix de vente (catalogue)" sub="1 SEULE FOIS · Référence · Libellé · Unité · Prix vente" accent="border-blue-200">
-          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">1 seule fois</span>
+        <Card title="① Prix de vente concurrent" sub="QUOTIDIEN · Référence · Libellé · Unité · Prix vente · garde l'historique" accent="border-blue-200">
+          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">chaque jour</span>
           <label className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold text-center cursor-pointer hover:bg-blue-700">
             📂 Choisir prix-vente.xlsx
             <input ref={refPV} type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) importPV(f) }} />
           </label>
-          <p className="text-xs text-slate-600">{pv.length} article(s) en catalogue.</p>
+          <p className="text-xs text-slate-600">{pv.length} article(s) suivis (PV + historique).</p>
           {pv.length > 0 && <button onClick={clearPV} className="text-[11px] text-red-600 hover:underline w-fit">Vider le catalogue</button>}
         </Card>
 
         {/* Facturation */}
-        <Card title="② Facturation (ventes)" sub="QUOTIDIEN · PV, volume / client / commercial / secteur" accent="border-emerald-200">
-          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">chaque jour</span>
+        <Card title="② Facturation (ventes)" sub="QUOTIDIEN (facturation.xlsx) · GLOBALE = 1 fois (facturation - global.xlsx, historique) · PV, volume / client / commercial / secteur" accent="border-emerald-200">
+          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">quotidien · global 1 fois</span>
           <label className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold text-center cursor-pointer hover:bg-emerald-700">
-            📂 Choisir facturation.xlsx
+            📂 Choisir facturation(.global).xlsx
             <input ref={refFA} type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) importFacturation(f) }} />
           </label>

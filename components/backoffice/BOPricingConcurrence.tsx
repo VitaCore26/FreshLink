@@ -1,0 +1,311 @@
+"use client"
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  BOPricingConcurrence — Pricing concurrentiel (centralise PA & PV vs concurrent)
+//
+//   • Notre PA vs PA concurrent (synthèse achats → fl_intel_prix)
+//   • Notre PV vs PV concurrent (prix de vente → fl_conc_pv)
+//   • Marge concurrent = PV concurrent − PA concurrent
+//   • PV IMBATTABLE proposé :
+//       – notre PA ≈ PA concurrent  → PV = PV concurrent − décote (DH ou %)
+//       – notre PA <  PA concurrent → PV = notre PA + marge concurrent
+//       – notre PA >  PA concurrent → ⚠️ alerte achat (PA trop cher)
+//   • Alerte achat si notre PA > PA concurrent (Notice → resp. achat)
+//   • Diffusion des PV proposés à la force de vente (Notice + champ pvImbattable)
+//
+//   Données concurrent partagées entre appareils (Supabase fl_intel_prix / fl_conc_pv).
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { store, type Article, type User, type Notice } from "@/lib/store"
+
+const LS_PRIX = "fl_intel_prix"   // CompetitorEntry[] (PA concurrent)
+const LS_PV   = "fl_conc_pv"      // PV concurrent (catalogue)
+const LS_PARAMS = "fl_pricing_params"
+
+interface CompetitorEntry { sku: string; prixConcurrent: number; source?: string; date?: string }
+interface ConcPV { ref: string; libelle: string; unite: string; pv: number }
+interface PricingParams { decoteType: "dh" | "pct"; decoteVal: number; tolPA: number; margeMin: number }
+const DEFAULT_PARAMS: PricingParams = { decoteType: "dh", decoteVal: 0.5, tolPA: 0.2, margeMin: 8 }
+
+function getJSON<T>(k: string): T[] { try { return JSON.parse(localStorage.getItem(k) ?? "[]") } catch { return [] } }
+function norm(s: unknown): string {
+  return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[؀-ۿ]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()
+}
+function money(n: number) { return `${(n || 0).toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH` }
+
+async function sbPull(table: string): Promise<{ id: string; payload: Record<string, unknown> }[]> {
+  try { const r = await fetch(`/api/sync-read?table=${table}`, { cache: "no-store" }); const d = await r.json(); return d.ok ? (d.data ?? []) : [] } catch { return [] }
+}
+
+interface Props { user: User }
+
+export default function BOPricingConcurrence({ user }: Props) {
+  const [articles, setArticles] = useState<Article[]>([])
+  const [paMap, setPaMap] = useState<Record<string, number>>({})
+  const [pvMap, setPvMap] = useState<Record<string, number>>({})
+  const [params, setParams] = useState<PricingParams>(() => {
+    try { return { ...DEFAULT_PARAMS, ...JSON.parse(localStorage.getItem(LS_PARAMS) ?? "{}") } } catch { return DEFAULT_PARAMS }
+  })
+  const [search, setSearch] = useState("")
+  const [onlyAlerts, setOnlyAlerts] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const buildMaps = useCallback(() => {
+    const pa: Record<string, number[]> = {}
+    getJSON<CompetitorEntry>(LS_PRIX).filter(e => (e.source ?? "") === "synthese_achats" || !e.source).forEach(e => {
+      const k = norm(e.sku); if (!k) return; (pa[k] ??= []).push(Number(e.prixConcurrent) || 0)
+    })
+    const paAvg: Record<string, number> = {}
+    Object.entries(pa).forEach(([k, arr]) => { const v = arr.filter(x => x > 0); paAvg[k] = v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0 })
+    const pv: Record<string, number> = {}
+    getJSON<ConcPV>(LS_PV).forEach(e => { const k = norm(e.libelle || e.ref); if (k) pv[k] = Number(e.pv) || 0 })
+    setPaMap(paAvg); setPvMap(pv)
+  }, [])
+
+  useEffect(() => {
+    setArticles(store.getArticles())
+    buildMaps()
+    ;(async () => {
+      try {
+        const [pa, pv] = await Promise.all([sbPull(LS_PRIX), sbPull(LS_PV)])
+        if (pa.length) { try { localStorage.setItem(LS_PRIX, JSON.stringify(pa.map(r => r.payload))) } catch { /* quota */ } }
+        if (pv.length) { try { localStorage.setItem(LS_PV, JSON.stringify(pv.map(r => r.payload))) } catch { /* quota */ } }
+        if (pa.length || pv.length) buildMaps()
+      } catch { /* offline → local */ }
+    })()
+  }, [buildMaps])
+
+  const saveParams = (p: PricingParams) => { setParams(p); try { localStorage.setItem(LS_PARAMS, JSON.stringify(p)) } catch { /* noop */ } }
+  const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 6000) }
+
+  const findComp = useCallback((nom: string, map: Record<string, number>): number => {
+    const k = norm(nom); if (!k) return 0
+    if (map[k]) return map[k]
+    for (const [mk, v] of Object.entries(map)) { if (v > 0 && (mk.includes(k) || k.includes(mk))) return v }
+    return 0
+  }, [])
+
+  type Row = ReturnType<typeof computeRow>
+  const computeRow = useCallback((a: Article) => {
+    const ourPA = Number(a.prixAchat) || 0
+    const ourPV = store.computePV(a)
+    const compPA = findComp(a.nom, paMap)
+    const compPV = findComp(a.nom, pvMap)
+    const compMarge = (compPV > 0 && compPA > 0) ? Math.round((compPV - compPA) * 100) / 100 : null
+    const decote = (base: number) => params.decoteType === "dh" ? base - params.decoteVal : base * (1 - params.decoteVal / 100)
+    let pvImb = ourPV
+    let strat = "—"
+    const alertePA = compPA > 0 && ourPA > compPA + params.tolPA
+    if (compPA > 0 && Math.abs(ourPA - compPA) <= params.tolPA) {
+      pvImb = decote(compPV > 0 ? compPV : ourPV); strat = `PA ≈ concurrent → PV concurrent − ${params.decoteType === "dh" ? params.decoteVal + " DH" : params.decoteVal + "%"}`
+    } else if (compPA > 0 && ourPA < compPA) {
+      pvImb = compMarge != null ? ourPA + compMarge : (compPV > 0 ? decote(compPV) : ourPV); strat = "PA < concurrent → notre PA + marge concurrent"
+    } else if (alertePA) {
+      pvImb = compPV > 0 ? Math.max(decote(compPV), ourPA * (1 + params.margeMin / 100)) : ourPA * (1 + params.margeMin / 100)
+      strat = "⚠️ PA > concurrent (achat trop cher)"
+    } else if (compPV > 0) {
+      pvImb = decote(compPV); strat = "Aligné sur PV concurrent − décote"
+    }
+    pvImb = Math.max(pvImb, ourPA)
+    pvImb = Math.round(pvImb * 100) / 100
+    const hasComp = compPA > 0 || compPV > 0
+    return { a, ourPA, ourPV, compPA, compPV, compMarge, pvImb, strat, alertePA, hasComp }
+  }, [paMap, pvMap, params, findComp])
+
+  const rows = useMemo(() => {
+    const q = norm(search)
+    return articles.map(computeRow)
+      .filter(r => r.hasComp)
+      .filter(r => !onlyAlerts || r.alertePA)
+      .filter(r => !q || norm(r.a.nom).includes(q) || norm(r.a.famille).includes(q))
+      .sort((a, b) => (b.alertePA ? 1 : 0) - (a.alertePA ? 1 : 0) || a.a.nom.localeCompare(b.a.nom))
+  }, [articles, computeRow, search, onlyAlerts])
+
+  const kpis = useMemo(() => {
+    const all = articles.map(computeRow).filter(r => r.hasComp)
+    return {
+      comparables: all.length,
+      paPlusCher: all.filter(r => r.alertePA).length,
+      pvPlusCher: all.filter(r => r.compPV > 0 && r.ourPV > r.compPV).length,
+      gainMoyen: all.length ? all.reduce((s, r) => s + (r.ourPV - r.pvImb), 0) / all.length : 0,
+    }
+  }, [articles, computeRow])
+
+  const addNotice = (titre: string, contenu: string, destinataire: string, type: Notice["type"]) => {
+    store.addNotice({
+      id: `NOTE_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      titre, contenu, auteurId: user.id, auteurNom: user.name,
+      date: new Date().toISOString(), type, statut: "ouvert", destinataire,
+    })
+  }
+
+  const diffuserPV = async () => {
+    const cible = rows.filter(r => r.pvImb > 0)
+    if (cible.length === 0) { flash(false, "Aucun PV à diffuser."); return }
+    if (!window.confirm(`Diffuser ${cible.length} PV imbattable(s) à la force de vente ?\nLes prévendeurs verront ces prix conseillés.`)) return
+    setBusy(true)
+    const now = new Date().toISOString()
+    const all = store.getArticles()
+    const ids: string[] = []
+    cible.forEach(r => {
+      const idx = all.findIndex(x => x.id === r.a.id)
+      if (idx >= 0) { all[idx] = { ...all[idx], pvImbattable: r.pvImb, pvImbattableMaj: now }; ids.push(r.a.id) }
+    })
+    store.saveArticles(all); setArticles(all)
+    try {
+      const { upsertArticle } = await import("@/lib/supabase/db")
+      for (const id of ids) { const art = all.find(a => a.id === id); if (art) await upsertArticle(art) }
+    } catch { /* offline */ }
+    const top = cible.slice(0, 30).map(r => `• ${r.a.nom} : ${money(r.pvImb)}`).join("\n")
+    addNotice("💰 Nouveaux PV conseillés (imbattables)",
+      `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 30 ? `\n… +${cible.length - 30} autres` : ""}`,
+      "commercial", "notice")
+    setBusy(false)
+    flash(true, `✅ ${cible.length} PV diffusés à la force de vente (champ « PV conseillé » + notification).`)
+  }
+
+  const alerterAchat = () => {
+    const cible = articles.map(computeRow).filter(r => r.alertePA)
+    if (cible.length === 0) { flash(false, "Aucun écart PA défavorable détecté."); return }
+    if (!window.confirm(`Envoyer une alerte à l'équipe achat pour ${cible.length} article(s) où notre PA > PA concurrent ?`)) return
+    const lignes = cible.slice(0, 40).map(r => `• ${r.a.nom} : notre PA ${money(r.ourPA)} > concurrent ${money(r.compPA)} (écart +${money(r.ourPA - r.compPA)})`).join("\n")
+    addNotice("⚠️ PA plus cher que le concurrent",
+      `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`,
+      "resp_achat", "reclamation")
+    flash(true, `🚨 Alerte achat envoyée pour ${cible.length} article(s).`)
+  }
+
+  const appliquerPV = async (r: Row) => {
+    const all = store.getArticles()
+    const idx = all.findIndex(x => x.id === r.a.id)
+    if (idx < 0) return
+    all[idx] = { ...all[idx], pvMethode: "manuel", pvValeur: r.pvImb, pvImbattable: r.pvImb, pvImbattableMaj: new Date().toISOString() }
+    store.saveArticles(all); setArticles(all)
+    try { const { upsertArticle } = await import("@/lib/supabase/db"); await upsertArticle(all[idx]) } catch { /* offline */ }
+    flash(true, `✅ PV de « ${r.a.nom} » fixé à ${money(r.pvImb)} (appliqué).`)
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="rounded-2xl bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 p-5 text-white">
+        <h2 className="text-lg font-black">🎯 Pricing concurrentiel</h2>
+        <p className="text-sm text-white/75 mt-1">Notre PA/PV vs concurrent · marge concurrent · PV imbattable · alerte achat · diffusion force de vente.</p>
+      </div>
+
+      {msg && <div className={`px-4 py-2.5 rounded-xl text-sm font-semibold shadow ${msg.ok ? "bg-emerald-600 text-white" : "bg-red-600 text-white"}`}>{msg.text}</div>}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { l: "Articles comparables", v: String(kpis.comparables), i: "🔎", c: "text-slate-900" },
+          { l: "PA + cher que concurrent", v: String(kpis.paPlusCher), i: "⚠️", c: kpis.paPlusCher > 0 ? "text-red-600" : "text-slate-900" },
+          { l: "PV + cher que concurrent", v: String(kpis.pvPlusCher), i: "📈", c: kpis.pvPlusCher > 0 ? "text-amber-600" : "text-slate-900" },
+          { l: "Baisse PV moyenne (imbattable)", v: money(kpis.gainMoyen), i: "🏷️", c: "text-indigo-700" },
+        ].map(k => (
+          <div key={k.l} className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl">{k.i}</div>
+            <div className="min-w-0"><p className="text-[11px] text-slate-500 truncate">{k.l}</p><p className={`text-lg font-black ${k.c}`}>{k.v}</p></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-bold text-indigo-800">Décote PV imbattable</label>
+          <div className="flex gap-1">
+            <select value={params.decoteType} onChange={e => saveParams({ ...params, decoteType: e.target.value as "dh" | "pct" })}
+              className="px-2 py-2 rounded-lg border border-indigo-200 bg-white text-sm">
+              <option value="dh">− DH</option><option value="pct">− %</option>
+            </select>
+            <input type="number" step="0.01" value={params.decoteVal} onChange={e => saveParams({ ...params, decoteVal: Number(e.target.value) || 0 })}
+              className="w-20 px-2 py-2 rounded-lg border border-indigo-200 bg-white text-sm text-center font-bold" />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-bold text-indigo-800">Tolérance « PA égal » (DH)</label>
+          <input type="number" step="0.01" value={params.tolPA} onChange={e => saveParams({ ...params, tolPA: Number(e.target.value) || 0 })}
+            className="w-24 px-2 py-2 rounded-lg border border-indigo-200 bg-white text-sm text-center" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-bold text-indigo-800">Marge mini plancher (%)</label>
+          <input type="number" step="1" value={params.margeMin} onChange={e => saveParams({ ...params, margeMin: Number(e.target.value) || 0 })}
+            className="w-20 px-2 py-2 rounded-lg border border-indigo-200 bg-white text-sm text-center" />
+        </div>
+        <div className="flex-1" />
+        <button onClick={alerterAchat} className="px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700">
+          🚨 Alerter achat (PA trop cher)
+        </button>
+        <button onClick={diffuserPV} disabled={busy} className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50">
+          {busy ? "⏳…" : "📤 Diffuser PV à la force de vente"}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher article / famille…"
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50" />
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={onlyAlerts} onChange={e => setOnlyAlerts(e.target.checked)} className="w-4 h-4 accent-red-600" />
+          Seulement les alertes PA
+        </label>
+        <span className="text-xs text-slate-400">{rows.length} ligne(s)</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+          <p className="text-4xl mb-2">📭</p>
+          <p className="font-semibold">Aucune donnée concurrent.</p>
+          <p className="text-sm mt-1">Importe d&apos;abord les fichiers (Concurrence &amp; Perf. → 📥 Import Excel).</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
+          <table className="w-full text-sm min-w-[1000px]">
+            <thead>
+              <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-3">Article</th>
+                <th className="px-3 py-3 text-right">Notre PA</th>
+                <th className="px-3 py-3 text-right">PA concurrent</th>
+                <th className="px-3 py-3 text-right">Notre PV</th>
+                <th className="px-3 py-3 text-right">PV concurrent</th>
+                <th className="px-3 py-3 text-right">Marge conc.</th>
+                <th className="px-3 py-3 text-right">PV imbattable</th>
+                <th className="px-3 py-3">Stratégie</th>
+                <th className="px-3 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.a.id} className={`border-t border-slate-100 ${r.alertePA ? "bg-red-50/50" : ""}`}>
+                  <td className="px-3 py-2.5">
+                    <p className="font-semibold text-slate-900">{r.a.nom}</p>
+                    <p className="text-[11px] text-slate-400">{r.a.famille}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-700">{money(r.ourPA)}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${r.alertePA ? "text-red-600" : r.compPA > 0 && r.ourPA < r.compPA ? "text-emerald-600" : "text-slate-700"}`}>
+                    {r.compPA > 0 ? money(r.compPA) : "—"}
+                    {r.alertePA && <span className="block text-[10px] font-bold">⚠️ +{money(r.ourPA - r.compPA)}</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-slate-700">{money(r.ourPV)}</td>
+                  <td className={`px-3 py-2.5 text-right ${r.compPV > 0 && r.ourPV > r.compPV ? "text-amber-600 font-semibold" : "text-slate-700"}`}>{r.compPV > 0 ? money(r.compPV) : "—"}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-600">{r.compMarge != null ? money(r.compMarge) : "—"}</td>
+                  <td className="px-3 py-2.5 text-right"><span className="inline-block px-2 py-1 rounded-lg bg-indigo-100 text-indigo-800 font-black">{money(r.pvImb)}</span></td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-500 max-w-[200px]">{r.strat}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <button onClick={() => appliquerPV(r)} title="Fixer ce PV comme prix de vente de l'article"
+                      className="text-[11px] px-2 py-1 rounded-md bg-slate-900 text-white font-semibold hover:bg-slate-700">Appliquer</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-[11px] text-slate-400 leading-relaxed">
+        💡 PA concurrent vient de « synthèse achats », PV concurrent de « prix de vente » (onglet Import Excel). Données partagées entre appareils (Supabase).
+        « Diffuser » enregistre le <strong>PV conseillé</strong> sur l&apos;article + notifie la force de vente. « Appliquer » fixe directement le PV de vente.
+      </p>
+    </div>
+  )
+}
