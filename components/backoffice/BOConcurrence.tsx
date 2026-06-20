@@ -11,6 +11,7 @@
 
 import { useState, useMemo, useRef } from "react"
 import { store, type User } from "@/lib/store"
+import BOImportConcurrence from "./BOImportConcurrence"
 
 // ─── Modèles ────────────────────────────────────────────────────────────────
 interface CompetitorEntry {
@@ -91,7 +92,7 @@ function download(filename: string, content: string) {
 }
 
 // ─── Composant ──────────────────────────────────────────────────────────────
-type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux"
+type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux" | "import"
 
 export default function BOConcurrence({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>("dashboard")
@@ -327,6 +328,7 @@ export default function BOConcurrence({ user }: { user: User }) {
           ["pv", "PV stratégique"],
           ["comportement", "Comportement concurrent"],
           ["flux", "Flux & Trajectoire"],
+          ["import", "📥 Import Excel"],
         ] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>
@@ -538,6 +540,9 @@ export default function BOConcurrence({ user }: { user: User }) {
           )}
         </div>
       )}
+
+      {/* ── IMPORT EXCEL ───────────────────────────────────────────────────── */}
+      {tab === "import" && <BOImportConcurrence />}
     </div>
   )
 }
