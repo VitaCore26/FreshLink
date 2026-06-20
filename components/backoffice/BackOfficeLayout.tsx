@@ -243,7 +243,7 @@ function Icon({ d, className = "w-[18px] h-[18px]" }: { d: string; className?: s
 // NAV CONFIGURATION
 // ─────────────────────────────────────────────────────────────
 
-const NAV_GROUPS: NavGroup[] = [
+const NAV_GROUPS_RAW: NavGroup[] = [
   // ── 1. VUE D'ENSEMBLE ─────────────────────────────────────────────────────
   {
     label: "Vue d'ensemble", labelAr: "نظرة عامة",
@@ -388,6 +388,31 @@ const NAV_GROUPS: NavGroup[] = [
 // ─────────────────────────────────────────────────────────────
 // PANELS — lazy, safe, no crashes
 // ─────────────────────────────────────────────────────────────
+
+// ── Réorganisation A→Z du menu (groupes logiques par domaine) ─────────────────
+// Les items restent définis verbatim dans NAV_GROUPS_RAW ; on les regroupe ici
+// par domaine métier. Pour réorganiser : éditer les listes d'ids ci-dessous.
+const NAV_ITEM_MAP: Record<string, NavItem> =
+  Object.fromEntries(NAV_GROUPS_RAW.flatMap(g => g.items).map(i => [i.id, i]))
+
+const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
+  { label: "Vue d'ensemble",           labelAr: "نظرة عامة",          ids: ["dashboard", "recap", "rapport_livraison"] },
+  { label: "Achats & Appro.",          labelAr: "المشتريات",          ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
+  { label: "Stock & Catalogue",        labelAr: "المخزون والفهرس",    ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
+  { label: "Commercial & Ventes",      labelAr: "التجاري والمبيعات",  ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
+  { label: "Pricing & Concurrence",    labelAr: "التسعير والمنافسة",  ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
+  { label: "Marketing & Boutique Web", labelAr: "التسويق والمتجر",    ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics", "whatsapp"] },
+  { label: "Clients & Comptes",        labelAr: "الزبائن والحسابات",  ids: ["comptes_externes", "demandes_comptes"] },
+  { label: "Logistique & Transport",   labelAr: "اللوجستيك والنقل",   ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
+  { label: "Finance & Contrôle",       labelAr: "المالية والرقابة",   ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
+  { label: "RH & Équipe",              labelAr: "الموارد البشرية",    ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia", "feedback"] },
+  { label: "Administration",           labelAr: "الإدارة والإعدادات", ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets"] },
+]
+
+const NAV_GROUPS: NavGroup[] = NAV_GROUP_DEF.map(g => ({
+  label: g.label, labelAr: g.labelAr,
+  items: g.ids.map(id => NAV_ITEM_MAP[id]).filter(Boolean) as NavItem[],
+}))
 
 const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   dashboard:         (u) => <BODashboard user={u} />,
