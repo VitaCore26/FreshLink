@@ -173,20 +173,18 @@ function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
   }
   if (!prixSysteme) prixSysteme = parseFloat(String(a.pvValeur ?? 0)) || 0
 
-  // ── Prix moyen des circuits (CHR / Marchand / Particulier) ────────────────
-  // Règle : prix affiché = moyenne des circuits disponibles
-  //         avec plancher = prix système (jamais en dessous sauf promo)
-  const circuitPrices = [
-    parseFloat(String(a.prixCHR ?? 0)) || 0,
-    parseFloat(String(a.prixMarchand ?? 0)) || 0,
-    parseFloat(String(a.prixParticulier ?? 0)) || 0,
-  ].filter(p => p > 0)
+  // ── Prix public catalogue = PV PARTICULIER (visiteur SANS compte) ─────────
+  // La boutique publique s'adresse aux particuliers non connectés : on affiche
+  // le prix Particulier. Les tarifs CHR / Marchand sont des prix de compte
+  // (négociés) et ne s'appliquent QU'APRÈS connexion au portail, jamais ici.
+  // Priorité : 1) marketplacePrixPublic (prix web explicite admin)
+  //            2) prixParticulier   3) prix système (PV calculé).
+  const prixWebExplicite = parseFloat(String(a.marketplacePrixPublic ?? 0)) || 0
+  const prixPart         = parseFloat(String(a.prixParticulier ?? 0)) || 0
 
   let prixBase = prixSysteme
-  if (circuitPrices.length > 0) {
-    const avg = Math.round((circuitPrices.reduce((s, p) => s + p, 0) / circuitPrices.length) * 100) / 100
-    prixBase = Math.max(avg, prixSysteme)  // plancher = prix système
-  }
+  if (prixWebExplicite > 0)  prixBase = prixWebExplicite
+  else if (prixPart > 0)     prixBase = prixPart
 
   // ── Promo ─────────────────────────────────────────────────────────────────
   const promoObj = (a.marketplacePromo && typeof a.marketplacePromo === "object" && (a.marketplacePromo as Record<string, unknown>).actif)
