@@ -172,6 +172,7 @@ interface NavItem {
   icon: React.ReactNode
   permKey?: keyof User
   badge?: number
+  superOnly?: boolean   // visible UNIQUEMENT par le super super admin (ex: Droits Caméra)
 }
 
 interface NavGroup {
@@ -365,7 +366,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "device_access",     label: "Acces Appareils",       labelAr: "أجهزة الوصول",     permKey: "canViewDatabase", icon: <Icon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /> },
       { id: "depots",            label: "Multi-Depots",          labelAr: "المستودعات",        permKey: "canViewDatabase", icon: <Icon d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /> },
       { id: "web_integration",   label: "Integration Site Web",  labelAr: "ربط الموقع",        permKey: "canViewDatabase", icon: <Icon d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /> },
-      { id: "camera_perms",      label: "Droits Camera",         labelAr: "صلاحيات الكاميرا",  permKey: "canViewDatabase", icon: <Icon d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z M15 13a3 3 0 11-6 0 3 3 0 016 0z" /> },
+      { id: "camera_perms",      label: "Droits Camera",         labelAr: "صلاحيات الكاميرا",  permKey: "canViewDatabase", superOnly: true, icon: <Icon d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z M15 13a3 3 0 11-6 0 3 3 0 016 0z" /> },
       { id: "cutoffs",           label: "Notifications Cut-off", labelAr: "إشعارات الإيقاف",   permKey: "canViewDatabase", icon: <Icon d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /> },
       { id: "database",          label: "Base de donnees",       labelAr: "قاعدة البيانات",    permKey: "canViewDatabase", icon: <Icon d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /> },
       { id: "liens_externes",    label: "Liens Partenaires",     labelAr: "روابط الشركاء",     permKey: "canViewDatabase", icon: <Icon d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /> },
@@ -570,6 +571,8 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
   const isVisible = useCallback((item: NavItem): boolean => {
     // Super Administrateur voit TOUT
     if (user.role === "super_super_admin") return true
+    // Réservé au super super admin uniquement (ex: Droits Caméra)
+    if (item.superOnly) return false
     if (!item.permKey) return true
     // Investisseur dashboard — permission spéciale super confidentielle
     if (item.permKey === "canViewInvestisseur") return (user as unknown as Record<string,unknown>)["canViewInvestisseur"] === true

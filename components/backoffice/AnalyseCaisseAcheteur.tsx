@@ -123,6 +123,16 @@ export default function AnalyseCaisseAcheteur() {
       })
     })
 
+    // Charges terrain par acheteur (calcul automatique) depuis fl_charges si dispo
+    const fieldCharges: Record<string, number> = {}
+    try {
+      const charges = (store as unknown as { getCharges?: () => { acheteurNom?: string; date?: string; montant?: number }[] }).getCharges?.() ?? []
+      charges.filter(c => (c.date ?? "") >= dateFrom && (c.date ?? "") <= dateTo).forEach(c => {
+        const k = c.acheteurNom || "—"
+        fieldCharges[k] = (fieldCharges[k] || 0) + Number(c.montant || 0)
+      })
+    } catch { /* pas de charges */ }
+
     const noms = Array.from(new Set([...Object.keys(acheteurAchat), ...Object.keys(acheteurReception)])).filter(Boolean)
 
     const base = noms.map(nom => {
@@ -133,7 +143,8 @@ export default function AnalyseCaisseAcheteur() {
       const depenses = hasReception ? acheteurReception[nom] : (acheteurAchat[nom] || 0)
       const sourceQte = hasReception ? "Réception" : "Achat (mobile)"
       const fondPris = s.fondPris != null ? s.fondPris : (acheteurAchat[nom] || depenses)
-      const charges = s.charges ?? 0
+      // Charges : saisie manuelle prioritaire, sinon calcul automatique (charges terrain)
+      const charges = s.charges ?? (fieldCharges[nom] || 0)
       const montantRendu = s.montantRendu != null ? s.montantRendu : Math.max(0, fondPris - depenses - charges)
       const ecart = fondPris - depenses - charges - montantRendu
       const statut: Statut = s.statut ?? "brouillon"
@@ -209,6 +220,26 @@ export default function AnalyseCaisseAcheteur() {
   }
   const setStatut = (key: string, statut: Statut, extra: Partial<Saisie> = {}) => {
     persist({ ...saisies, [key]: { ...saisies[key], statut, ...extra } })
+  }
+
+  // Étape 3 : Transmettre à la RH → écart positif déduit AUTOMATIQUEMENT du salaire
+  // de l'acheteur (BOResources lit fl_retenues_caisse par nom + mois).
+  const transmettreRH = (row: { key: string; nom: string; ecart: number }) => {
+    setStatut(row.key, "transmis_rh", { transmisRhLe: todayISO() })
+    try {
+      if (row.ecart > 0.01) {
+        store.upsertRetenueCaisse({
+          id: `RC-${Date.now()}`,
+          acheteurNom: row.nom,
+          mois: (dateTo || todayISO()).slice(0, 7),   // déduit sur le mois de la période
+          montant: Math.round(row.ecart * 100) / 100,
+          date: todayISO(),
+          ref: row.key,
+        })
+      } else {
+        store.removeRetenueCaisse(row.key)  // pas d'écart → aucune retenue
+      }
+    } catch { /* noop */ }
   }
 
   const ecartCls = (e: number) =>
@@ -384,7 +415,7 @@ export default function AnalyseCaisseAcheteur() {
                       )}
                       {/* Étape 3 : Transmettre RH */}
                       {r.statut === "approuvé_acheteur" && isFinance && (
-                        <button onClick={() => setStatut(r.key, "transmis_rh", { transmisRhLe: todayISO() })}
+                        <button onClick={() => transmettreRH(r)}
                           className="text-[11px] px-2 py-1 rounded-md bg-green-600 text-white font-semibold hover:bg-green-700">
                           → Transmettre RH {r.ecart > 0 ? `(déduire ${money(r.ecart)})` : ""}
                         </button>

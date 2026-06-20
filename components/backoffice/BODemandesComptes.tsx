@@ -228,9 +228,23 @@ export default function BODemandesComptes({ user }: Props) {
     const linkedUserId = (selected as { _linkedUserId?: string })._linkedUserId
 
     if (linkedUserId) {
-      // ── Compte WEB : il existe déjà dans Supabase (créé à l'inscription).
-      //    On l'ACTIVE + on marque la demande « approuvée ». Aucune création en double.
+      // ── Compte déjà existant (web Supabase OU livreur créé via Dispatch).
+      //    On l'ACTIVE (Supabase + local) + on marque la demande « approuvée ».
+      //    Aucune création en double.
       await setUserActifSb(linkedUserId, true)
+      // Activation LOCALE du compte (livreur créé depuis Dispatch)
+      try {
+        const usersLocal = store.getUsers().map(u => u.id === linkedUserId ? { ...u, actif: true } : u)
+        store.saveUsers(usersLocal)
+      } catch { /* noop */ }
+      // Activer aussi le livreur lié
+      if (selected.type === "livreur" && selected._linkedLivreurId) {
+        try {
+          const livreurs = store.getLivreurs().map(l =>
+            l.id === selected._linkedLivreurId ? { ...l, actif: true, compteStatut: "valide" as const } : l)
+          store.saveLivreurs(livreurs)
+        } catch { /* noop */ }
+      }
       await writeRequestStatut(selected.id, "approuve", { approvedBy: user.id, approvedAt: new Date().toISOString() })
       setRequests(prev => prev.map(r => r.id === selected.id ? { ...r, statut: "approuve" as const } : r))
       if (phone) {

@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { store, User, ROLE_LABELS } from "@/lib/store"
+import { store, User, ROLE_LABELS, isSuperSuperAdmin } from "@/lib/store"
 import { Camera, Lock, Unlock, Shield } from "lucide-react"
 
 export default function CameraPermissionsPanel({ currentUser }: { currentUser: User }) {
-  const isSuperAdmin = currentUser.role === "super_admin"
-  const [users, setUsers] = useState<User[]>(() => store.getUsers())
+  // Seul le SUPER SUPER ADMIN peut accorder/révoquer le droit caméra.
+  const isSuperAdmin = isSuperSuperAdmin(currentUser)
+  const [users] = useState<User[]>(() => store.getUsers())
   const [perms, setPerms] = useState<Record<string, boolean>>(() => store.getCameraPermissions())
 
   const toggle = (userId: string, currentVal: boolean) => {
@@ -17,12 +18,12 @@ export default function CameraPermissionsPanel({ currentUser }: { currentUser: U
   }
 
   const hasCamera = (u: User) => {
-    if (u.role === "super_admin") return true
+    if (u.role === "super_super_admin") return true
     return perms[u.id] === true
   }
 
   const eligible = users.filter(u =>
-    !["fournisseur", "client"].includes(u.role) && u.role !== "super_admin"
+    !["fournisseur", "client"].includes(u.role) && u.role !== "super_super_admin"
   )
 
   return (
@@ -33,11 +34,11 @@ export default function CameraPermissionsPanel({ currentUser }: { currentUser: U
         <div>
           <p className="text-sm font-bold" style={{ color: "#f1f5f9" }}>Gestion des Droits Caméra</p>
           <p className="text-xs mt-0.5" style={{ color: "#4b5563" }}>
-            Le Super Admin est le seul à pouvoir accorder ou révoquer l&apos;accès caméra pour les autres utilisateurs. Les autres rôles ne peuvent pas modifier ces permissions.
+            Le Super Super Admin est le seul à pouvoir accorder ou révoquer l&apos;accès caméra pour les autres utilisateurs. Aucun autre rôle ne peut modifier ces permissions.
           </p>
           {!isSuperAdmin && (
             <p className="text-xs mt-2 font-semibold" style={{ color: "#ef4444" }}>
-              Accès lecture seule — seul le Super Admin peut modifier ces permissions.
+              Accès lecture seule — seul le Super Super Admin peut modifier ces permissions.
             </p>
           )}
         </div>
@@ -47,7 +48,7 @@ export default function CameraPermissionsPanel({ currentUser }: { currentUser: U
       <div className="rounded-xl p-3 flex items-center gap-3" style={{ background: "#0d2e18", border: "1px solid #15352a" }}>
         <Camera className="w-4 h-4 text-emerald-400" />
         <div className="flex-1">
-          <p className="text-xs font-bold" style={{ color: "#6ee7b7" }}>Super Admin — Accès caméra permanent</p>
+          <p className="text-xs font-bold" style={{ color: "#6ee7b7" }}>Super Super Admin — Accès caméra permanent</p>
           <p className="text-[10px]" style={{ color: "#374151" }}>Ce droit ne peut pas être retiré</p>
         </div>
         <Unlock className="w-4 h-4 text-emerald-400" />

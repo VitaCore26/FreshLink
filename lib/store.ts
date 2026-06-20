@@ -1031,6 +1031,17 @@ export interface PaiementSalaire {
   createdBy: string
 }
 
+// ── Retenue Caisse Acheteur → RH ──────────────────────────────────────────────
+// Écart de caisse positif transmis à la RH : à déduire automatiquement du salaire.
+export interface RetenueCaisse {
+  id: string
+  acheteurNom: string
+  mois: string               // "2026-06" (déduction sur ce mois de paie)
+  montant: number            // DH à déduire (écart positif)
+  date: string               // date de transmission RH
+  ref: string                // clé unique de la ligne caisse (anti-doublon)
+}
+
 // ── Transport Company ─────────────────────────────────────────────────────────
 export interface TransportCompany {
   id: string
@@ -2509,6 +2520,20 @@ export const store = {
     setLS("fl_paiements_salaires", arr)
   },
 
+  // --- Retenues Caisse Acheteur → RH ---
+  // Écart positif de caisse transmis à la RH : déduit automatiquement du salaire
+  // de l'acheteur (BOResources lit ces retenues par nom + mois).
+  getRetenuesCaisse: (): RetenueCaisse[] => getLS("fl_retenues_caisse", []),
+  saveRetenuesCaisse: (r: RetenueCaisse[]) => setLS("fl_retenues_caisse", r),
+  upsertRetenueCaisse: (r: RetenueCaisse) => {
+    const arr = store.getRetenuesCaisse().filter(x => x.ref !== r.ref)  // 1 retenue par ligne caisse
+    arr.unshift(r)
+    setLS("fl_retenues_caisse", arr)
+  },
+  removeRetenueCaisse: (ref: string) => {
+    setLS("fl_retenues_caisse", store.getRetenuesCaisse().filter(x => x.ref !== ref))
+  },
+
   // --- Caisse Pricing ---
   getCaissePricing: (): CaissePricing => getLS("fl_caisse_pricing", DEFAULT_CAISSE_PRICING),
   saveCaissePricing: (p: CaissePricing) => setLS("fl_caisse_pricing", p),
@@ -3188,7 +3213,7 @@ export const store = {
     setLS("fl_camera_perms", perms)
   },
   userHasCamera: (userId: string, role: UserRole): boolean => {
-    if (role === "super_admin") return true
+    if (role === "super_super_admin") return true
     const perms = store.getCameraPermissions()
     return perms[userId] === true
   },

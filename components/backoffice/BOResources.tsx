@@ -686,6 +686,22 @@ function CalculSalaireTab({ users }: { users: User[] }) {
       }
     })
 
+    // ── Retenue AUTOMATIQUE : écart Caisse Acheteur transmis par la Finance ──
+    // (lié au module Caisse Acheteur → déduit du salaire sans ressaisie)
+    try {
+      const retenues = store.getRetenuesCaisse().filter(rc => rc.mois === periode && rc.acheteurNom === u.name)
+      const totalRetenue = retenues.reduce((s, rc) => s + (Number(rc.montant) || 0), 0)
+      if (totalRetenue > 0) {
+        lignesBonus.push({
+          regleId: "retenue_caisse_acheteur",
+          nom: "Retenue Caisse Acheteur (écart)",
+          signe: "malus",
+          montant: Math.round(totalRetenue * 100) / 100,
+          detail: `${retenues.length} écart(s) caisse transmis par la Finance`,
+        })
+      }
+    } catch { /* pas de retenue */ }
+
     const totalBonus = lignesBonus.filter(l => l.signe === "bonus").reduce((s, l) => s + l.montant, 0)
     const totalMalus = lignesBonus.filter(l => l.signe === "malus").reduce((s, l) => s + l.montant, 0)
     const salaireVarible = totalBonus - totalMalus

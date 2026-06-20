@@ -260,25 +260,50 @@ export default function BODispatch({ user }: Props) {
       // Nouveau livreur → compte ERP EN ATTENTE de validation admin (pas actif tant
       // que l'admin n'a pas approuvé via « Demandes de comptes »).
       const livreurId = store.genId()
+      const userId = store.genId()
+      const fullName = `${livreurForm.prenom} ${livreurForm.nom}`.trim()
+      const tel = (livreurForm.telephone ?? "").trim()
       store.addLivreur({ ...livreurForm, id: livreurId, actif: false, compteStatut: "en_attente" })
+
+      // ⚡ Synchronisation immédiate avec Utilisateurs & Droits : on crée le COMPTE
+      // utilisateur (rôle livreur, accès mobile) dès la création du livreur. Il
+      // apparaît tout de suite dans « Utilisateurs » et « Roles & Permissions »
+      // (inactif/en attente) ; l'approbation l'active sans créer de doublon.
+      const newUser: User = {
+        id: userId,
+        name: fullName || `Livreur ${livreurId.slice(-4)}`,
+        email: "",
+        telephone: tel,
+        phone: tel,
+        password: tel || "livreur",          // mot de passe temporaire (= téléphone)
+        passwordMobile: tel || "livreur",
+        role: "livreur",
+        accessType: "mobile",
+        actif: false,                         // en attente de validation admin
+        canViewLogistique: true,
+        mustChangePassword: true,
+      }
+      try { store.saveUsers([...store.getUsers(), newUser]) } catch { /* noop */ }
+
       // Demande de compte ERP livreur → file "Demandes de comptes" (lue en localStorage par le BO)
       try {
         const reqs = JSON.parse(localStorage.getItem("fl_account_requests") ?? "[]")
         reqs.push({
           id: store.genId(),
           type: "livreur",
-          nom: `${livreurForm.prenom} ${livreurForm.nom}`.trim(),
+          nom: fullName,
           email: "",
-          telephone: livreurForm.telephone ?? "",
+          telephone: tel,
           societe: livreurForm.societe ?? "",
           message: `Demande de compte ERP livreur (${livreurForm.type}) — créée depuis Dispatch & Livreurs.`,
           statut: "en_attente",
           createdAt: new Date().toISOString(),
           _linkedLivreurId: livreurId,
+          _linkedUserId: userId,
         })
         localStorage.setItem("fl_account_requests", JSON.stringify(reqs))
       } catch { /* noop */ }
-      alert("Livreur créé — une demande de compte ERP a été envoyée à l'admin pour validation (Demandes de comptes).")
+      alert(`Livreur créé et compte utilisateur ajouté (Utilisateurs & Droits).\n\nIdentifiants mobile temporaires :\n• Login : ${tel || "(téléphone)"}\n• Mot de passe : ${tel || "livreur"}\n\nLe compte est EN ATTENTE — validez-le dans « Demandes de comptes » pour l'activer.`)
     }
     setShowLivreurForm(false)
     refresh()
