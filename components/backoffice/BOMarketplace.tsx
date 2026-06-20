@@ -591,6 +591,12 @@ export default function BOMarketplace({ user }: Props) {
   const [statutFilter, setStatutFilter] = useState<"tous" | MarketplaceStatut | "publie" | "non_publie">("tous")
   const [bulkSaved, setBulkSaved] = useState(false)
   const [publishAll, setPublishAll] = useState(false)
+  // ── Allocation par famille (stock web + statut affiché en 1 clic) ──────────
+  const [showFamAlloc, setShowFamAlloc] = useState(false)
+  const [famAllocSel, setFamAllocSel] = useState("")            // "" = toutes les familles
+  const [famAllocStock, setFamAllocStock] = useState("")        // "" = ne pas changer le stock
+  const [famAllocStatut, setFamAllocStatut] = useState<"" | MarketplaceStatut>("") // "" = ne pas changer
+  const [famAllocPublish, setFamAllocPublish] = useState(true)  // publier en même temps
 
   const refresh = () => setArticles(store.getArticles())
   useEffect(() => { refresh() }, [])
@@ -740,6 +746,51 @@ export default function BOMarketplace({ user }: Props) {
     setTimeout(() => setSyncMsg(null), 4000)
   }
 
+  // ── Allocation par famille : stock web + statut affiché, en 1 clic ──────────
+  // famAllocSel "" = toutes les familles (= tous les articles).
+  const applyFamilyAllocation = async () => {
+    const cible = articles.filter(a => !famAllocSel || a.famille === famAllocSel)
+    if (cible.length === 0) { setSyncMsg({ ok: false, text: "Aucun article dans cette famille." }); return }
+    const changeStock = famAllocStock.trim() !== ""
+    const stockVal = Number(famAllocStock) || 0
+    const changeStatut = famAllocStatut !== ""
+    if (!changeStock && !changeStatut && !famAllocPublish) {
+      setSyncMsg({ ok: false, text: "Renseignez un stock, un statut, ou activez la publication." }); return
+    }
+    const libelle = famAllocSel || "TOUTES les familles"
+    if (!window.confirm(
+      `Appliquer à ${cible.length} article(s) de « ${libelle} » ?\n` +
+      (changeStock ? `• Stock web = ${stockVal}\n` : "") +
+      (changeStatut ? `• Statut affiché = ${famAllocStatut}\n` : "") +
+      (famAllocPublish ? "• Publier sur le site\n" : "")
+    )) return
+
+    const touched: Article[] = []
+    const all = articles.map(a => {
+      if (famAllocSel && a.famille !== famAllocSel) return a
+      const updated: Article = { ...a }
+      if (changeStock) updated.marketplaceStock = stockVal
+      if (famAllocPublish) updated.marketplaceActif = true
+      if (changeStatut) {
+        updated.marketplaceStatut = famAllocStatut as MarketplaceStatut
+      } else if (changeStock) {
+        // Auto : si on alloue du stock sans choisir de statut, dispo/rupture auto
+        updated.marketplaceStatut = (stockVal > 0 ? "disponible" : "out_of_stock") as MarketplaceStatut
+      }
+      touched.push(updated)
+      return updated
+    })
+    store.saveArticles(all)
+    setArticles(all)
+    setSyncingToSb(true)
+    const { ok, pushed, errors } = await pushToSupabase(touched)
+    setSyncingToSb(false)
+    setSyncMsg(ok
+      ? { ok: true, text: `✅ ${pushed} article(s) de « ${libelle} » mis à jour sur le site.` }
+      : { ok: false, text: sbSyncErr(errors) })
+    setTimeout(() => setSyncMsg(null), 5000)
+  }
+
   return (
     <div className="flex flex-col gap-5">
 
@@ -769,6 +820,12 @@ export default function BOMarketplace({ user }: Props) {
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setShowFamAlloc(s => !s)}
+              title="Allouer le stock web et le statut affiché à toute une famille en 1 clic"
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl backdrop-blur-sm border text-xs font-bold transition-all shadow-sm ${showFamAlloc ? "bg-white text-emerald-800 border-white" : "bg-white/12 border-white/20 text-white hover:bg-white/20"}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              Allocation par famille
+            </button>
             <button onClick={handleAutoSync}
               title="Recopie le stock réel actuel vers le stock web alloué (articles publiés)"
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/12 backdrop-blur-sm border border-white/20 text-white text-xs font-bold hover:bg-white/20 transition-all shadow-sm">
@@ -792,6 +849,59 @@ export default function BOMarketplace({ user }: Props) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={syncMsg.ok ? "M5 13l4 4L19 7" : "M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"} />
           </svg>
           {syncMsg.text}
+        </div>
+      )}
+
+      {/* ── Allocation par famille (stock web + statut affiché, en 1 clic) ── */}
+      {showFamAlloc && (
+        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🗂️</span>
+              <h3 className="text-sm font-black text-emerald-900">Allocation par famille — Stock web & Statut affiché</h3>
+            </div>
+            <span className="text-[11px] text-emerald-700">Choisissez une famille (ou toutes) puis appliquez en 1 clic à tous ses articles.</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-emerald-800">Famille cible</label>
+              <select value={famAllocSel} onChange={e => setFamAllocSel(e.target.value)}
+                className="px-3 py-2.5 rounded-xl border border-emerald-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                <option value="">🌐 Toutes les familles ({articles.length} articles)</option>
+                {familles.map(f => {
+                  const n = articles.filter(a => a.famille === f).length
+                  return <option key={f} value={f}>{f} ({n})</option>
+                })}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-emerald-800">Stock web alloué</label>
+              <input type="number" min="0" value={famAllocStock} onChange={e => setFamAllocStock(e.target.value)}
+                placeholder="laisser vide = inchangé"
+                className="px-3 py-2.5 rounded-xl border border-emerald-200 bg-white text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-emerald-800">Statut affiché sur le site</label>
+              <select value={famAllocStatut} onChange={e => setFamAllocStatut(e.target.value as "" | MarketplaceStatut)}
+                className="px-3 py-2.5 rounded-xl border border-emerald-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                <option value="">— Auto (selon stock) —</option>
+                {STATUT_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.icon} {o.label}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-emerald-800 cursor-pointer select-none pb-2.5">
+              <input type="checkbox" checked={famAllocPublish} onChange={e => setFamAllocPublish(e.target.checked)}
+                className="w-4 h-4 accent-emerald-600" />
+              Publier sur le site
+            </label>
+            <button onClick={applyFamilyAllocation}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm font-bold hover:shadow-lg hover:shadow-emerald-200 transition-all">
+              ✅ Appliquer à la famille
+            </button>
+          </div>
+          <p className="text-[11px] text-emerald-700/80">
+            💡 « Stock web » pilote la dispo boutique (&gt; 0 = Disponible · = 0 = Rupture). Si vous laissez le statut sur « Auto », il est déduit du stock.
+            Laissez « Stock web » vide pour ne changer que le statut.
+          </p>
         </div>
       )}
 

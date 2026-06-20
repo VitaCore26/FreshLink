@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
+import { store } from "@/lib/store"
 
 // ══════════════════════════════════════════════════════════════════
 //  BOMoteurCommercial — Moteur commercial V3 (Section 1, 3, 5)
@@ -64,6 +65,24 @@ export default function BOMoteurCommercial() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+
+  // ── Articles / familles (pour les listes roulantes — noms, jamais d'ID saisi) ──
+  const [articlesRef, setArticlesRef] = useState<{ id: string; nom: string; famille: string }[]>([])
+  useEffect(() => {
+    try {
+      const arts = store.getArticles().map(a => ({ id: a.id, nom: a.nom, famille: a.famille ?? "" }))
+      arts.sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
+      setArticlesRef(arts)
+    } catch { setArticlesRef([]) }
+  }, [])
+  const famillesRef = useMemo(
+    () => [...new Set(articlesRef.map(a => a.famille).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr")),
+    [articlesRef]
+  )
+  const nomOfArticle = useCallback(
+    (id: string) => articlesRef.find(a => a.id === id)?.nom ?? id,
+    [articlesRef]
+  )
 
   const [showRuleForm, setShowRuleForm] = useState(false)
   const [ruleForm, setRuleForm] = useState({
@@ -370,19 +389,25 @@ export default function BOMoteurCommercial() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-slate-700">Famille (optionnel)</label>
-                  <input
+                  <select
                     value={ruleForm.cibleFamille}
                     onChange={e => setRuleForm(f => ({ ...f, cibleFamille: e.target.value }))}
-                    placeholder="Fruits tropicaux"
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="">— Toutes les familles —</option>
+                    {famillesRef.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-bold text-slate-700">Article ID (optionnel)</label>
-                  <input
+                  <label className="text-[11px] font-bold text-slate-700">Produit (optionnel)</label>
+                  <select
                     value={ruleForm.cibleArticle}
                     onChange={e => setRuleForm(f => ({ ...f, cibleArticle: e.target.value }))}
-                    placeholder="VFP00046"
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="">— Tous les produits —</option>
+                    {articlesRef
+                      .filter(a => !ruleForm.cibleFamille || a.famille === ruleForm.cibleFamille)
+                      .map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                  </select>
                 </div>
 
                 {ruleForm.type === "gratuite_palier" && (
@@ -474,7 +499,7 @@ export default function BOMoteurCommercial() {
                             {r.type === "remise_montant" && <span>💰 <strong>-{r.remise_valeur} MAD</strong></span>}
                             {r.type === "remise_cascade" && <span>🪜 <strong>-{r.remise_valeur}% cascade</strong></span>}
                             {r.cible_famille && <span>· famille {r.cible_famille}</span>}
-                            {r.cible_article && <span>· article {r.cible_article}</span>}
+                            {r.cible_article && <span>· produit {nomOfArticle(r.cible_article)}</span>}
                             <span>· priorité {r.priorite}</span>
                           </div>
                         </div>
@@ -537,11 +562,13 @@ export default function BOMoteurCommercial() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-slate-700">Famille produit</label>
-                  <input
+                  <select
                     value={matrixForm.famille}
                     onChange={e => setMatrixForm(f => ({ ...f, famille: e.target.value }))}
-                    placeholder="TOUTES, Fruits tropicaux, Légumes…"
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="TOUTES">TOUTES</option>
+                    {famillesRef.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-slate-700">Taux CA (%)</label>
@@ -681,7 +708,10 @@ export default function BOMoteurCommercial() {
             </div>
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-3 gap-2">
-                <input value={simGratuite.article} onChange={e => setSimGratuite(s => ({ ...s, article: e.target.value }))} placeholder="VFP00001" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                <select value={simGratuite.article} onChange={e => setSimGratuite(s => ({ ...s, article: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                  <option value="">— Produit —</option>
+                  {articlesRef.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                </select>
                 <select value={simGratuite.segment} onChange={e => setSimGratuite(s => ({ ...s, segment: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
                   <option value="chr">🏨 CHR</option>
                   <option value="marchand">🏪 Marchand</option>
@@ -718,7 +748,10 @@ export default function BOMoteurCommercial() {
                   <option value="marchand">🏪 Marchand</option>
                   <option value="particulier">🏠 Particulier</option>
                 </select>
-                <input value={simBonus.famille} onChange={e => setSimBonus(s => ({ ...s, famille: e.target.value }))} placeholder="TOUTES" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <select value={simBonus.famille} onChange={e => setSimBonus(s => ({ ...s, famille: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                  <option value="TOUTES">TOUTES</option>
+                  {famillesRef.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
               </div>
               <button type="button" onClick={runSimBonus} disabled={simBonus.loading} className="w-full px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-60">
                 {simBonus.loading ? "⏳ Calcul…" : "🧮 Calculer"}
@@ -741,7 +774,10 @@ export default function BOMoteurCommercial() {
             </div>
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-2 gap-2">
-                <input value={simPricing.article} onChange={e => setSimPricing(s => ({ ...s, article: e.target.value }))} placeholder="VFP00001" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                <select value={simPricing.article} onChange={e => setSimPricing(s => ({ ...s, article: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <option value="">— Produit —</option>
+                  {articlesRef.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                </select>
                 <input value={simPricing.client} onChange={e => setSimPricing(s => ({ ...s, client: e.target.value }))} placeholder="VFC00001" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 <input type="number" min={0} step="0.01" value={simPricing.costLog} onChange={e => setSimPricing(s => ({ ...s, costLog: Number(e.target.value) || 0 }))} placeholder="Cost log" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 <input type="number" min={0} step="0.01" value={simPricing.margeCible} onChange={e => setSimPricing(s => ({ ...s, margeCible: Number(e.target.value) || 0 }))} placeholder="Marge cible" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-400" />
@@ -766,7 +802,10 @@ export default function BOMoteurCommercial() {
               <p className="text-[11px] opacity-85 mt-1">Prix d'achat estimé selon l'historique <code>fl_pa_historique</code>.</p>
             </div>
             <div className="p-4 space-y-3">
-              <input value={simPa.article} onChange={e => setSimPa(s => ({ ...s, article: e.target.value }))} placeholder="VFP00001" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+              <select value={simPa.article} onChange={e => setSimPa(s => ({ ...s, article: e.target.value }))} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400">
+                <option value="">— Produit —</option>
+                {articlesRef.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+              </select>
               <button type="button" onClick={runSimPa} disabled={simPa.loading} className="w-full px-4 py-2.5 rounded-xl bg-fuchsia-600 text-white text-sm font-bold hover:bg-fuchsia-700 disabled:opacity-60">
                 {simPa.loading ? "⏳ Calcul…" : "🧮 Calculer"}
               </button>
