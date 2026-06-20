@@ -98,6 +98,8 @@ export default function BOImportConcurrence() {
   const [jour, setJour]     = useState(new Date().toISOString().slice(0, 10))
   const [msg, setMsg]       = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy]     = useState(false)
+  const [view, setView]     = useState<"import" | "prevision">("import")
+  const [horizon, setHorizon] = useState<7 | 14 | 30>(30)
   const refPV = useRef<HTMLInputElement>(null)
   const refFA = useRef<HTMLInputElement>(null)
   const refSA = useRef<HTMLInputElement>(null)
@@ -237,6 +239,37 @@ export default function BOImportConcurrence() {
     return { ca, volKg, clients, jours, byArticle: byKey(v => v.article), bySecteur: byKey(v => v.secteur), byCommercial: byKey(v => v.commercial) }
   }, [ventes])
 
+  // ── Prévision : projette CA & tonnage futurs (tendance linéaire + moyenne) ───
+  const prevision = useMemo(() => {
+    const byDate: Record<string, { ca: number; vol: number }> = {}
+    ventes.forEach(v => { (byDate[v.date] ??= { ca: 0, vol: 0 }); byDate[v.date].ca += (v.netFacture || v.ht || 0); byDate[v.date].vol += v.qt })
+    const dates = Object.keys(byDate).sort()
+    const caS = dates.map(d => byDate[d].ca), volS = dates.map(d => byDate[d].vol)
+    const n = dates.length
+    const meanArr = (a: number[]) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0
+    // Projection par régression linéaire (somme des H prochains jours, clampée ≥ 0)
+    const proj = (s: number[]) => {
+      if (s.length === 0) return 0
+      if (s.length === 1) return s[0] * horizon
+      const xs = s.map((_, i) => i), mx = meanArr(xs), my = meanArr(s)
+      let nu = 0, de = 0
+      for (let i = 0; i < s.length; i++) { nu += (xs[i] - mx) * (s[i] - my); de += (xs[i] - mx) ** 2 }
+      const slope = de ? nu / de : 0, intercept = my - slope * mx
+      let sum = 0; for (let i = 0; i < horizon; i++) sum += Math.max(0, slope * (s.length + i) + intercept)
+      return sum
+    }
+    const fcCA = proj(caS), fcVol = proj(volS)
+    const baseCA = meanArr(caS) * horizon, baseVol = meanArr(volS) * horizon
+    // Prévision par dimension : total/clé sur la période, mise à l'échelle pro-rata
+    const perKey = (sel: (v: ConcVente) => string): [string, { ca: number; vol: number }][] => {
+      const m: Record<string, { ca: number; vol: number }> = {}
+      ventes.forEach(v => { const k = sel(v) || "—"; (m[k] ??= { ca: 0, vol: 0 }); m[k].ca += (v.netFacture || v.ht || 0); m[k].vol += v.qt })
+      const factor = n ? horizon / n : 0
+      return Object.entries(m).map(([k, val]) => [k, { ca: val.ca * factor, vol: val.vol * factor }] as [string, { ca: number; vol: number }]).sort((a, b) => b[1].ca - a[1].ca)
+    }
+    return { n, fcCA, fcVol, baseCA, baseVol, byArticle: perKey(v => v.article), bySecteur: perKey(v => v.secteur), byClient: perKey(v => v.client) }
+  }, [ventes, horizon])
+
   const Card = ({ title, sub, accent, children }: { title: string; sub: string; accent: string; children: React.ReactNode }) => (
     <div className={`rounded-2xl border bg-white p-4 flex flex-col gap-3 ${accent}`}>
       <div><h3 className="text-sm font-black text-slate-900">{title}</h3><p className="text-[11px] text-slate-500">{sub}</p></div>
@@ -258,6 +291,15 @@ export default function BOImportConcurrence() {
         <div className={`px-4 py-2.5 rounded-xl text-sm font-semibold shadow ${msg.ok ? "bg-emerald-600 text-white" : "bg-red-600 text-white"}`}>{msg.text}</div>
       )}
 
+      {/* Onglets Import / Prévision */}
+      <div className="flex gap-2">
+        {([["import", "📥 Import & données"], ["prevision", "📈 Prévision"]] as [typeof view, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${view === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>{l}</button>
+        ))}
+      </div>
+
+      {view === "import" && (<>
       {/* Date du jour (pour la synthèse achats qui n'a pas de colonne date) */}
       <div className="flex items-center gap-3 flex-wrap">
         <label className="text-sm font-semibold text-slate-700">Jour d&apos;import (synthèse achats) :</label>
@@ -331,9 +373,56 @@ export default function BOImportConcurrence() {
       )}
 
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        💡 Les données sont stockées sur cet appareil (localStorage). La <strong>synthèse achats</strong> alimente directement
-        l&apos;onglet « PV stratégique » (PA concurrent) pour aligner vos marges. Réimporter un même jour <strong>remplace</strong> ce jour (aucun doublon).
+        💡 Les PA &amp; PV concurrent sont <strong>partagés entre appareils</strong> (Supabase). La facturation reste sur cet appareil.
+        La <strong>synthèse achats</strong> alimente la rubrique <strong>Pricing</strong> (PA concurrent). Réimporter un même jour <strong>remplace</strong> ce jour (aucun doublon).
       </p>
+      </>)}
+
+      {/* ── PRÉVISION ─────────────────────────────────────────────────────── */}
+      {view === "prevision" && (
+        ventes.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+            <p className="text-4xl mb-2">📈</p>
+            <p className="font-semibold">Importe d&apos;abord la facturation concurrent pour générer une prévision.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-semibold text-slate-700">Horizon de prévision :</span>
+              {[7, 14, 30].map(h => (
+                <button key={h} onClick={() => setHorizon(h as 7 | 14 | 30)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold ${horizon === h ? "bg-indigo-600 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>{h} jours</button>
+              ))}
+              <span className="text-xs text-slate-400">basé sur {prevision.n} jour(s) d&apos;historique</span>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { l: `CA prévu — tendance (${horizon}j)`, v: fmtMad(prevision.fcCA), i: "📈" },
+                { l: `Tonnage prévu — tendance (${horizon}j)`, v: prevision.fcVol.toLocaleString("fr-MA", { maximumFractionDigits: 0 }) + " kg", i: "⚖️" },
+                { l: `CA prévu — moyenne (${horizon}j)`, v: fmtMad(prevision.baseCA), i: "📊" },
+                { l: `Tonnage prévu — moyenne (${horizon}j)`, v: prevision.baseVol.toLocaleString("fr-MA", { maximumFractionDigits: 0 }) + " kg", i: "📊" },
+              ].map(k => (
+                <div key={k.l} className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl">{k.i}</div>
+                  <div className="min-w-0"><p className="text-[11px] text-slate-500 truncate">{k.l}</p><p className="text-lg font-black text-indigo-800">{k.v}</p></div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <TopList title={`Prévision CA — par produit (${horizon}j)`} rows={prevision.byArticle} />
+              <TopList title={`Prévision CA — par secteur (${horizon}j)`} rows={prevision.bySecteur} />
+              <TopList title={`Prévision CA — par client (${horizon}j)`} rows={prevision.byClient} />
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              📈 Prévision = projection de tendance (régression linéaire) des ventes concurrent observées. La répartition par produit / secteur / client
+              est mise à l&apos;échelle au pro-rata de l&apos;historique. Plus l&apos;historique est long (facturation globale), plus la prévision est fiable.
+            </p>
+          </div>
+        )
+      )}
     </div>
   )
 }
