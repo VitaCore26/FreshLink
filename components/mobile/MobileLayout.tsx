@@ -23,6 +23,7 @@ import MobileChargesAcheteur from "./MobileChargesAcheteur"
 import MobileClientPortail from "./MobileClientPortail"
 import MobileFournisseurPortail from "./MobileFournisseurPortail"
 import RoleSwitcher from "@/components/ui/RoleSwitcher"
+import MobileAutoTranslate from "./MobileAutoTranslate"
 
 interface Props {
   user: User
@@ -118,7 +119,10 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
     // h-[100dvh] borne la hauteur → <main> devient une vraie région de scroll
     // (sinon le scroll est saccadé avec la nav fixe). 100dvh gère la barre
     // d'adresse mobile mieux que h-screen.
-    <div className="h-[100dvh] flex flex-col w-full font-sans bg-slate-50 text-slate-800 overflow-hidden">
+    <div id="mobile-root" className="h-[100dvh] flex flex-col w-full font-sans bg-slate-50 text-slate-800 overflow-hidden">
+
+      {/* Traduction automatique Darija / English (repli FR pour le reste) */}
+      <MobileAutoTranslate rootId="mobile-root" />
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="px-4 pt-safe-top pb-3 flex items-center justify-between sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
@@ -140,7 +144,7 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5" data-no-translate>
           <LangSwitcher compact />
 
           {/* Online indicator */}
