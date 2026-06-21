@@ -1377,8 +1377,21 @@ export default function BOBonLivraison({ user }: { user: User }) {
                 <input type="checkbox" checked={printOpts.showLegal !== false}
                   onChange={e => savePrintOpts({ ...printOpts, showLegal: e.target.checked })}
                   className="w-4 h-4 accent-amber-500" />
-                <span className="text-xs font-bold text-amber-800">Afficher RC / ICE / IF (mentions légales société + client)</span>
+                <span className="text-xs font-bold text-amber-800">Afficher les mentions légales (société + client)</span>
               </label>
+              {/* Cases granulaires ICE / IF / RC (BL et Facture) */}
+              {printOpts.showLegal !== false && (
+                <div className="col-span-2 flex flex-wrap gap-4 pl-6">
+                  {([["showICE", "ICE"], ["showIF", "IF"], ["showRC", "RC"]] as [keyof PrintBLOpts, string][]).map(([key, lbl]) => (
+                    <label key={key} className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={printOpts[key] !== false}
+                        onChange={e => savePrintOpts({ ...printOpts, [key]: e.target.checked })}
+                        className="w-3.5 h-3.5 accent-amber-500" />
+                      <span className="text-[11px] font-semibold text-amber-700">Afficher {lbl}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <p className="text-[10px] text-amber-600 mt-2">Ce choix s&apos;applique à l&apos;impression et au téléchargement (BL ou Facture, avec ou sans identifiants légaux).</p>
           </div>

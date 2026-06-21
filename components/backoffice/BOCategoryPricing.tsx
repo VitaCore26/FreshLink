@@ -184,7 +184,8 @@ export default function BOCategoryPricing() {
   const applyFamillePricing = () => {
     const v = Number(famValeur)
     if (!famSel || isNaN(v)) return
-    const cible = articles.filter(a => a.famille === famSel)
+    const cible = famSel === "__ALL__" ? articles : articles.filter(a => a.famille === famSel)
+    const famLabel = famSel === "__ALL__" ? "Toutes les familles" : famSel
     setEdits(prev => {
       const next = { ...prev }
       cible.forEach(a => {
@@ -204,7 +205,7 @@ export default function BOCategoryPricing() {
     })
     const baseLbl = famBase === "fixe" ? "Prix fixe" : famBase === "cout" ? "PA+charge" : "PV"
     const valLbl  = famBase === "fixe" ? `${v} DH` : famType === "pct" ? `${v >= 0 ? "+" : ""}${v}%` : `${v >= 0 ? "+" : ""}${v} DH`
-    setImportMsg({ ok: true, text: `${cible.length} article(s) de « ${famSel} » → ${baseLbl} ${valLbl} sur ${CAT_LABELS[activeCat]}. Cliquez « Enregistrer » pour appliquer.` })
+    setImportMsg({ ok: true, text: `${cible.length} article(s) de « ${famLabel} » → ${baseLbl} ${valLbl} sur ${CAT_LABELS[activeCat]}. Cliquez « Enregistrer » pour appliquer.` })
     setTimeout(() => setImportMsg(null), 6000)
   }
 
@@ -451,6 +452,7 @@ export default function BOCategoryPricing() {
               <select value={famSel} onChange={e => setFamSel(e.target.value)}
                 className="px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="">— Choisir —</option>
+                <option value="__ALL__">🌐 Toutes les familles</option>
                 {familles.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
             </label>

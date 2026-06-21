@@ -618,6 +618,9 @@ export interface PrintBLOpts {
   piedDePageOverride?: string
   docType?:            "bl" | "facture"   // titre du document
   showLegal?:          boolean            // afficher RC / ICE / IF (défaut: true)
+  showICE?:            boolean            // afficher l'ICE (défaut: true si showLegal)
+  showIF?:             boolean            // afficher l'IF (défaut: true si showLegal)
+  showRC?:             boolean            // afficher le RC (défaut: true si showLegal)
 }
 
 interface BOBLLigne {
@@ -662,12 +665,20 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
   const tva        = bl.tva ?? 0
   const montantTVA = bl.totalHT * (tva / 100)
   const showLegal  = opts.showLegal !== false               // défaut: afficher RC/ICE/IF
+  // Toggles granulaires (chacun activable/désactivable séparément, sous showLegal)
+  const sICE = showLegal && opts.showICE !== false
+  const sIF  = showLegal && opts.showIF  !== false
+  const sRC  = showLegal && opts.showRC  !== false
   const isFacture  = opts.docType === "facture"
   const docLabel   = isFacture ? "Facture" : "Bon de Livraison"
-  // Ligne d'identifiants légaux société — masquée si showLegal=false
-  const legalLine  = showLegal
-    ? `<br>ICE: ${ice} — RC: ${rc} — IF: ${ifFiscal}${opts.patentOverride?" — Patente: "+opts.patentOverride:""}`
-    : ""
+  // Ligne d'identifiants légaux société — selon les cases ICE / IF / RC
+  const legalParts = [
+    sICE && ice ? `ICE: ${ice}` : "",
+    sRC && rc ? `RC: ${rc}` : "",
+    sIF && ifFiscal ? `IF: ${ifFiscal}` : "",
+    opts.patentOverride ? `Patente: ${opts.patentOverride}` : "",
+  ].filter(Boolean)
+  const legalLine  = legalParts.length ? `<br>${legalParts.join(" — ")}` : ""
 
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
 <title>${docLabel} ${bl.numero}</title>
@@ -696,7 +707,7 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
     <div class="ic-title">Client / Destinataire</div>
     <div class="ic-val">${bl.clientNom}</div>
     <div class="ic-sub">${bl.clientAdresse ?? ""}</div>
-    ${showLegal && bl.clientIce?`<div class="ic-sub">ICE: ${bl.clientIce}</div>`:""}
+    ${sICE && bl.clientIce?`<div class="ic-sub">ICE: ${bl.clientIce}</div>`:""}
     ${bl.clientModalitePaiement?`<div class="ic-sub">Modalité: ${bl.clientModalitePaiement}</div>`:""}
   </div>
   <div class="info-card">
