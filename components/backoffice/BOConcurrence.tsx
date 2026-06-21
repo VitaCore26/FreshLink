@@ -9,7 +9,7 @@
 //  Partage les relevés concurrents avec BOIntelligencePrix (clé fl_intel_prix).
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useMemo, useRef } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { store, type User } from "@/lib/store"
 import BOImportConcurrence from "./BOImportConcurrence"
 
@@ -34,6 +34,8 @@ interface FluxEntry {
   prix: number
   volume?: number      // tonnage observé (optionnel)
 }
+// Ligne de facture concurrent (import Excel) — sert à auto-alimenter les onglets
+interface ConcVente { article: string; pu: number; qt: number; secteur: string; client: string; type: string; date: string }
 
 const LS_PRIX = "fl_intel_prix"
 const LS_FLUX = "fl_intel_flux"
@@ -102,6 +104,9 @@ export default function BOConcurrence({ user }: { user: User }) {
   const [decote, setDecote]       = useState(1)    // DH à retrancher pour attaquer (décote)
   const [prix, setPrix] = useState<CompetitorEntry[]>(getPrix)
   const [flux, setFlux] = useState<FluxEntry[]>(getFlux)
+  const [ventes, setVentes] = useState<ConcVente[]>(() => { try { return JSON.parse(localStorage.getItem("fl_conc_ventes") ?? "[]") } catch { return [] } })
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const [msg, setMsg] = useState<string | null>(null)
   const prixFileRef = useRef<HTMLInputElement>(null)
   const fluxFileRef = useRef<HTMLInputElement>(null)
@@ -109,10 +114,43 @@ export default function BOConcurrence({ user }: { user: User }) {
   const canEdit = ["admin", "super_admin", "super_super_admin", "resp_commercial", "acheteur"].includes(user.role)
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(null), 4000) }
 
+  // Recharge les données importées quand on quitte l'onglet Import
+  useEffect(() => {
+    if (tab !== "import") {
+      setPrix(getPrix()); setFlux(getFlux())
+      try { setVentes(JSON.parse(localStorage.getItem("fl_conc_ventes") ?? "[]")) } catch { /* noop */ }
+    }
+  }, [tab])
+
+  // ── Filtre de dates (plage x → y ; une seule date = ce jour) ───────────────
+  const inRange = (d: string | undefined): boolean => {
+    const x = String(d ?? "").slice(0, 10)
+    if (dateFrom && x < dateFrom) return false
+    if (dateTo && x > dateTo) return false
+    return true
+  }
+  // Bornes disponibles (pour aider l'utilisateur)
+  const allDates = useMemo(() => {
+    const s = new Set<string>()
+    prix.forEach(e => e.date && s.add(e.date.slice(0, 10)))
+    ventes.forEach(v => v.date && s.add(String(v.date).slice(0, 10)))
+    flux.forEach(f => f.date && s.add(f.date.slice(0, 10)))
+    return [...s].sort()
+  }, [prix, ventes, flux])
+
+  // Prix concurrent filtré par la plage ; flux = CSV + factures (auto), filtré
+  const prixF = useMemo(() => prix.filter(e => inRange(e.date)), [prix, dateFrom, dateTo])
+  const fluxAuto = useMemo<FluxEntry[]>(() =>
+    ventes.filter(v => Number(v.pu) > 0).map((v, i) => ({
+      id: `fv_${i}`, date: String(v.date).slice(0, 10), concurrent: "Iziry",
+      sku: v.article, prix: Number(v.pu) || 0, volume: Number(v.qt) || 0,
+    })), [ventes])
+  const fluxF = useMemo(() => [...flux, ...fluxAuto].filter(e => inRange(e.date)), [flux, fluxAuto, dateFrom, dateTo])
+
   // ── Dashboard : agrégats depuis les commandes confirmées ──────────────────
   const dash = useMemo(() => {
     const okStatuts = new Set(["valide", "en_preparation", "charge", "en_transit", "livre", "retour"])
-    const cmds = store.getCommandes().filter(c => okStatuts.has(c.statut))
+    const cmds = store.getCommandes().filter(c => okStatuts.has(c.statut) && inRange(c.date))
     let tonnage = 0, ca = 0
     const acc = (m: Map<string, { ca: number; t: number }>, k: string, ca2: number, t: number) => {
       if (!k) return
@@ -140,7 +178,7 @@ export default function BOConcurrence({ user }: { user: User }) {
       nbCmds: cmds.length, tonnage, ca,
       articles: top(byArticle), clients: top(byClient), zones: top(byZone), prevs: top(byPrev),
     }
-  }, [])
+  }, [dateFrom, dateTo])
 
   // ── Prix & marge : croise le catalogue avec les relevés concurrents ───────
   const margeRows = useMemo(() => {
@@ -148,14 +186,14 @@ export default function BOConcurrence({ user }: { user: User }) {
     return articles.map(a => {
       const pa = Number(a.prixAchat) || 0
       const pv = store.computePV(a)
-      const rel = prix.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
+      const rel = prixF.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
       const concAvg = rel.length ? mean(rel.map(e => e.prixConcurrent)) : 0
       const margeDH = pv - pa
       const margePct = pv > 0 ? (margeDH / pv) * 100 : 0
       const deltaConc = concAvg > 0 ? ((pv - concAvg) / concAvg) * 100 : 0
       return { nom: a.nom, unite: a.unite ?? "kg", pa, pv, margeDH, margePct, concAvg, deltaConc, nbRel: rel.length }
     }).sort((x, y) => y.margePct - x.margePct)
-  }, [prix])
+  }, [prixF])
 
   // ── PV stratégique : PV théorique, PV concurrence (est.), PV proposé pour attaquer ──
   const pvRows = useMemo(() => {
@@ -166,7 +204,7 @@ export default function BOConcurrence({ user }: { user: User }) {
       const charge = Number(charges.find(c => c.id === a.chargeArticleId)?.montant) || 0
       const cout = pa + charge                                   // coût de revient
       const pvClient = store.computePV(a)                        // notre PV actuel (prix client)
-      const rel = prix.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
+      const rel = prixF.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
       const paConc = rel.length ? mean(rel.map(e => e.prixConcurrent)) : 0   // PA concurrent (synthese)
       const pvTheo = Math.round(cout * (1 + margeTheo / 100) * 100) / 100    // PV théorique = coût + marge théorique
       const pvConcEst = paConc > 0 ? Math.round(paConc * (1 + margeConc / 100) * 100) / 100 : 0  // PV concurrent estimé
@@ -180,12 +218,12 @@ export default function BOConcurrence({ user }: { user: User }) {
       const margeProposeePct = pvPropose > 0 ? ((pvPropose - cout) / pvPropose) * 100 : 0
       return { nom: a.nom, unite: a.unite ?? "kg", pa, charge, cout, pvClient, paConc, pvTheo, pvConcEst, pvPropose, margeProposeePct, strategie, nbRel: rel.length }
     }).filter(r => r.nbRel > 0 || r.pa > 0).sort((x, y) => y.nbRel - x.nbRel)
-  }, [prix, margeTheo, margeConc, decote])
+  }, [prixF, margeTheo, margeConc, decote])
 
   // ── Comportement : classe chaque concurrent ───────────────────────────────
   const comportement = useMemo(() => {
     const byConc = new Map<string, CompetitorEntry[]>()
-    for (const e of prix) {
+    for (const e of prixF) {
       if (!e.concurrentNom) continue
       const arr = byConc.get(e.concurrentNom) ?? []
       arr.push(e); byConc.set(e.concurrentNom, arr)
@@ -203,12 +241,12 @@ export default function BOConcurrence({ user }: { user: User }) {
       const volatil = volPct >= 12
       return { nom, count: rows.length, avgDelta, volPct, profil, ton, reco, volatil, skus: [...new Set(rows.map(r => r.sku))].length }
     }).sort((a, b) => b.avgDelta - a.avgDelta)
-  }, [prix])
+  }, [prixF])
 
   // ── Flux & trajectoire : tendance par (concurrent, sku) ───────────────────
   const trajectoires = useMemo(() => {
     const byKey = new Map<string, FluxEntry[]>()
-    for (const f of flux) {
+    for (const f of fluxF) {
       const k = `${f.concurrent}|||${f.sku}`
       const arr = byKey.get(k) ?? []
       arr.push(f); byKey.set(k, arr)
@@ -234,7 +272,7 @@ export default function BOConcurrence({ user }: { user: User }) {
         volumeTotal: sorted.reduce((s, r) => s + (Number(r.volume) || 0), 0),
       }
     }).sort((a, b) => Math.abs(b.variation) - Math.abs(a.variation))
-  }, [flux])
+  }, [fluxF])
 
   // ── Import / export ───────────────────────────────────────────────────────
   const exportMarge = () => {
@@ -336,6 +374,43 @@ export default function BOConcurrence({ user }: { user: User }) {
           </button>
         ))}
       </div>
+
+      {/* ── Filtre de dates (plage x→y · ou un jour précis) ───────────────── */}
+      {tab !== "import" && (
+        <div className="flex flex-wrap items-end gap-3 bg-white border border-slate-200 rounded-xl p-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Du</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-slate-50" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Au</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-slate-50" />
+          </div>
+          {allDates.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Jour précis</label>
+              <select value={dateFrom && dateFrom === dateTo ? dateFrom : ""}
+                onChange={e => { const d = e.target.value; setDateFrom(d); setDateTo(d) }}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-slate-50">
+                <option value="">— Choisir un jour —</option>
+                {allDates.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(""); setDateTo("") }}
+              className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-red-500 pb-2">↺ Tout (cumul)</button>
+          )}
+          <span className="text-[11px] text-slate-400 pb-2">
+            {dateFrom || dateTo
+              ? (dateFrom && dateFrom === dateTo ? `Données du ${dateFrom}` : `Période ${dateFrom || "…"} → ${dateTo || "…"}`)
+              : "Cumul (toutes dates)"}
+            {allDates.length ? ` · ${allDates.length} jour(s) importés` : ""}
+          </span>
+        </div>
+      )}
 
       {/* ── DASHBOARD ─────────────────────────────────────────────────────── */}
       {tab === "dashboard" && (

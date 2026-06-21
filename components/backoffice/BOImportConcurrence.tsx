@@ -282,8 +282,8 @@ export default function BOImportConcurrence() {
       <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 text-white">
         <h2 className="text-lg font-black">📥 Import Excel — Données concurrent</h2>
         <p className="text-sm text-white/75 mt-1">
-          Importe les extractions Excel (.xlsx) du concurrent. <strong>Prix de vente</strong> &amp; <strong>Synthèse achats</strong> = chaque jour ·
-          <strong> Facturation globale</strong> (historique) = 1 seule fois. Données partagées entre appareils.
+          Importe les extractions Excel (.xlsx) du concurrent. <strong>Facture</strong> (PV + volume) &amp; <strong>Synthèse achats</strong> (PA) = chaque jour ·
+          <strong> Facture globale</strong> (historique) = 1 seule fois. Le PV concurrent est extrait des factures. Données partagées entre appareils.
         </p>
       </div>
 
@@ -310,28 +310,28 @@ export default function BOImportConcurrence() {
 
       {/* 3 zones d'import */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Prix de vente */}
-        <Card title="① Prix de vente concurrent" sub="QUOTIDIEN · Référence · Libellé · Unité · Prix vente · garde l'historique" accent="border-blue-200">
-          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">chaque jour</span>
+        {/* Facturation = source principale (PV extrait + volume + prévision) */}
+        <Card title="① Facture concurrent (PV + volume)" sub="QUOTIDIEN (facturation.xlsx) · GLOBALE = 1 fois (facturation - global.xlsx) · le PV concurrent est EXTRAIT du prix unitaire des factures, consolidé jour après jour dans la Prévision" accent="border-emerald-200">
+          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">quotidien · global 1 fois</span>
+          <label className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold text-center cursor-pointer hover:bg-emerald-700">
+            📂 Choisir facture(.global).xlsx
+            <input ref={refFA} type="file" accept=".xlsx,.xls" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) importFacturation(f) }} />
+          </label>
+          <p className="text-xs text-slate-600">{ventes.length} ligne(s) · {stats.jours} jour(s) — PV concurrent + volume.</p>
+          {ventes.length > 0 && <button onClick={clearVentes} className="text-[11px] text-red-600 hover:underline w-fit">Vider les factures</button>}
+        </Card>
+
+        {/* Prix de vente = catalogue de repli (optionnel) */}
+        <Card title="② Catalogue prix-vente (optionnel — repli)" sub="Optionnel · utilisé seulement si un article n'apparaît pas dans les factures · Référence · Libellé · Prix vente" accent="border-blue-200">
+          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">repli</span>
           <label className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold text-center cursor-pointer hover:bg-blue-700">
             📂 Choisir prix-vente.xlsx
             <input ref={refPV} type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) importPV(f) }} />
           </label>
-          <p className="text-xs text-slate-600">{pv.length} article(s) suivis (PV + historique).</p>
+          <p className="text-xs text-slate-600">{pv.length} article(s) en repli.</p>
           {pv.length > 0 && <button onClick={clearPV} className="text-[11px] text-red-600 hover:underline w-fit">Vider le catalogue</button>}
-        </Card>
-
-        {/* Facturation */}
-        <Card title="② Facturation (ventes)" sub="QUOTIDIEN (facturation.xlsx) · GLOBALE = 1 fois (facturation - global.xlsx, historique) · PV, volume / client / commercial / secteur" accent="border-emerald-200">
-          <span className="inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">quotidien · global 1 fois</span>
-          <label className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold text-center cursor-pointer hover:bg-emerald-700">
-            📂 Choisir facturation(.global).xlsx
-            <input ref={refFA} type="file" accept=".xlsx,.xls" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) importFacturation(f) }} />
-          </label>
-          <p className="text-xs text-slate-600">{ventes.length} ligne(s) · {stats.jours} jour(s).</p>
-          {ventes.length > 0 && <button onClick={clearVentes} className="text-[11px] text-red-600 hover:underline w-fit">Vider les facturations</button>}
         </Card>
 
         {/* Synthèse achats */}
