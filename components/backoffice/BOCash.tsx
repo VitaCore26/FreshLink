@@ -690,7 +690,7 @@ export default function BOCash() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-bold text-primary whitespace-nowrap">
-                      {(bl.montantTotal + (bl.montantCaisses ?? 0)).toLocaleString("fr-MA")} DH
+                      {((Number(bl.montantTotal) || 0) + (Number(bl.montantCaisses) || 0)).toLocaleString("fr-MA")} DH
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${st.bg} ${st.text}`}>
@@ -915,9 +915,9 @@ export default function BOCash() {
       {printFraisId && (() => {
         const bl = bls.find(b => b.id === printFraisId)
         if (!bl) return null
-        const totalNbCaisses = (bl.nbCaisseGros ?? 0) + (bl.nbCaisseDemi ?? 0)
-        const fraisImpr = fraisConfig.fraisImpressionParFeuille * fraisConfig.nbFeuilles
-        const fraisServ = fraisConfig.fraisServiceParCaisse * totalNbCaisses
+        const totalNbCaisses = (Number(bl.nbCaisseGros) || 0) + (Number(bl.nbCaisseDemi) || 0)
+        const fraisImpr = (Number(fraisConfig.fraisImpressionParFeuille) || 0) * (Number(fraisConfig.nbFeuilles) || 0)
+        const fraisServ = (Number(fraisConfig.fraisServiceParCaisse) || 0) * totalNbCaisses
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
             <div className="bg-card rounded-2xl border border-border w-full max-w-sm flex flex-col gap-5 p-5 shadow-2xl">
@@ -979,7 +979,7 @@ export default function BOCash() {
                 <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-primary/5 border border-primary/20">
                   <span className="text-xs font-bold text-foreground">Marchandise + Frais</span>
                   <span className="text-sm font-extrabold text-primary">
-                    {(bl.montantTotal + (bl.montantCaisses ?? 0) + fraisImpr + fraisServ).toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH
+                    {((Number(bl.montantTotal) || 0) + (Number(bl.montantCaisses) || 0) + fraisImpr + fraisServ).toLocaleString("fr-MA", { minimumFractionDigits: 2 })} DH
                   </span>
                 </div>
               </div>

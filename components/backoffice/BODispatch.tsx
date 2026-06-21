@@ -315,6 +315,18 @@ export default function BODispatch({ user }: Props) {
     if (idx >= 0) { all[idx].actif = !all[idx].actif; store.saveLivreurs(all); refresh() }
   }
 
+  const deleteLivreur = (l: Livreur) => {
+    if (!window.confirm(`Supprimer définitivement le livreur « ${l.prenom} ${l.nom} » ?\n\nCette action retire aussi son compte utilisateur lié (le cas échéant).`)) return
+    store.saveLivreurs(store.getLivreurs().filter(x => x.id !== l.id))
+    // Retire le compte utilisateur lié (rôle livreur, même nom) s'il existe
+    try {
+      const fullName = `${l.prenom} ${l.nom}`.trim().toLowerCase()
+      const users = store.getUsers().filter(u => !(u.role === "livreur" && (u.name ?? "").trim().toLowerCase() === fullName))
+      store.saveUsers(users)
+    } catch { /* noop */ }
+    refresh()
+  }
+
   const tripStatusColor: Record<string, string> = {
     "planifié": "bg-amber-100 text-amber-800",
     "en_cours": "bg-orange-100 text-orange-800",
@@ -832,6 +844,10 @@ export default function BODispatch({ user }: Props) {
                             {l.actif
                               ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                               : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                          </button>
+                          <button onClick={() => deleteLivreur(l)} title="Supprimer le livreur"
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                           </button>
                         </div>
                       </td>

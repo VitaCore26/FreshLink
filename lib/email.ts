@@ -72,7 +72,8 @@ export async function sendEmail(payload: EmailPayload): Promise<SendResult> {
   }
 
   try {
-    const res = await fetch("/api/send-email", {
+    // Route serveur Brevo/Resend (auto-réparation domaine) — même endpoint que la boutique
+    const res = await fetch("/api/ext/send-email", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

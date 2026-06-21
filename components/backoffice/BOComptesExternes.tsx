@@ -579,11 +579,28 @@ export default function BOComptesExternes({ user }: Props) {
   const withPortal   = clients.filter(c => getPortalUser(c.id)).length
   const activePortal = users.filter(u => u.role === "client" && u.actif).length
   const chrCount     = clients.filter(c => c.categorie === "chr").length
+  // Alertes qualité base : clients sans téléphone et/ou sans coordonnées GPS
+  const noPhone = (c: typeof clients[number]) => !String(c.telephone ?? "").replace(/\D/g, "")
+  const noGps   = (c: typeof clients[number]) => !(Number(c.gpsLat) || 0) && !(Number(c.gpsLng) || 0)
+  const missingContact = clients.filter(c => noPhone(c) || noGps(c))
 
   const editClient = editId ? clients.find(c => c.id === editId) : null
 
   return (
     <div className="flex flex-col gap-5">
+
+      {/* ── Alerte qualité base clients (sans tél / sans GPS) ─────────────────── */}
+      {missingContact.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+          <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+          <div className="text-sm">
+            <strong>{missingContact.length} client(s)</strong> à compléter :
+            {" "}{clients.filter(noPhone).length} sans téléphone · {clients.filter(noGps).length} sans GPS.
+            <button onClick={() => setSearch("")} className="ml-2 text-[11px] font-bold underline">voir tout</button>
+            <span className="block text-[11px] text-amber-700/80 mt-0.5">Téléphone et GPS sont requis pour la livraison et les notifications WhatsApp.</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -778,8 +795,11 @@ export default function BOComptesExternes({ user }: Props) {
 
                     {/* Contact */}
                     <td className="px-4 py-3">
-                      <p className="text-xs font-medium">{c.telephone || "—"}</p>
+                      <p className="text-xs font-medium flex items-center gap-1">
+                        {c.telephone || <span className="text-amber-600 font-bold">⚠️ pas de tél</span>}
+                      </p>
                       <p className="text-xs text-muted-foreground">{c.email || ""}</p>
+                      {noGps(c) && <p className="text-[10px] text-amber-600 font-semibold mt-0.5">⚠️ pas de GPS</p>}
                     </td>
 
                     {/* Catégorie / Crédit */}
