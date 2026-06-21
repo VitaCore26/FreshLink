@@ -240,4 +240,21 @@ export const MOBILE_DICT: Record<string, Tr> = {
   "Enregistrer un avis": { ar: "سجّل رأي", en: "Save review" },
   "Aucun avis enregistré": { ar: "ماكاين حتى رأي", en: "No review" },
   "Demande d'Achat du Jour": { ar: "طلب الشرا ديال اليوم", en: "Today's purchase request" },
+
+  // ── Écran Livreur / Bons de livraison ───────────────────────────────────────
+  "Mes livraisons": { ar: "التوصيلات ديالي", en: "My deliveries" },
+  "Produits à livrer": { ar: "السلع اللي خاص تتوصّل", en: "Products to deliver" },
+  "Validation livraison": { ar: "تأكيد التوصيل", en: "Delivery validation" },
+  "Montant encaissé (DH)": { ar: "المبلغ المقبوض (درهم)", en: "Amount collected (DH)" },
+  "Livraison partielle": { ar: "توصيل جزئي", en: "Partial delivery" },
+  "Partiel": { ar: "جزئي", en: "Partial" },
+  "Capturer GPS": { ar: "صوّر الموقع GPS", en: "Capture GPS" },
+  "Signature client": { ar: "توقيع الكليان", en: "Client signature" },
+  "Imprimer le BL": { ar: "طبع الوصل", en: "Print delivery note" },
+  "Aucune livraison": { ar: "ماكاين حتى توصيل", en: "No delivery" },
+  "Aucun BL": { ar: "ماكاين حتى وصل توصيل", en: "No delivery note" },
+  "TOTAL": { ar: "المجموع", en: "TOTAL" },
+  "Confirmer le retour de cette livraison ?": { ar: "متأكّد بغيتي ترجّع هاد التوصيل؟", en: "Confirm return of this delivery?" },
+  "BL validé avec succès !": { ar: "تصادق الوصل بنجاح!", en: "Delivery note validated!" },
+  "Non validé BO": { ar: "ماشي متصادق فالباك أوفيس", en: "Not validated (BO)" },
 }

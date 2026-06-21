@@ -7,7 +7,6 @@
 // ============================================================
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
 import { store } from "@/lib/store"
 
 // ── Types ─────────────────────────────────────────────────────
@@ -41,6 +40,56 @@ interface BonLivraison {
   gps_lat_livraison?: number
   gps_lng_livraison?: number
   notes?: string
+  // Internes (mapping JSONB) — payload brut + état de validation BO
+  _payload?: Record<string, unknown>
+  _validated?: boolean       // true si le BL est validé au BO (statut ≠ brouillon)
+  _boStatut?: string
+}
+
+// BO statut (fl_bons_livraison.payload.statut) → statut mobile
+function mapStatutMobile(bo: string): BonLivraison["statut"] {
+  switch (bo) {
+    case "livre": return "livre"
+    case "retour_partiel": return "partiel"
+    case "retour": return "retour"
+    case "annule": return "annule"
+    case "brouillon": return "en_attente"
+    default: return "en_cours"   // valide / en_livraison / émis → à livrer
+  }
+}
+
+// Ligne {id, payload} JSONB → BonLivraison du mobile
+function mapBL(row: { id: string; payload?: Record<string, unknown> }): BonLivraison {
+  const p = (row.payload ?? {}) as Record<string, unknown>
+  const boStatut = String(p.statut ?? p.statutLivraison ?? "")
+  const rawLignes = Array.isArray(p.lignes) ? p.lignes as Record<string, unknown>[] : []
+  const lignes: LigneBL[] = rawLignes.map(l => ({
+    article_id:    String(l.articleId ?? ""),
+    article_nom:   String(l.articleNom ?? l.nom ?? "Article"),
+    qte_commandee: Number(l.qteCommande ?? l.quantite ?? 0) || 0,
+    qte_livree:    Number(l.qteLivree ?? l.quantite ?? 0) || 0,
+    unite:         String(l.unite ?? "kg"),
+    prix_u:        Number(l.prixUnit ?? l.prixUnitaire ?? 0) || 0,
+    montant:       Number(l.totalLigne ?? l.total ?? 0) || 0,
+  }))
+  return {
+    id: row.id,
+    numero: String(p.numero ?? row.id),
+    client_id: p.clientId ? String(p.clientId) : undefined,
+    client_nom: String(p.clientNom ?? p.client ?? "—"),
+    livreur_id: p.livreurId ? String(p.livreurId) : undefined,
+    livreur_nom: p.livreurNom ? String(p.livreurNom) : undefined,
+    date_livraison: String(p.date ?? p.dateLivraisonPrevue ?? "").slice(0, 10),
+    lignes,
+    montant_total: Number(p.totalTTC ?? p.montantTTC ?? p.totalHT ?? p.montantTotal ?? 0) || 0,
+    montant_encaisse: Number(p.montantEncaisse ?? 0) || undefined,
+    statut: mapStatutMobile(boStatut),
+    notes: p.notesBL ? String(p.notesBL) : (p.notes ? String(p.notes) : undefined),
+    signature_url: p.signatureClient ? String(p.signatureClient) : undefined,
+    _payload: p,
+    _validated: boStatut !== "brouillon" && boStatut !== "",
+    _boStatut: boStatut,
+  }
 }
 
 const DH = (n: number) =>
@@ -244,28 +293,39 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
   const [gpsCaptured, setGpsCaptured] = useState<{ lat: number; lng: number } | null>(null)
 
   const company = store.getCompanyConfig()
-  const sb = createClient()
 
-  // ── Charger les BL du livreur ──────────────────────────────
+  // ── Charger les BL du livreur (table JSONB {id, payload} via service-role) ──
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const today = new Date().toISOString().split("T")[0]
-      const query = sb.from("fl_bons_livraison").select("*")
-        .eq("date_livraison", today)
-        .neq("statut", "annule")
-        .order("created_at")
-
-      // Un livreur ne voit que ses propres BL
+      const res = await fetch("/api/sync-read?table=fl_bons_livraison", { cache: "no-store" })
+      const json = await res.json()
+      const rows: { id: string; payload?: Record<string, unknown> }[] = json?.ok ? (json.data ?? []) : []
+      let all = rows.filter(r => r.payload && !String(r.id).startsWith("__")).map(mapBL)
+      // Un livreur ne voit QUE ses propres BL (par id OU par nom)
       if (user.role === "livreur") {
-        query.eq("livreur_id", user.id)
+        const uname = (user.name ?? "").trim().toLowerCase()
+        all = all.filter(b => b.livreur_id === user.id || (b.livreur_nom ?? "").trim().toLowerCase() === uname)
       }
-
-      const { data } = await query
-      setBls((data ?? []) as BonLivraison[])
+      // On masque les annulés ; on garde les BL validés au BO ou déjà traités
+      all = all.filter(b => b.statut !== "annule")
+        .sort((a, b) => (b.date_livraison || "").localeCompare(a.date_livraison || ""))
+      setBls(all)
     } catch { /* offline */ }
     setLoading(false)
-  }, [sb, user.id, user.role])
+  }, [user.id, user.role, user.name])
+
+  // Persiste un changement de statut dans le payload JSONB (service-role)
+  const persistPayload = async (bl: BonLivraison, patch: Record<string, unknown>): Promise<boolean> => {
+    try {
+      const payload = { ...(bl._payload ?? {}), ...patch }
+      const res = await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_bons_livraison", upserts: [{ id: bl.id, payload, updated_at: new Date().toISOString() }] }),
+      })
+      return (await res.json())?.ok === true
+    } catch { return false }
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -286,33 +346,37 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
     )
   }
 
+  // Le livreur ne peut PAS changer le statut tant que le BL n'est pas validé au BO
+  const guardValidated = (): boolean => {
+    if (selected && selected._validated === false) {
+      setMsg({ ok: false, text: "⛔ Ce BL n'est pas encore validé au back-office. Vous ne pouvez pas le traiter." })
+      setTimeout(() => setMsg(null), 4000)
+      return false
+    }
+    return true
+  }
+
   // ── Valider livraison ──────────────────────────────────────
   const handleValider = async (signatureUrl?: string) => {
-    if (!selected) return
+    if (!selected || !guardValidated()) return
     setSaving(true)
     const now = new Date()
     const heure = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
-
-    const updates: Record<string, unknown> = {
+    // Patch écrit en camelCase dans le payload (cohérent avec le BO)
+    const patch: Record<string, unknown> = {
       statut: "livre",
-      heure_livraison_reelle: heure,
-      montant_encaisse: Number(encaisse) || selected.montant_total,
-      notes: notes || selected.notes,
-      updated_at: now.toISOString(),
+      heureLivraisonReelle: heure,
+      montantEncaisse: Number(encaisse) || selected.montant_total,
+      notesBL: notes || selected.notes || "",
+      ...(signatureUrl ? { signatureClient: signatureUrl } : {}),
+      ...(gpsCaptured ? { gpsLatLivraison: gpsCaptured.lat, gpsLngLivraison: gpsCaptured.lng } : {}),
     }
-    if (signatureUrl) updates.signature_url = signatureUrl
-    if (gpsCaptured) {
-      updates.gps_lat_livraison = gpsCaptured.lat
-      updates.gps_lng_livraison = gpsCaptured.lng
-    }
-
-    const { error } = await (sb as any).from("fl_bons_livraison").update(updates).eq("id", selected.id)
-    if (error) {
-      setMsg({ ok: false, text: `Erreur: ${error.message}` })
-    } else {
+    const ok = await persistPayload(selected, patch)
+    if (!ok) setMsg({ ok: false, text: "Erreur d'enregistrement (réessayez en ligne)." })
+    else {
       setMsg({ ok: true, text: "BL validé avec succès !" })
-      setBls(b => b.map(x => x.id === selected.id ? { ...x, ...updates, statut: "livre" } as BonLivraison : x))
-      setSelected(s => s ? { ...s, ...updates, statut: "livre" } as BonLivraison : null)
+      setBls(b => b.map(x => x.id === selected.id ? { ...x, statut: "livre", _payload: { ...(x._payload ?? {}), ...patch } } : x))
+      setSelected(s => s ? { ...s, statut: "livre", _payload: { ...(s._payload ?? {}), ...patch } } : null)
     }
     setSaving(false)
     setShowSig(false)
@@ -320,27 +384,30 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
   }
 
   const handlePartiel = async () => {
-    if (!selected) return
+    if (!selected || !guardValidated()) return
     setSaving(true)
-    const { error } = await (sb as any).from("fl_bons_livraison").update({ statut: "partiel", montant_encaisse: Number(encaisse) || 0, notes, updated_at: new Date().toISOString() }).eq("id", selected.id)
-    if (!error) {
-      setBls(b => b.map(x => x.id === selected.id ? { ...x, statut: "partiel" } as BonLivraison : x))
-      setSelected(s => s ? { ...s, statut: "partiel" } as BonLivraison : null)
+    const patch = { statut: "retour_partiel", montantEncaisse: Number(encaisse) || 0, notesBL: notes || "" }
+    const ok = await persistPayload(selected, patch)
+    if (ok) {
+      setBls(b => b.map(x => x.id === selected.id ? { ...x, statut: "partiel", _payload: { ...(x._payload ?? {}), ...patch } } : x))
+      setSelected(s => s ? { ...s, statut: "partiel", _payload: { ...(s._payload ?? {}), ...patch } } : null)
       setMsg({ ok: true, text: "BL marqué comme livraison partielle." })
-    }
+    } else setMsg({ ok: false, text: "Erreur d'enregistrement." })
     setSaving(false)
     setTimeout(() => setMsg(null), 3000)
   }
 
   const handleRetour = async () => {
-    if (!selected || !confirm("Confirmer le retour de cette livraison ?")) return
+    if (!selected || !guardValidated()) return
+    if (!confirm("Confirmer le retour de cette livraison ?")) return
     setSaving(true)
-    const { error } = await (sb as any).from("fl_bons_livraison").update({ statut: "retour", notes, updated_at: new Date().toISOString() }).eq("id", selected.id)
-    if (!error) {
-      setBls(b => b.map(x => x.id === selected.id ? { ...x, statut: "retour" } as BonLivraison : x))
-      setSelected(s => s ? { ...s, statut: "retour" } as BonLivraison : null)
+    const patch = { statut: "retour_partiel", notesBL: `RETOUR TOTAL — ${notes || ""}`.trim() }
+    const ok = await persistPayload(selected, patch)
+    if (ok) {
+      setBls(b => b.map(x => x.id === selected.id ? { ...x, statut: "retour", _payload: { ...(x._payload ?? {}), ...patch } } : x))
+      setSelected(s => s ? { ...s, statut: "retour", _payload: { ...(s._payload ?? {}), ...patch } } : null)
       setMsg({ ok: true, text: "BL marqué en retour." })
-    }
+    } else setMsg({ ok: false, text: "Erreur d'enregistrement." })
     setSaving(false)
     setTimeout(() => setMsg(null), 3000)
   }
@@ -407,6 +474,7 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono text-xs text-slate-400">{bl.numero}</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${STATUT_STYLE[bl.statut]}`}>{STATUT_LABEL[bl.statut]}</span>
+                    {bl._validated === false && <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-600">⛔ Non validé BO</span>}
                   </div>
                   <p className="font-bold text-base text-slate-900">{bl.client_nom}</p>
                   <p className="text-sm text-slate-500 mt-0.5">{bl.lignes.length} article{bl.lignes.length > 1 ? "s" : ""} · {DH(bl.montant_total)}</p>
@@ -429,7 +497,8 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
   const isLivre = selected.statut === "livre"
   const isRetour = selected.statut === "retour"
   const isAnnule = selected.statut === "annule"
-  const canValidate = !isLivre && !isRetour && !isAnnule
+  const notValidatedBO = selected._validated === false
+  const canValidate = !isLivre && !isRetour && !isAnnule && !notValidatedBO
 
   return (
     <div className="flex flex-col gap-4 pb-24">
@@ -470,6 +539,13 @@ export default function MobileBLValidation({ user }: { user: { id: string; name:
           <p className="text-xl font-black text-green-700">{DH(selected.montant_total)}</p>
         </div>
       </div>
+
+      {/* BL pas encore validé au back-office → traitement bloqué */}
+      {notValidatedBO && (
+        <div className="px-4 py-3 rounded-2xl bg-slate-100 border border-slate-300 text-slate-700 text-sm font-semibold flex items-center gap-2">
+          <span>⛔</span> Ce BL n&apos;est pas encore validé au back-office. Vous pourrez le traiter une fois validé.
+        </div>
+      )}
 
       {/* Formulaire validation */}
       {canValidate && (
