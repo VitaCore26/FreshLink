@@ -35,6 +35,18 @@ export function OPTIONS(req: NextRequest) {
 
 const displayName = (from: string) => (from.match(/^(.*?)\s*</)?.[1] || "Vita Fresh").trim()
 
+async function brevoSend(from: string, to: string, subject: string, html: string, text: string, replyTo?: string): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const m = from.match(/^(.*?)\s*<(.+)>$/)
+  const sender = m ? { name: m[1].trim(), email: m[2].trim() } : { email: from }
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: { "api-key": BREVO_KEY, "Content-Type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ sender, to: [{ email: to }], subject, htmlContent: html || `<p>${text}</p>`, replyTo: replyTo ? { email: replyTo } : undefined }),
+  })
+  const data = await res.json().catch(() => ({}))
+  return { ok: res.ok, data }
+}
+
 interface ResendPayload { from: string; to: string[]; subject: string; html?: string; text?: string; reply_to?: string }
 
 async function resendSend(p: ResendPayload): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
@@ -72,6 +84,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "to, subject et html/text requis" }, { status: 400, headers: cors(origin) })
   }
 
+  // ── 0. Brevo PRIORITAIRE si configuré (pas de DNS requis, juste un sender vérifié)
+  if (BREVO_KEY) {
+    const r = await brevoSend(from, to, subject, html, text, body.replyTo)
+    if (r.ok) return NextResponse.json({ ok: true, provider: "brevo", id: r.data?.messageId }, { headers: cors(origin) })
+    // échec Brevo → on tente Resend si dispo, sinon on renvoie l'erreur Brevo
+    if (!RESEND_KEY) {
+      return NextResponse.json({ error: "brevo failed", detail: r.data, hint: "Vérifiez l'expéditeur (EMAIL_FROM) dans Brevo → Senders & IP, et la clé BREVO_API_KEY." }, { status: 502, headers: cors(origin) })
+    }
+  }
+
   // ── 1. Resend (avec auto-réparation du domaine) ───────────────────────────
   if (RESEND_KEY) {
     const base = { to: [to], subject, html: html || undefined, text: text || undefined, reply_to: body.replyTo }
@@ -103,22 +125,8 @@ export async function POST(req: NextRequest) {
       ? "Domaine non vérifié dans Resend. Ajoutez vita-core.org dans Resend → Domains et publiez les enregistrements DNS (SPF/DKIM/DMARC). L'envoi repartira automatiquement une fois vérifié. (Le repli onboarding@resend.dev n'a pas pu livrer car le destinataire n'est pas l'email du compte Resend.)"
       : /api key/i.test(msg) ? "Clé RESEND_API_KEY invalide — recréez une clé dans Resend → API Keys."
       : undefined
-    // Si Brevo est dispo, on bascule dessus plutôt que d'échouer
-    if (!BREVO_KEY) return NextResponse.json({ error: `Resend: ${msg}`, detail: r.data, hint }, { status: 502, headers: cors(origin) })
-  }
-
-  // ── 2. Brevo (Sendinblue) — repli si Resend absent ou en échec ────────────
-  if (BREVO_KEY) {
-    const m = from.match(/^(.*?)\s*<(.+)>$/)
-    const sender = m ? { name: m[1].trim(), email: m[2].trim() } : { email: from }
-    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: { "api-key": BREVO_KEY, "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ sender, to: [{ email: to }], subject, htmlContent: html || `<p>${text}</p>`, replyTo: body.replyTo ? { email: body.replyTo } : undefined }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (res.ok) return NextResponse.json({ ok: true, provider: "brevo", id: data.messageId }, { headers: cors(origin) })
-    return NextResponse.json({ error: "brevo failed", detail: data, hint: "Vérifiez l'expéditeur dans Brevo → Senders." }, { status: 502, headers: cors(origin) })
+    // Brevo (s'il est configuré) a déjà été tenté en amont → on renvoie l'erreur Resend
+    return NextResponse.json({ error: `Resend: ${msg}`, detail: r.data, hint }, { status: 502, headers: cors(origin) })
   }
 
   // ── Aucun fournisseur configuré ──────────────────────────────────────────
