@@ -110,7 +110,7 @@ function checkPermission(
   operation: "insert" | "update" | "delete"
 ): boolean {
   // Admin peut tout faire
-  if (role === "super_admin" || role === "admin") return true
+  if (role === "super_super_admin" || role === "super_admin" || role === "admin") return true
 
   // Permissions par table/rôle
   const permissions: Record<string, Record<string, boolean>> = {

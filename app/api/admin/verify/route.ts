@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ✅ Check if user has admin role
-    const isAdmin = user.role === "super_admin" || user.role === "admin"
+    const isAdmin = user.role === "super_super_admin" || user.role === "super_admin" || user.role === "admin"
 
     if (!isAdmin) {
       // Log unauthorized attempt

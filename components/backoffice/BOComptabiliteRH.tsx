@@ -411,7 +411,7 @@ export default function BOComptabiliteRH({ user }: { user: User }) {
     .filter(f => f.statut !== "payé")
     .reduce((s, f) => s + f.salaireBrut, 0)
 
-  const isSuperAdmin = user.role === "super_admin"
+  const isSuperAdmin = user.role === "super_admin" || user.role === "super_super_admin"
 
   return (
     <div className="space-y-6 p-4 md:p-6 max-w-4xl mx-auto">

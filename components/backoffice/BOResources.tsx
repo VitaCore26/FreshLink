@@ -135,7 +135,7 @@ function groupeForRole(role: UserRole): EmployeeGroup {
   if (["prevendeur", "resp_commercial", "team_leader"].includes(role)) return "prevendeur"
   if (["livreur", "magasinier", "dispatcheur", "resp_logistique"].includes(role)) return "logistique"
   if (["acheteur", "ctrl_achat"].includes(role)) return "achat"
-  if (["admin", "super_admin", "financier", "cash_man", "ctrl_prep", "rh_manager", "comptable"].includes(role)) return "admin"
+  if (["super_super_admin", "admin", "super_admin", "financier", "cash_man", "ctrl_prep", "rh_manager", "comptable"].includes(role)) return "admin"
   return "autre"
 }
 
@@ -931,7 +931,7 @@ export default function BOResources({ user }: { user: User }) {
   const [tab, setTab] = useState<SubTab>("productivite")
   const [users, setUsers] = useState<User[]>([])
   const [rev, setRev] = useState(0)   // bump après hydratation Supabase → remonte les onglets
-  const isAdmin = ["super_admin", "admin"].includes(user.role)
+  const isAdmin = ["super_super_admin", "super_admin", "admin"].includes(user.role)
 
   useEffect(() => {
     setUsers(store.getUsers())

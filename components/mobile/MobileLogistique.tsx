@@ -230,7 +230,7 @@ export default function MobileLogistique({ user }: Props) {
     const myTrip = allTrips.find(t => (t.livreurNom === user.name || t.livreurId === user.id) && t.statut === "en_cours")
       ?? allTrips.find(t => (t.livreurNom === user.name || t.livreurId === user.id) && t.statut === "planifié")
     // For logistique roles (logistique, resp_logistique, magasinier, dispatcheur) show all
-    const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
+    const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin", "super_super_admin"].includes(user.role)
     const trip = isLogistiqueAdmin
       ? (allTrips.find(t => t.statut === "en_cours") ?? allTrips.find(t => t.statut === "planifié") ?? myTrip)
       : myTrip
@@ -435,7 +435,7 @@ export default function MobileLogistique({ user }: Props) {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   // logistique role + resp_logistique + magasinier + dispatcheur + admin/super_admin can validate
-  const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin"].includes(user.role)
+  const isLogistiqueAdmin = ["logistique", "resp_logistique", "magasinier", "dispatcheur", "admin", "super_admin", "super_super_admin"].includes(user.role)
   const pendingCommandes = isLogistiqueAdmin ? commandes.filter(c => c.statut === "en_attente" || c.statut === "valide") : []
   const tripCommandes = activeTrip
     ? commandes.filter(c => activeTrip.commandeIds.includes(c.id))

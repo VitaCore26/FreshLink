@@ -176,7 +176,7 @@ export default function App() {
   ) : null
 
   if (iface === "mobile" || (iface === "both" && view === "mobile")) {
-    const isSuperAdmin  = user.role === "super_admin"
+    const isSuperAdmin  = user.role === "super_admin" || user.role === "super_super_admin"
     const isDemoAccount = user.name.toLowerCase().startsWith("demo")
     const needsGuard    = !isSuperAdmin && !isDemoAccount && user.requireCameraAuth === true
     const content = <MobileLayout user={user} onLogout={handleLogout} />

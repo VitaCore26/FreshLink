@@ -40,8 +40,8 @@ function saveRetours(items: RetourItem[]) {
   localStorage.setItem(RETOURS_KEY, JSON.stringify(items))
 }
 
-const isCommercial = (u: User) => ["commercial", "team_leader", "admin", "super_admin"].includes(u.role)
-const isLogistique = (u: User) => ["responsable_logistique", "admin", "super_admin"].includes(u.role)
+const isCommercial = (u: User) => ["commercial", "resp_commercial", "team_leader", "admin", "super_admin", "super_super_admin"].includes(u.role)
+const isLogistique = (u: User) => ["responsable_logistique", "resp_logistique", "dispatcheur", "admin", "super_admin", "super_super_admin"].includes(u.role)
 
 export default function MobileControlRetour({ user }: Props) {
   const [retours, setRetours]         = useState<RetourItem[]>([])

@@ -836,7 +836,7 @@ function BLEditor({
 type BLMainTab = "en_cours" | "historique"
 
 // Roles allowed to transfer a BL to invoice
-const FACTURE_ROLES = ["cash_man", "finance", "admin", "super_admin"]
+const FACTURE_ROLES = ["cash_man", "finance", "admin", "super_admin", "super_super_admin"]
 
 // BL "en cours" = not yet delivered or cancelled
 const EN_COURS_STATUTS: BLStatut[] = ["brouillon", "valide", "en_livraison", "retour_partiel"]

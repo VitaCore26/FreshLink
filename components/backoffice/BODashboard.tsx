@@ -310,7 +310,7 @@ export default function BODashboard({ user }: Props) {
   const secteurChartData = Object.entries(secteurCA).sort(([, a], [, b]) => b - a).slice(0, 8)
     .map(([s, v]) => ({ name: s, ca: Math.round(v) }))
 
-  const isAdmin = ["super_admin", "admin", "resp_commercial", "team_leader"].includes(user.role)
+  const isAdmin = ["super_super_admin", "super_admin", "admin", "resp_commercial", "team_leader"].includes(user.role)
 
   // ── Credit analysis ────────────────────────────────────────────────────────
   // For each client with credit enabled, compute: solde, delai, statut, overdue flag

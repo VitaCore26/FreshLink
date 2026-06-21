@@ -137,7 +137,7 @@ export default function BOIntelligencePrix({ user }: { user: User }) {
     return { sku, count: rows.length, avgConc, avgNous, delta, minConc: Math.min(...rows.map(r => r.prixConcurrent)) }
   }).sort((a, b) => b.delta - a.delta)
 
-  const canEdit = user.role === "admin" || user.role === "super_admin" ||
+  const canEdit = user.role === "admin" || user.role === "super_admin" || user.role === "super_super_admin" ||
     user.role === "resp_commercial" || user.role === "acheteur" || user.role === "ctrl_achat"
 
   return (
