@@ -100,9 +100,11 @@ export async function POST(req: NextRequest) {
     // Brevo est le fournisseur choisi → on renvoie SON erreur (diagnostic clair),
     // sans masquer derrière Resend.
     const bmsg = String((r.data as { message?: string; code?: string })?.message ?? (r.data as { code?: string })?.code ?? "erreur Brevo")
-    const bhint = /sender|not.*valid|denied|authoriz|verif/i.test(bmsg)
-      ? `Expéditeur non vérifié dans Brevo. Allez sur Brevo → Senders, ajoutez « ${from.replace(/^.*<|>$/g, "")} » et cliquez le lien de confirmation reçu sur cette adresse. (Ou authentifiez le domaine vita-core.org dans Brevo → Domains.)`
-      : /api.?key|unauthor|key not found/i.test(bmsg) ? "Clé BREVO_API_KEY invalide ou révoquée — recréez-en une dans Brevo → SMTP & API → API Keys."
+    const bhint = /ip address|authorised_ips|authorized.?ip|unrecognis/i.test(bmsg)
+      ? "Brevo bloque l'IP du serveur (fonction de sécurité « IP autorisées »). Les serveurs Vercel changent d'IP → DÉSACTIVEZ cette restriction : Brevo → Security → Authorised IPs (https://app.brevo.com/security/authorised_ips) → désactivez « Authorised IPs feature » (autoriser toutes les IP)."
+      : /sender|not.*valid|denied|verif/i.test(bmsg)
+      ? `Expéditeur non vérifié dans Brevo. Brevo → Senders, ajoutez « ${from.replace(/^.*<|>$/g, "")} » et cliquez le lien de confirmation reçu sur cette adresse.`
+      : /api.?key|key not found/i.test(bmsg) ? "Clé BREVO_API_KEY invalide ou révoquée — recréez-en une dans Brevo → SMTP & API → API Keys."
       : "Vérifiez l'expéditeur (Brevo → Senders) et la clé BREVO_API_KEY."
     return NextResponse.json({ error: `Brevo: ${bmsg}`, detail: r.data, hint: bhint }, { status: 502, headers: cors(origin) })
   }
