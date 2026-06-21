@@ -76,6 +76,28 @@ export default function BODashboard({ user }: Props) {
   const [bls, setBls] = useState(store.getBonsLivraison())
   const [visites, setVisites] = useState(store.getVisites ? store.getVisites() : [])
   const [dashTab, setDashTab] = useState<DashTab>("global")
+  // Factures impayées (fl_invoices) → intégrées au crédit (sinon crédit=0 alors
+  // qu'une facture est « Impayée » côté Finance).
+  const [unpaidByClient, setUnpaidByClient] = useState<Record<string, number>>({})
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/sync-read?table=fl_invoices", { cache: "no-store" })
+        const j = await res.json()
+        const rows: { payload?: Record<string, unknown> }[] = j?.ok ? (j.data ?? []) : []
+        const map: Record<string, number> = {}
+        rows.forEach(r => {
+          const p = r.payload ?? {}
+          if (String(p.statut) !== "impayee") return
+          const key = String(p.clientId || p.clientNom || "")
+          if (!key) return
+          const reste = Number(p.montantTTC ?? 0) - Number(p.montantPaye ?? 0)
+          map[key] = (map[key] || 0) + (reste > 0 ? reste : 0)
+        })
+        setUnpaidByClient(map)
+      } catch { /* offline */ }
+    })()
+  }, [])
 
   const [lastRefreshed, setLastRefreshed] = useState<Date>(() => new Date())
   const [refreshTick, setRefreshTick] = useState(0)
@@ -294,10 +316,13 @@ export default function BODashboard({ user }: Props) {
   // For each client with credit enabled, compute: solde, delai, statut, overdue flag
   const creditClients = useMemo(() => {
     const now = Date.now()
+    const unpaidOf = (c: typeof clients[number]) => Number(unpaidByClient[c.id] ?? unpaidByClient[c.nom] ?? 0) || 0
     return clients
-      .filter(c => c.creditAutorise || (c.creditSolde ?? 0) > 0)
+      // inclut aussi les clients ayant une facture impayée (même sans crédit configuré)
+      .filter(c => c.creditAutorise || (c.creditSolde ?? 0) > 0 || unpaidOf(c) > 0)
       .map(c => {
-        const solde = c.creditSolde ?? 0
+        // Solde = solde crédit enregistré + factures impayées non encore intégrées
+        const solde = (c.creditSolde ?? 0) + unpaidOf(c)
         const plafond = c.plafondCredit ?? 0
         const delai = c.delaiRecouvrement ?? "a_definir"
         const delaiMs = DELAI_MS[delai] ?? Infinity
@@ -333,7 +358,7 @@ export default function BODashboard({ user }: Props) {
         if (b.isOverdue !== a.isOverdue) return a.isOverdue ? -1 : 1
         return b.solde - a.solde
       })
-  }, [clients, bls])
+  }, [clients, bls, unpaidByClient])
 
   const creditAlerts = creditClients.filter(c => c.isOverdue || c.isOverPlafond)
   const totalExposition = creditClients.reduce((s, c) => s + c.solde, 0)
@@ -1005,7 +1030,7 @@ export default function BODashboard({ user }: Props) {
                         </div>
                       </div>
                     </div>
-                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-5">
                       <div className="flex flex-col gap-3">
                         <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Objectifs CA (DH)</h4>
                         {(pv.objectifJournalierCA ?? 0) > 0 && (
@@ -1062,6 +1087,33 @@ export default function BODashboard({ user }: Props) {
                         {!((pv.objectifJournalierClients ?? 0) > 0 || (pv.objectifMensuelClients ?? 0) > 0) && (
                           <p className="text-xs text-muted-foreground">Pas d&apos;objectifs clients definis</p>
                         )}
+                      </div>
+                      {/* Objectifs Tonnage (kg) */}
+                      <div className="flex flex-col gap-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Objectifs Tonnage (kg)</h4>
+                        {(() => {
+                          const objM = pv.objectifTonnage ?? 0
+                          const objJ = objM ? Math.round(objM / 24) : 0
+                          if (objM <= 0) return <p className="text-xs text-muted-foreground">Pas d&apos;objectif tonnage défini · réalisé : {KG(s.tonnageJ)} (jour) / {KG(s.tonnageM)} (mois)</p>
+                          return (
+                            <>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">Journalier</span>
+                                  <span className="font-semibold">{KG(s.tonnageJ)} / {KG(objJ)}</span>
+                                </div>
+                                <ProgressBar value={s.tonnageJ} max={objJ} color="bg-orange-500" />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">Mensuel</span>
+                                  <span className="font-semibold">{KG(s.tonnageM)} / {KG(objM)}</span>
+                                </div>
+                                <ProgressBar value={s.tonnageM} max={objM} color="bg-rose-500" />
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>

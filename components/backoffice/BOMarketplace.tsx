@@ -21,11 +21,23 @@ function computePV(a: Article): number {
   // peuvent être des strings, ce qui casse .toFixed() ("E.toFixed is not a function")
   const prixAchat = Number(a.prixAchat) || 0
   const pvValeur  = Number(a.pvValeur)  || 0
+  let base: number
   switch (a.pvMethode) {
-    case "pourcentage": return Math.round(prixAchat * (1 + pvValeur / 100) * 100) / 100
-    case "montant":     return Math.round((prixAchat + pvValeur) * 100) / 100
-    default:            return pvValeur
+    case "pourcentage": base = Math.round(prixAchat * (1 + pvValeur / 100) * 100) / 100; break
+    case "montant":     base = Math.round((prixAchat + pvValeur) * 100) / 100; break
+    default:            base = pvValeur
   }
+  // ⚡ Si des prix par segment existent (CHR / Marchand / Particulier), le « PV
+  // interne » affiché = MOYENNE de ces prix réels (jamais en-dessous du PV de base),
+  // pour rester cohérent avec le prix boutique. Évite d'afficher 15 DH alors que
+  // CHR=80 / Marchand=60 / Particulier=20.
+  const rec = a as unknown as Record<string, unknown>
+  const seg = [Number(rec.prixCHR) || 0, Number(rec.prixMarchand) || 0, Number(rec.prixParticulier) || 0].filter(p => p > 0)
+  if (seg.length) {
+    const avg = Math.round((seg.reduce((s, p) => s + p, 0) / seg.length) * 100) / 100
+    return Math.max(avg, base)
+  }
+  return base
 }
 
 function stockLabel(a: Article): { label: string; labelAr: string; cls: string; icon: string } {
