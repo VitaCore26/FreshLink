@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 const RESEND_KEY = process.env.RESEND_API_KEY || ""
 const BREVO_KEY  = process.env.BREVO_API_KEY || ""
-const FROM_DEFAULT = process.env.EMAIL_FROM || "Vita Fresh <contact@vita-core.org>"
+const FROM_DEFAULT = process.env.EMAIL_FROM || "Vita Fresh <support@vita-core.org>"
 
 function cors(origin: string | null): HeadersInit {
   return {
