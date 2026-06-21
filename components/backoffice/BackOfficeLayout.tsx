@@ -396,17 +396,17 @@ const NAV_ITEM_MAP: Record<string, NavItem> =
   Object.fromEntries(NAV_GROUPS_RAW.flatMap(g => g.items).map(i => [i.id, i]))
 
 const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
-  { label: "Vue d'ensemble",           labelAr: "نظرة عامة",          ids: ["dashboard", "recap", "rapport_livraison"] },
-  { label: "Achats & Appro.",          labelAr: "المشتريات",          ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
-  { label: "Stock & Catalogue",        labelAr: "المخزون والفهرس",    ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
-  { label: "Commercial & Ventes",      labelAr: "التجاري والمبيعات",  ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
-  { label: "Pricing & Concurrence",    labelAr: "التسعير والمنافسة",  ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
-  { label: "Marketing & Boutique Web", labelAr: "التسويق والمتجر",    ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics", "whatsapp"] },
-  { label: "Clients & Comptes",        labelAr: "الزبائن والحسابات",  ids: ["comptes_externes", "demandes_comptes"] },
-  { label: "Logistique & Transport",   labelAr: "اللوجستيك والنقل",   ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
-  { label: "Finance & Contrôle",       labelAr: "المالية والرقابة",   ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
-  { label: "RH & Équipe",              labelAr: "الموارد البشرية",    ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia", "feedback"] },
-  { label: "Administration",           labelAr: "الإدارة والإعدادات", ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets"] },
+  { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "recap", "rapport_livraison"] },
+  { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
+  { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
+  { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
+  { label: "Prix, Marge & Concurrence",   labelAr: "الأسعار والهامش والمنافسة", ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
+  { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics", "whatsapp"] },
+  { label: "Clients & Comptes Web",       labelAr: "الزبائن والحسابات",    ids: ["comptes_externes", "demandes_comptes"] },
+  { label: "Logistique & Transport",      labelAr: "اللوجستيك والنقل",     ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
+  { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
+  { label: "Ressources Humaines",         labelAr: "الموارد البشرية",      ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia", "feedback"] },
+  { label: "Administration & Système",    labelAr: "الإدارة والنظام",      ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets"] },
 ]
 
 const NAV_GROUPS: NavGroup[] = NAV_GROUP_DEF.map(g => ({

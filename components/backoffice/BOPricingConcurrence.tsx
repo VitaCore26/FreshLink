@@ -20,11 +20,17 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import { store, type Article, type User, type Notice } from "@/lib/store"
 
 const LS_PRIX = "fl_intel_prix"   // CompetitorEntry[] (PA concurrent)
-const LS_PV   = "fl_conc_pv"      // PV concurrent (catalogue)
+const LS_PV   = "fl_conc_pv"      // PV concurrent (catalogue — repli)
+const LS_VENTES = "fl_conc_ventes" // factures concurrent (PV réel = PU)
 const LS_PARAMS = "fl_pricing_params"
+
+// Groupes WhatsApp de diffusion (fournis par le client)
+const WA_GROUP_PV    = "https://chat.whatsapp.com/GBk6nV7wpcV1i8yMa6QprD"  // diffusion PV → force de vente
+const WA_GROUP_ALERT = "https://chat.whatsapp.com/EQWyXnilBxY4J425sXfiwl"  // alerte PA trop cher → achat
 
 interface CompetitorEntry { sku: string; prixConcurrent: number; source?: string; date?: string }
 interface ConcPV { ref: string; libelle: string; unite: string; pv: number }
+interface ConcVente { article: string; pu: number; qt: number; secteur: string; client: string; type: string; date: string }
 interface PricingParams { decoteType: "dh" | "pct"; decoteVal: number; tolPA: number; margeMin: number }
 const DEFAULT_PARAMS: PricingParams = { decoteType: "dh", decoteVal: 0.5, tolPA: 0.2, margeMin: 8 }
 
@@ -52,6 +58,10 @@ export default function BOPricingConcurrence({ user }: Props) {
   const [onlyAlerts, setOnlyAlerts] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [subtab, setSubtab] = useState<"comparaison" | "marge">("comparaison")
+  const [margeFrom, setMargeFrom] = useState("")
+  const [margeTo, setMargeTo] = useState("")
+  const [margeDim, setMargeDim] = useState<"article" | "secteur" | "type">("secteur")
 
   const buildMaps = useCallback(() => {
     const pa: Record<string, number[]> = {}
@@ -60,8 +70,18 @@ export default function BOPricingConcurrence({ user }: Props) {
     })
     const paAvg: Record<string, number> = {}
     Object.entries(pa).forEach(([k, arr]) => { const v = arr.filter(x => x > 0); paAvg[k] = v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0 })
+    // PV concurrent EXTRAIT DES FACTURES (PU réel, moyenne pondérée par quantité)
+    const pvAgg: Record<string, { sum: number; w: number }> = {}
+    getJSON<ConcVente>(LS_VENTES).forEach(v => {
+      const k = norm(v.article); const pu = Number(v.pu) || 0; const q = Number(v.qt) || 0
+      if (!k || pu <= 0) return
+      const w = q > 0 ? q : 1
+      ;(pvAgg[k] ??= { sum: 0, w: 0 }); pvAgg[k].sum += pu * w; pvAgg[k].w += w
+    })
     const pv: Record<string, number> = {}
-    getJSON<ConcPV>(LS_PV).forEach(e => { const k = norm(e.libelle || e.ref); if (k) pv[k] = Number(e.pv) || 0 })
+    Object.entries(pvAgg).forEach(([k, a]) => { pv[k] = a.w ? Math.round((a.sum / a.w) * 100) / 100 : 0 })
+    // Repli sur le catalogue prix-vente uniquement si la facture ne couvre pas l'article
+    getJSON<ConcPV>(LS_PV).forEach(e => { const k = norm(e.libelle || e.ref); if (k && !pv[k]) pv[k] = Number(e.pv) || 0 })
     setPaMap(paAvg); setPvMap(pv)
   }, [])
 
@@ -79,7 +99,15 @@ export default function BOPricingConcurrence({ user }: Props) {
   }, [buildMaps])
 
   const saveParams = (p: PricingParams) => { setParams(p); try { localStorage.setItem(LS_PARAMS, JSON.stringify(p)) } catch { /* noop */ } }
-  const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 6000) }
+  const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 8000) }
+
+  // WhatsApp groupe : les liens d'invitation ne permettent pas de pré-remplir le
+  // message → on copie le texte dans le presse-papier puis on ouvre le groupe
+  // pour que l'utilisateur colle (Ctrl/Cmd+V) et envoie.
+  const sendToWhatsAppGroup = (link: string, message: string) => {
+    try { navigator.clipboard?.writeText(message) } catch { /* noop */ }
+    try { window.open(link, "_blank", "noopener") } catch { /* noop */ }
+  }
 
   const findComp = useCallback((nom: string, map: Record<string, number>): number => {
     const k = norm(nom); if (!k) return 0
@@ -134,6 +162,33 @@ export default function BOPricingConcurrence({ user }: Props) {
     }
   }, [articles, computeRow])
 
+  // ── Marge concurrent par dimension (article / secteur / type client) ────────
+  // Marge ligne = (PU facture − PA concurrent de l'article) × quantité.
+  const margeData = useMemo(() => {
+    const ventes = getJSON<ConcVente>(LS_VENTES).filter(v => {
+      const d = String(v.date ?? "").slice(0, 10)
+      if (margeFrom && d < margeFrom) return false
+      if (margeTo && d > margeTo) return false
+      return true
+    })
+    const dim = (sel: (v: ConcVente) => string) => {
+      const m: Record<string, { ca: number; cout: number; marge: number; vol: number }> = {}
+      ventes.forEach(v => {
+        const pa = findComp(v.article, paMap)
+        const pu = Number(v.pu) || 0, q = Number(v.qt) || 0
+        if (pu <= 0) return
+        const k = (sel(v) || "—").trim() || "—"
+        ;(m[k] ??= { ca: 0, cout: 0, marge: 0, vol: 0 })
+        m[k].ca += pu * q
+        if (pa > 0) { m[k].cout += pa * q; m[k].marge += (pu - pa) * q }
+        m[k].vol += q
+      })
+      return Object.entries(m).map(([k, val]) => ({ k, ...val, margePct: val.ca ? (val.marge / val.ca) * 100 : 0 }))
+        .sort((a, b) => b.marge - a.marge)
+    }
+    return { byArticle: dim(v => v.article), bySecteur: dim(v => v.secteur), byType: dim(v => v.type), n: ventes.length }
+  }, [paMap, margeFrom, margeTo, findComp])
+
   const addNotice = (titre: string, contenu: string, destinataire: string, type: Notice["type"]) => {
     store.addNotice({
       id: `NOTE_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -159,12 +214,13 @@ export default function BOPricingConcurrence({ user }: Props) {
       const { upsertArticle } = await import("@/lib/supabase/db")
       for (const id of ids) { const art = all.find(a => a.id === id); if (art) await upsertArticle(art) }
     } catch { /* offline */ }
-    const top = cible.slice(0, 30).map(r => `• ${r.a.nom} : ${money(r.pvImb)}`).join("\n")
-    addNotice("💰 Nouveaux PV conseillés (imbattables)",
-      `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 30 ? `\n… +${cible.length - 30} autres` : ""}`,
-      "commercial", "notice")
+    const top = cible.slice(0, 40).map(r => `• ${r.a.nom} : ${money(r.pvImb)}`).join("\n")
+    const corps = `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
+    addNotice("💰 Nouveaux PV conseillés (imbattables)", corps, "commercial", "notice")
+    // Diffusion WhatsApp → groupe force de vente
+    sendToWhatsAppGroup(WA_GROUP_PV, `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
     setBusy(false)
-    flash(true, `✅ ${cible.length} PV diffusés à la force de vente (champ « PV conseillé » + notification).`)
+    flash(true, `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`)
   }
 
   const alerterAchat = () => {
@@ -172,10 +228,11 @@ export default function BOPricingConcurrence({ user }: Props) {
     if (cible.length === 0) { flash(false, "Aucun écart PA défavorable détecté."); return }
     if (!window.confirm(`Envoyer une alerte à l'équipe achat pour ${cible.length} article(s) où notre PA > PA concurrent ?`)) return
     const lignes = cible.slice(0, 40).map(r => `• ${r.a.nom} : notre PA ${money(r.ourPA)} > concurrent ${money(r.compPA)} (écart +${money(r.ourPA - r.compPA)})`).join("\n")
-    addNotice("⚠️ PA plus cher que le concurrent",
-      `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`,
-      "resp_achat", "reclamation")
-    flash(true, `🚨 Alerte achat envoyée pour ${cible.length} article(s).`)
+    const corps = `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
+    addNotice("⚠️ PA plus cher que le concurrent", corps, "resp_achat", "reclamation")
+    // Alerte WhatsApp → groupe achat
+    sendToWhatsAppGroup(WA_GROUP_ALERT, `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
+    flash(true, `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`)
   }
 
   const appliquerPV = async (r: Row) => {
@@ -197,6 +254,15 @@ export default function BOPricingConcurrence({ user }: Props) {
 
       {msg && <div className={`px-4 py-2.5 rounded-xl text-sm font-semibold shadow ${msg.ok ? "bg-emerald-600 text-white" : "bg-red-600 text-white"}`}>{msg.text}</div>}
 
+      {/* Sous-onglets */}
+      <div className="flex gap-2">
+        {([["comparaison", "📊 Comparaison PA / PV"], ["marge", "📈 Marge concurrent"]] as [typeof subtab, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => setSubtab(k)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${subtab === k ? "bg-indigo-700 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>{l}</button>
+        ))}
+      </div>
+
+      {subtab === "comparaison" && (<>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { l: "Articles comparables", v: String(kpis.comparables), i: "🔎", c: "text-slate-900" },
@@ -303,9 +369,90 @@ export default function BOPricingConcurrence({ user }: Props) {
       )}
 
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        💡 PA concurrent vient de « synthèse achats », PV concurrent de « prix de vente » (onglet Import Excel). Données partagées entre appareils (Supabase).
-        « Diffuser » enregistre le <strong>PV conseillé</strong> sur l&apos;article + notifie la force de vente. « Appliquer » fixe directement le PV de vente.
+        💡 PA concurrent vient de « synthèse achats » ; PV concurrent <strong>extrait des factures</strong> (prix unitaire réel, moyenne pondérée) — onglet Import Excel.
+        Données partagées entre appareils (Supabase). « Diffuser » enregistre le <strong>PV conseillé</strong> + notifie la force de vente + WhatsApp. « Appliquer » fixe le PV de vente.
       </p>
+      </>)}
+
+      {/* ── MARGE CONCURRENT par article / secteur / type ─────────────────── */}
+      {subtab === "marge" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-slate-600">Répartir par</label>
+              <select value={margeDim} onChange={e => setMargeDim(e.target.value as "article" | "secteur" | "type")}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
+                <option value="secteur">Secteur</option>
+                <option value="type">Type client</option>
+                <option value="article">Produit</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-slate-600">Du</label>
+              <input type="date" value={margeFrom} onChange={e => setMargeFrom(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-bold text-slate-600">Au</label>
+              <input type="date" value={margeTo} onChange={e => setMargeTo(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm" />
+            </div>
+            {(margeFrom || margeTo) && (
+              <button onClick={() => { setMargeFrom(""); setMargeTo("") }} className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 pb-2">↺ Réinitialiser</button>
+            )}
+            <span className="text-xs text-slate-400 pb-2">{margeData.n} ligne(s) facture</span>
+          </div>
+
+          {(() => {
+            const rows = margeDim === "article" ? margeData.byArticle : margeDim === "type" ? margeData.byType : margeData.bySecteur
+            if (rows.length === 0) return (
+              <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+                <p className="text-4xl mb-2">📈</p>
+                <p className="font-semibold">Aucune facture concurrent sur cette période.</p>
+                <p className="text-sm mt-1">Importe la facturation (Import Excel) pour calculer la marge concurrent.</p>
+              </div>
+            )
+            const tot = rows.reduce((a, r) => ({ ca: a.ca + r.ca, cout: a.cout + r.cout, marge: a.marge + r.marge, vol: a.vol + r.vol }), { ca: 0, cout: 0, marge: 0, vol: 0 })
+            return (
+              <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
+                <table className="w-full text-sm min-w-[760px]">
+                  <thead>
+                    <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-3">{margeDim === "article" ? "Produit" : margeDim === "type" ? "Type client" : "Secteur"}</th>
+                      <th className="px-3 py-3 text-right">CA concurrent</th>
+                      <th className="px-3 py-3 text-right">Coût (PA)</th>
+                      <th className="px-3 py-3 text-right">Marge</th>
+                      <th className="px-3 py-3 text-right">Marge %</th>
+                      <th className="px-3 py-3 text-right">Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0, 60).map(r => (
+                      <tr key={r.k} className="border-t border-slate-100">
+                        <td className="px-3 py-2.5 font-semibold text-slate-800">{r.k}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-700">{money(r.ca)}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-500">{money(r.cout)}</td>
+                        <td className={`px-3 py-2.5 text-right font-bold ${r.marge >= 0 ? "text-emerald-700" : "text-red-600"}`}>{money(r.marge)}</td>
+                        <td className={`px-3 py-2.5 text-right font-semibold ${r.margePct >= 0 ? "text-emerald-700" : "text-red-600"}`}>{r.margePct.toFixed(1)}%</td>
+                        <td className="px-3 py-2.5 text-right text-slate-500">{r.vol.toLocaleString("fr-MA", { maximumFractionDigits: 0 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                      <td className="px-3 py-3 text-slate-900">TOTAL</td>
+                      <td className="px-3 py-3 text-right">{money(tot.ca)}</td>
+                      <td className="px-3 py-3 text-right">{money(tot.cout)}</td>
+                      <td className={`px-3 py-3 text-right ${tot.marge >= 0 ? "text-emerald-700" : "text-red-600"}`}>{money(tot.marge)}</td>
+                      <td className="px-3 py-3 text-right">{tot.ca ? (tot.marge / tot.ca * 100).toFixed(1) : "0"}%</td>
+                      <td className="px-3 py-3 text-right">{tot.vol.toLocaleString("fr-MA", { maximumFractionDigits: 0 })}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )
+          })()}
+          <p className="text-[11px] text-slate-400">📈 Marge concurrent = (PV facture − PA concurrent de l&apos;article) × quantité, agrégée par {margeDim === "article" ? "produit" : margeDim === "type" ? "type client" : "secteur"} sur la période choisie.</p>
+        </div>
+      )}
     </div>
   )
 }
