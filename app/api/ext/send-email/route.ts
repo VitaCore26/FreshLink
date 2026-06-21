@@ -33,6 +33,15 @@ export function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: cors(req.headers.get("origin")) })
 }
 
+// Diagnostic : indique QUELS fournisseurs sont configurés (booléens, jamais les clés)
+export function GET(req: NextRequest) {
+  return NextResponse.json({
+    providers: { brevo: !!BREVO_KEY, resend: !!RESEND_KEY },
+    from: FROM_DEFAULT,
+    preferred: BREVO_KEY ? "brevo" : RESEND_KEY ? "resend" : "none",
+  }, { headers: cors(req.headers.get("origin")) })
+}
+
 const displayName = (from: string) => (from.match(/^(.*?)\s*</)?.[1] || "Vita Fresh").trim()
 
 async function brevoSend(from: string, to: string, subject: string, html: string, text: string, replyTo?: string): Promise<{ ok: boolean; data: Record<string, unknown> }> {
