@@ -35,7 +35,7 @@ interface FluxEntry {
   volume?: number      // tonnage observé (optionnel)
 }
 // Ligne de facture concurrent (import Excel) — sert à auto-alimenter les onglets
-interface ConcVente { article: string; pu: number; qt: number; secteur: string; client: string; type: string; date: string }
+interface ConcVente { article: string; pu: number; qt: number; secteur: string; client: string; type: string; date: string; commercial?: string; netFacture?: number; ht?: number; document?: string }
 
 const LS_PRIX = "fl_intel_prix"
 const LS_FLUX = "fl_intel_flux"
@@ -85,6 +85,18 @@ function parseCSV(text: string): Record<string, string>[] {
   })
 }
 function num(s: string | undefined): number { const n = parseFloat(String(s ?? "").replace(",", ".")); return isNaN(n) ? 0 : n }
+// Normalise un nom (minuscule, sans accents ni arabe) pour matcher articles/clients
+function normName(s: unknown): string {
+  return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[؀-ۿ]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()
+}
+// Recherche dans une map normalisée par égalité puis inclusion
+function lookupName<T>(map: Record<string, T>, nom: unknown): T | undefined {
+  const k = normName(nom); if (!k) return undefined
+  if (map[k]) return map[k]
+  for (const mk in map) { if (mk && (mk.includes(k) || k.includes(mk))) return map[mk] }
+  return undefined
+}
 function download(filename: string, content: string) {
   const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8" })
   const url = URL.createObjectURL(blob)
@@ -97,7 +109,7 @@ function download(filename: string, content: string) {
 type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux" | "import"
 
 export default function BOConcurrence({ user }: { user: User }) {
-  const [tab, setTab] = useState<Tab>("dashboard")
+  const [tab, setTab] = useState<Tab>("prix")
   // Paramètres pricing stratégique
   const [margeTheo, setMargeTheo] = useState(25)   // % marge théorique (sur coût de revient)
   const [margeConc, setMargeConc] = useState(20)   // % marge supposée du concurrent
@@ -138,6 +150,34 @@ export default function BOConcurrence({ user }: { user: User }) {
     return [...s].sort()
   }, [prix, ventes, flux])
 
+  // ── Données concurrent UNIFIÉES ───────────────────────────────────────────
+  // PA concurrent = dernier relevé synthèse par article (NON filtré par date →
+  //   ne se vide jamais quand on change la date).
+  const compPA = useMemo(() => {
+    const m: Record<string, { pa: number; date: string }> = {}
+    prix.filter(e => (e.source ?? "") === "synthese_achats" || !e.source).forEach(e => {
+      const k = normName(e.sku); if (!k) return
+      const pa = Number(e.prixConcurrent) || 0; if (pa <= 0) return
+      const d = String(e.date ?? "").slice(0, 10)
+      if (!m[k] || d >= m[k].date) m[k] = { pa, date: d }
+    })
+    return m
+  }, [prix])
+  // PV concurrent + volume = depuis les FACTURES, FILTRÉ par la plage de dates
+  //   (réagit au changement de date / jour précis).
+  const compPV = useMemo(() => {
+    const agg: Record<string, { sum: number; w: number; vol: number; ca: number }> = {}
+    ventes.filter(v => inRange(v.date)).forEach(v => {
+      const k = normName(v.article); const pu = Number(v.pu) || 0; const q = Number(v.qt) || 0
+      if (!k || pu <= 0) return
+      const w = q > 0 ? q : 1
+      ;(agg[k] ??= { sum: 0, w: 0, vol: 0, ca: 0 }); agg[k].sum += pu * w; agg[k].w += w; agg[k].vol += q; agg[k].ca += pu * q
+    })
+    const m: Record<string, { pv: number; vol: number; ca: number }> = {}
+    Object.entries(agg).forEach(([k, a]) => { m[k] = { pv: a.w ? Math.round(a.sum / a.w * 100) / 100 : 0, vol: a.vol, ca: a.ca } })
+    return m
+  }, [ventes, dateFrom, dateTo])
+
   // Prix concurrent filtré par la plage ; flux = CSV + factures (auto), filtré
   const prixF = useMemo(() => prix.filter(e => inRange(e.date)), [prix, dateFrom, dateTo])
   const fluxAuto = useMemo<FluxEntry[]>(() =>
@@ -147,11 +187,11 @@ export default function BOConcurrence({ user }: { user: User }) {
     })), [ventes])
   const fluxF = useMemo(() => [...flux, ...fluxAuto].filter(e => inRange(e.date)), [flux, fluxAuto, dateFrom, dateTo])
 
-  // ── Dashboard : agrégats depuis les commandes confirmées ──────────────────
+  // ── Performance concurrent (Iziry) : agrégats depuis les FACTURES importées ──
   const dash = useMemo(() => {
-    const okStatuts = new Set(["valide", "en_preparation", "charge", "en_transit", "livre", "retour"])
-    const cmds = store.getCommandes().filter(c => okStatuts.has(c.statut) && inRange(c.date))
+    const vts = ventes.filter(v => inRange(v.date))
     let tonnage = 0, ca = 0
+    const docs = new Set<string>()
     const acc = (m: Map<string, { ca: number; t: number }>, k: string, ca2: number, t: number) => {
       if (!k) return
       const cur = m.get(k) ?? { ca: 0, t: 0 }
@@ -161,39 +201,41 @@ export default function BOConcurrence({ user }: { user: User }) {
     const byClient = new Map<string, { ca: number; t: number }>()
     const byZone = new Map<string, { ca: number; t: number }>()
     const byPrev = new Map<string, { ca: number; t: number }>()
-    for (const c of cmds) {
-      for (const l of (c.lignes ?? [])) {
-        const t = Number(l.quantite) || 0
-        const v = Number(l.total) || 0
-        tonnage += t; ca += v
-        acc(byArticle, l.articleNom || "—", v, t)
-        acc(byClient, c.clientNom || "—", v, t)
-        acc(byZone, c.zone || c.secteur || "—", v, t)
-        acc(byPrev, c.commercialNom || "—", v, t)
-      }
+    for (const v of vts) {
+      const t = Number(v.qt) || 0
+      const val = Number(v.netFacture) || Number(v.ht) || (Number(v.pu) || 0) * t
+      tonnage += t; ca += val
+      if (v.document) docs.add(v.document)
+      acc(byArticle, v.article || "—", val, t)
+      acc(byClient, v.client || "—", val, t)
+      acc(byZone, v.secteur || "—", val, t)
+      acc(byPrev, v.commercial || "—", val, t)
     }
     const top = (m: Map<string, { ca: number; t: number }>) =>
       [...m.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.ca - a.ca)
     return {
-      nbCmds: cmds.length, tonnage, ca,
+      nbCmds: docs.size, tonnage, ca,
       articles: top(byArticle), clients: top(byClient), zones: top(byZone), prevs: top(byPrev),
     }
-  }, [dateFrom, dateTo])
+  }, [ventes, dateFrom, dateTo])
 
   // ── Prix & marge : croise le catalogue avec les relevés concurrents ───────
   const margeRows = useMemo(() => {
-    const articles = store.getArticles()
-    return articles.map(a => {
+    return store.getArticles().map(a => {
       const pa = Number(a.prixAchat) || 0
       const pv = store.computePV(a)
-      const rel = prixF.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
-      const concAvg = rel.length ? mean(rel.map(e => e.prixConcurrent)) : 0
+      const cPA = lookupName(compPA, a.nom)?.pa ?? 0          // PA concurrent (synthèse, dernier)
+      const cv = lookupName(compPV, a.nom)                    // PV concurrent (factures, période)
+      const cPV = cv?.pv ?? 0
+      const vol = cv?.vol ?? 0
       const margeDH = pv - pa
       const margePct = pv > 0 ? (margeDH / pv) * 100 : 0
-      const deltaConc = concAvg > 0 ? ((pv - concAvg) / concAvg) * 100 : 0
-      return { nom: a.nom, unite: a.unite ?? "kg", pa, pv, margeDH, margePct, concAvg, deltaConc, nbRel: rel.length }
-    }).sort((x, y) => y.margePct - x.margePct)
-  }, [prixF])
+      const compMarge = (cPV > 0 && cPA > 0) ? Math.round((cPV - cPA) * 100) / 100 : 0
+      const compMargePct = (cPV > 0 && cPA > 0) ? ((cPV - cPA) / cPV) * 100 : 0
+      const deltaConc = cPV > 0 ? ((pv - cPV) / cPV) * 100 : 0
+      return { nom: a.nom, unite: a.unite ?? "kg", pa, pv, margeDH, margePct, cPA, cPV, compMarge, compMargePct, vol, deltaConc, has: cPA > 0 || cPV > 0 }
+    }).filter(r => r.has).sort((x, y) => (y.vol - x.vol) || (Math.abs(y.deltaConc) - Math.abs(x.deltaConc)))
+  }, [compPA, compPV])
 
   // ── PV stratégique : PV théorique, PV concurrence (est.), PV proposé pour attaquer ──
   const pvRows = useMemo(() => {
@@ -204,10 +246,12 @@ export default function BOConcurrence({ user }: { user: User }) {
       const charge = Number(charges.find(c => c.id === a.chargeArticleId)?.montant) || 0
       const cout = pa + charge                                   // coût de revient
       const pvClient = store.computePV(a)                        // notre PV actuel (prix client)
-      const rel = prixF.filter(e => e.sku && a.nom && e.sku.toLowerCase().trim() === a.nom.toLowerCase().trim())
-      const paConc = rel.length ? mean(rel.map(e => e.prixConcurrent)) : 0   // PA concurrent (synthese)
+      const paConc = lookupName(compPA, a.nom)?.pa ?? 0          // PA concurrent (synthèse, dernier)
+      const pvConcReal = lookupName(compPV, a.nom)?.pv ?? 0      // PV concurrent RÉEL (factures)
+      const hasConc = paConc > 0 || pvConcReal > 0
       const pvTheo = Math.round(cout * (1 + margeTheo / 100) * 100) / 100    // PV théorique = coût + marge théorique
-      const pvConcEst = paConc > 0 ? Math.round(paConc * (1 + margeConc / 100) * 100) / 100 : 0  // PV concurrent estimé
+      // PV concurrent : réel si dispo (factures), sinon estimé (PA + marge supposée)
+      const pvConcEst = pvConcReal > 0 ? pvConcReal : (paConc > 0 ? Math.round(paConc * (1 + margeConc / 100) * 100) / 100 : 0)
       // PV proposé pour attaquer :
       let pvPropose = pvTheo, strategie = "Marge théorique"
       if (paConc > 0) {
@@ -216,32 +260,28 @@ export default function BOConcurrence({ user }: { user: User }) {
         else { pvPropose = pvTheo; strategie = "On achète plus cher → garder notre marge" }
       }
       const margeProposeePct = pvPropose > 0 ? ((pvPropose - cout) / pvPropose) * 100 : 0
-      return { nom: a.nom, unite: a.unite ?? "kg", pa, charge, cout, pvClient, paConc, pvTheo, pvConcEst, pvPropose, margeProposeePct, strategie, nbRel: rel.length }
+      return { nom: a.nom, unite: a.unite ?? "kg", pa, charge, cout, pvClient, paConc, pvTheo, pvConcEst, pvPropose, margeProposeePct, strategie, nbRel: hasConc ? 1 : 0 }
     }).filter(r => r.nbRel > 0 || r.pa > 0).sort((x, y) => y.nbRel - x.nbRel)
-  }, [prixF, margeTheo, margeConc, decote])
+  }, [compPA, compPV, margeTheo, margeConc, decote])
 
   // ── Comportement : classe chaque concurrent ───────────────────────────────
   const comportement = useMemo(() => {
-    const byConc = new Map<string, CompetitorEntry[]>()
-    for (const e of prixF) {
-      if (!e.concurrentNom) continue
-      const arr = byConc.get(e.concurrentNom) ?? []
-      arr.push(e); byConc.set(e.concurrentNom, arr)
+    // Profil du concurrent (Iziry) : son PV facturé vs notre PV, sur la période.
+    const deltas: number[] = []; const pvs: number[] = []
+    for (const a of store.getArticles()) {
+      const cPV = lookupName(compPV, a.nom)?.pv ?? 0; if (cPV <= 0) continue
+      const ourPV = store.computePV(a); pvs.push(cPV)
+      if (ourPV > 0) deltas.push(((ourPV - cPV) / cPV) * 100)  // >0 : NOUS + chers → concurrent agressif
     }
-    return [...byConc.entries()].map(([nom, rows]) => {
-      const deltas = rows.filter(r => r.prixConcurrent > 0 && r.prixNotre > 0)
-        .map(r => ((r.prixNotre - r.prixConcurrent) / r.prixConcurrent) * 100)
-      const avgDelta = mean(deltas)             // >0 : nous + chers → concurrent agressif
-      const vol = stddev(rows.map(r => r.prixConcurrent))
-      const volPct = mean(rows.map(r => r.prixConcurrent)) > 0 ? (vol / mean(rows.map(r => r.prixConcurrent))) * 100 : 0
-      let profil: string, ton: string, reco: string
-      if (avgDelta >= 8) { profil = "Agressif"; ton = "red"; reco = "Casse les prix : protéger les SKU sensibles, jouer sur le service/fraîcheur plutôt que le prix." }
-      else if (avgDelta <= -8) { profil = "Premium"; ton = "emerald"; reco = "Plus cher que nous : opportunité de gagner des parts sur ses clients sensibles au prix." }
-      else { profil = "Aligné"; ton = "amber"; reco = "Suiveur : surveiller, réagir au cas par cas sur les SKU clés." }
-      const volatil = volPct >= 12
-      return { nom, count: rows.length, avgDelta, volPct, profil, ton, reco, volatil, skus: [...new Set(rows.map(r => r.sku))].length }
-    }).sort((a, b) => b.avgDelta - a.avgDelta)
-  }, [prixF])
+    if (pvs.length === 0) return [] as { nom: string; count: number; avgDelta: number; volPct: number; profil: string; ton: string; reco: string; volatil: boolean; skus: number }[]
+    const avgDelta = mean(deltas)
+    const volPct = mean(pvs) > 0 ? (stddev(pvs) / mean(pvs)) * 100 : 0
+    let profil: string, ton: string, reco: string
+    if (avgDelta >= 8) { profil = "Agressif"; ton = "red"; reco = "Iziry vend moins cher que nous — protéger les SKU sensibles, jouer la fraîcheur/service plutôt que le prix." }
+    else if (avgDelta <= -8) { profil = "Premium"; ton = "emerald"; reco = "Iziry plus cher que nous — opportunité de gagner ses clients sensibles au prix." }
+    else { profil = "Aligné"; ton = "amber"; reco = "Iziry aligné sur nos prix — surveiller, réagir au cas par cas sur les SKU clés." }
+    return [{ nom: "Iziry", count: pvs.length, avgDelta, volPct, profil, ton, reco, volatil: volPct >= 12, skus: pvs.length }]
+  }, [compPV])
 
   // ── Flux & trajectoire : tendance par (concurrent, sku) ───────────────────
   const trajectoires = useMemo(() => {
@@ -276,8 +316,8 @@ export default function BOConcurrence({ user }: { user: User }) {
 
   // ── Import / export ───────────────────────────────────────────────────────
   const exportMarge = () => {
-    const headers = ["SKU", "Unite", "PrixAchat", "PrixVente", "MargeDH", "Marge%", "PrixConcurrentMoyen", "DeltaConcurrent%", "NbReleves"]
-    const rows = margeRows.map(r => [r.nom, r.unite, r.pa.toFixed(2), r.pv.toFixed(2), r.margeDH.toFixed(2), r.margePct.toFixed(1), r.concAvg.toFixed(2), r.deltaConc.toFixed(1), r.nbRel])
+    const headers = ["Article", "Unite", "NotrePA", "PAconc", "NotrePV", "PVconc", "NotreMargeDH", "MargeConcDH", "DeltaPV%", "VolumeConc"]
+    const rows = margeRows.map(r => [r.nom, r.unite, r.pa.toFixed(2), r.cPA.toFixed(2), r.pv.toFixed(2), r.cPV.toFixed(2), r.margeDH.toFixed(2), r.compMarge.toFixed(2), r.deltaConc.toFixed(1), r.vol.toFixed(0)])
     download(`marge-concurrence-${store.today()}.csv`, toCSV(headers, rows))
     flash("Export marge & concurrence téléchargé.")
   }
@@ -361,11 +401,11 @@ export default function BOConcurrence({ user }: { user: User }) {
       {/* Onglets */}
       <div className="flex gap-2 flex-wrap">
         {([
-          ["dashboard", "Dashboard"],
-          ["prix", "Prix & Marge"],
-          ["pv", "PV stratégique"],
+          ["prix", "Prix"],
+          ["pv", "Marges & PV stratégique"],
           ["comportement", "Comportement concurrent"],
-          ["flux", "Flux & Trajectoire"],
+          ["flux", "Flux & trajectoires"],
+          ["dashboard", "Performance commerciale"],
           ["import", "📥 Import Excel"],
         ] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
@@ -415,11 +455,17 @@ export default function BOConcurrence({ user }: { user: User }) {
       {/* ── DASHBOARD ─────────────────────────────────────────────────────── */}
       {tab === "dashboard" && (
         <div className="flex flex-col gap-4">
+          <p className="text-xs text-slate-500">Performance du concurrent (Iziry) calculée depuis les factures importées{dateFrom || dateTo ? " sur la période sélectionnée" : ""}.</p>
+          {dash.nbCmds === 0 && dash.ca === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 text-sm">
+              Aucune facture concurrent importée{dateFrom || dateTo ? " sur cette période" : ""}. Importe la facture (Import Excel).
+            </div>
+          ) : (<>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { l: "Tonnage total", v: `${fmt(dash.tonnage)} kg`, c: "blue" },
-              { l: "Chiffre d'affaires", v: `${fmt(dash.ca)} DH`, c: "emerald" },
-              { l: "Commandes", v: fmt(dash.nbCmds), c: "violet" },
+              { l: "Tonnage concurrent", v: `${fmt(dash.tonnage)} kg`, c: "blue" },
+              { l: "CA concurrent", v: `${fmt(dash.ca)} DH`, c: "emerald" },
+              { l: "Factures", v: fmt(dash.nbCmds), c: "violet" },
               { l: "Panier moyen", v: `${fmt(dash.nbCmds ? dash.ca / dash.nbCmds : 0)} DH`, c: "amber" },
             ].map(k => (
               <div key={k.l} className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -430,10 +476,10 @@ export default function BOConcurrence({ user }: { user: User }) {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <TopCard title="🏆 Best sellers (articles)" rows={dash.articles} unit="kg" fmt={fmt} />
-            <TopCard title="👑 Best customers (clients)" rows={dash.clients} unit="kg" fmt={fmt} />
-            <TopCard title="📍 Best zones" rows={dash.zones} unit="kg" fmt={fmt} />
-            <TopCard title="🚀 Best prévendeurs" rows={dash.prevs} unit="kg" fmt={fmt} />
+            <TopCard title="🏆 Top articles (Iziry)" rows={dash.articles} unit="kg" fmt={fmt} />
+            <TopCard title="👑 Top clients (Iziry)" rows={dash.clients} unit="kg" fmt={fmt} />
+            <TopCard title="📍 Top secteurs" rows={dash.zones} unit="kg" fmt={fmt} />
+            <TopCard title="🚀 Top commerciaux" rows={dash.prevs} unit="kg" fmt={fmt} />
           </div>
 
           {/* Positionnement concurrent (résumé) */}
@@ -449,6 +495,7 @@ export default function BOConcurrence({ user }: { user: User }) {
               </div>
             </div>
           )}
+          </>)}
         </div>
       )}
 
@@ -464,32 +511,38 @@ export default function BOConcurrence({ user }: { user: User }) {
           </div>
           <p className="text-xs text-slate-500">Colonnes import attendues : <code>Concurrent;SKU;PrixConcurrent;NotrePrixVente;Unite;Lieu;Source;Date</code> (le SKU doit correspondre au nom de l&apos;article).</p>
 
+          {margeRows.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 text-sm">
+              Aucune donnée concurrent. Importe la <strong>facture</strong> (PV) et la <strong>synthèse achats</strong> (PA) dans l&apos;onglet Import Excel.
+            </div>
+          ) : (
           <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[820px]">
               <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
-                <th className="px-3 py-2">Article</th><th className="px-3 py-2 text-right">PA</th><th className="px-3 py-2 text-right">PV</th>
-                <th className="px-3 py-2 text-right">Marge</th><th className="px-3 py-2 text-right">Marge %</th>
-                <th className="px-3 py-2 text-right">Concurrent moy.</th><th className="px-3 py-2 text-right">Δ vs concurrent</th>
+                <th className="px-3 py-2">Article</th>
+                <th className="px-3 py-2 text-right">Notre PA</th><th className="px-3 py-2 text-right">PA conc.</th>
+                <th className="px-3 py-2 text-right">Notre PV</th><th className="px-3 py-2 text-right">PV conc.</th>
+                <th className="px-3 py-2 text-right">Notre marge</th><th className="px-3 py-2 text-right">Marge conc.</th>
+                <th className="px-3 py-2 text-right">Δ PV</th><th className="px-3 py-2 text-right">Vol. conc.</th>
               </tr></thead>
               <tbody>
                 {margeRows.map(r => (
                   <tr key={r.nom} className="border-b border-slate-50 hover:bg-slate-50/50">
                     <td className="px-3 py-2 font-semibold text-slate-800">{r.nom}</td>
                     <td className="px-3 py-2 text-right text-slate-600">{fmt1(r.pa)}</td>
+                    <td className={`px-3 py-2 text-right font-semibold ${r.cPA > 0 && r.pa > r.cPA ? "text-red-600" : r.cPA > 0 ? "text-emerald-600" : "text-slate-400"}`}>{r.cPA > 0 ? fmt1(r.cPA) : "—"}</td>
                     <td className="px-3 py-2 text-right font-bold text-slate-800">{fmt1(r.pv)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{fmt1(r.margeDH)}</td>
-                    <td className={`px-3 py-2 text-right font-bold ${r.margePct < 10 ? "text-red-600" : r.margePct > 25 ? "text-emerald-600" : "text-slate-700"}`}>{fmt1(r.margePct)}%</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{r.concAvg > 0 ? fmt1(r.concAvg) : "—"}</td>
-                    <td className="px-3 py-2 text-right">
-                      {r.nbRel > 0
-                        ? <span className={`font-bold ${r.deltaConc > 0 ? "text-red-600" : "text-emerald-600"}`}>{r.deltaConc >= 0 ? "+" : ""}{fmt1(r.deltaConc)}%</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
+                    <td className={`px-3 py-2 text-right font-semibold ${r.cPV > 0 && r.pv > r.cPV ? "text-amber-600" : "text-slate-600"}`}>{r.cPV > 0 ? fmt1(r.cPV) : "—"}</td>
+                    <td className={`px-3 py-2 text-right ${r.margePct < 10 ? "text-red-600" : "text-slate-700"}`}>{fmt1(r.margeDH)} <span className="text-[10px] text-slate-400">({fmt1(r.margePct)}%)</span></td>
+                    <td className="px-3 py-2 text-right">{r.compMarge > 0 ? <span className="text-slate-700">{fmt1(r.compMarge)} <span className="text-[10px] text-slate-400">({fmt1(r.compMargePct)}%)</span></span> : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-2 text-right">{r.cPV > 0 ? <span className={`font-bold ${r.deltaConc > 0 ? "text-red-600" : "text-emerald-600"}`}>{r.deltaConc >= 0 ? "+" : ""}{fmt1(r.deltaConc)}%</span> : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{r.vol > 0 ? fmt(r.vol) : "—"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
