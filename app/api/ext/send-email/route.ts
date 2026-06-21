@@ -97,10 +97,14 @@ export async function POST(req: NextRequest) {
   if (BREVO_KEY) {
     const r = await brevoSend(from, to, subject, html, text, body.replyTo)
     if (r.ok) return NextResponse.json({ ok: true, provider: "brevo", id: r.data?.messageId }, { headers: cors(origin) })
-    // échec Brevo → on tente Resend si dispo, sinon on renvoie l'erreur Brevo
-    if (!RESEND_KEY) {
-      return NextResponse.json({ error: "brevo failed", detail: r.data, hint: "Vérifiez l'expéditeur (EMAIL_FROM) dans Brevo → Senders & IP, et la clé BREVO_API_KEY." }, { status: 502, headers: cors(origin) })
-    }
+    // Brevo est le fournisseur choisi → on renvoie SON erreur (diagnostic clair),
+    // sans masquer derrière Resend.
+    const bmsg = String((r.data as { message?: string; code?: string })?.message ?? (r.data as { code?: string })?.code ?? "erreur Brevo")
+    const bhint = /sender|not.*valid|denied|authoriz|verif/i.test(bmsg)
+      ? `Expéditeur non vérifié dans Brevo. Allez sur Brevo → Senders, ajoutez « ${from.replace(/^.*<|>$/g, "")} » et cliquez le lien de confirmation reçu sur cette adresse. (Ou authentifiez le domaine vita-core.org dans Brevo → Domains.)`
+      : /api.?key|unauthor|key not found/i.test(bmsg) ? "Clé BREVO_API_KEY invalide ou révoquée — recréez-en une dans Brevo → SMTP & API → API Keys."
+      : "Vérifiez l'expéditeur (Brevo → Senders) et la clé BREVO_API_KEY."
+    return NextResponse.json({ error: `Brevo: ${bmsg}`, detail: r.data, hint: bhint }, { status: 502, headers: cors(origin) })
   }
 
   // ── 1. Resend (avec auto-réparation du domaine) ───────────────────────────
