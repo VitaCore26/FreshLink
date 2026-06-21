@@ -162,6 +162,30 @@ export default function BOPricingConcurrence({ user }: Props) {
     }
   }, [articles, computeRow])
 
+  // ── Classification "type client" : on matche le nom du client de la facture
+  //    concurrent avec NOTRE base clients pour déduire CHR / Marchand / Particulier.
+  const clientCat = useMemo(() => {
+    const m: Record<string, string> = {}
+    try {
+      store.getClients().forEach(c => {
+        const k = norm(c.nom); if (!k) return
+        const cat = String((c as unknown as { categorie?: string; type?: string }).categorie ?? (c as unknown as { type?: string }).type ?? "")
+        if (cat) m[k] = cat
+      })
+    } catch { /* noop */ }
+    return m
+  }, [])
+  const classifyClient = useCallback((nom: string): string => {
+    const k = norm(nom); if (!k) return "Autre"
+    let cat = clientCat[k]
+    if (!cat) { for (const mk in clientCat) { if (mk && (mk.includes(k) || k.includes(mk))) { cat = clientCat[mk]; break } } }
+    if (!cat) return "Autre (non identifié)"
+    if (/chr|horeca|hotel|resto|caf/i.test(cat)) return "CHR / HORECA"
+    if (/marchand|grossiste|revend/i.test(cat)) return "Marchand"
+    if (/particulier/i.test(cat)) return "Particulier"
+    return cat
+  }, [clientCat])
+
   // ── Marge concurrent par dimension (article / secteur / type client) ────────
   // Marge ligne = (PU facture − PA concurrent de l'article) × quantité.
   const margeData = useMemo(() => {
@@ -186,8 +210,8 @@ export default function BOPricingConcurrence({ user }: Props) {
       return Object.entries(m).map(([k, val]) => ({ k, ...val, margePct: val.ca ? (val.marge / val.ca) * 100 : 0 }))
         .sort((a, b) => b.marge - a.marge)
     }
-    return { byArticle: dim(v => v.article), bySecteur: dim(v => v.secteur), byType: dim(v => v.type), n: ventes.length }
-  }, [paMap, margeFrom, margeTo, findComp])
+    return { byArticle: dim(v => v.article), bySecteur: dim(v => v.secteur), byType: dim(v => classifyClient(v.client)), n: ventes.length }
+  }, [paMap, margeFrom, margeTo, findComp, classifyClient])
 
   const addNotice = (titre: string, contenu: string, destinataire: string, type: Notice["type"]) => {
     store.addNotice({

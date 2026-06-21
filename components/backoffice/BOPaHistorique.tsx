@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
+import { store } from "@/lib/store"
 
 // ══════════════════════════════════════════════════════════════════
 //  BOPaHistorique — Section 5
@@ -26,6 +27,20 @@ export default function BOPaHistorique() {
   const [filterArticle, setFilterArticle] = useState("")
   const [predit, setPredit] = useState<{ article: string; value: number } | null>(null)
   const [preditLoading, setPreditLoading] = useState(false)
+
+  // Référentiels articles / fournisseurs → afficher des NOMS (plus d'IDs saisis)
+  const [refArticles, setRefArticles] = useState<{ id: string; nom: string; famille: string }[]>([])
+  const [refFournisseurs, setRefFournisseurs] = useState<{ id: string; nom: string }[]>([])
+  useEffect(() => {
+    try {
+      setRefArticles(store.getArticles().map(a => ({ id: a.id, nom: a.nom, famille: a.famille ?? "" })).sort((a, b) => a.nom.localeCompare(b.nom, "fr")))
+      setRefFournisseurs(store.getFournisseurs().map(f => ({ id: f.id, nom: f.nom })).sort((a, b) => a.nom.localeCompare(b.nom, "fr")))
+    } catch { /* noop */ }
+  }, [])
+  const artMap = useMemo(() => Object.fromEntries(refArticles.map(a => [a.id, a.nom])), [refArticles])
+  const fourMap = useMemo(() => Object.fromEntries(refFournisseurs.map(f => [f.id, f.nom])), [refFournisseurs])
+  const artName = (id: string) => artMap[id] ?? id
+  const fourName = (id: string | null) => (id ? (fourMap[id] ?? id) : "—")
 
   const [form, setForm] = useState({
     articleId: "",
@@ -59,7 +74,7 @@ export default function BOPaHistorique() {
   }, [load])
 
   const submit = async () => {
-    if (!form.articleId.trim()) { setError("Article ID requis"); return }
+    if (!form.articleId.trim()) { setError("Article requis"); return }
     if (form.pa <= 0)            { setError("PA doit être > 0"); return }
     setBusy(true)
     try {
@@ -78,6 +93,38 @@ export default function BOPaHistorique() {
     } finally {
       setBusy(false)
     }
+  }
+
+  // ── Auto-remplissage depuis les bons d'achat (PA réellement constatés) ──────
+  const autoFill = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const bons = store.getBonsAchat()
+      // Clé anti-doublon de l'existant : article|date|pa
+      const seen = new Set(entries.map(e => `${e.article_id}|${String(e.date_marche).slice(0, 10)}|${Math.round(Number(e.pa) * 100)}`))
+      const toPush: { articleId: string; fournisseurId: string; pa: number; volumeKg: number; dateMarche: string }[] = []
+      for (const b of bons) {
+        const d = String(b.date ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10)
+        for (const l of (b.lignes ?? [])) {
+          const pa = Number((l as { prixAchat?: number }).prixAchat) || 0
+          const articleId = String((l as { articleId?: string }).articleId ?? "")
+          if (!articleId || pa <= 0) continue
+          const key = `${articleId}|${d}|${Math.round(pa * 100)}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          toPush.push({ articleId, fournisseurId: b.fournisseurId ?? "", pa, volumeKg: Number((l as { quantite?: number }).quantite) || 0, dateMarche: d })
+        }
+      }
+      if (toPush.length === 0) { setError("Rien à importer : tous les PA des bons d'achat sont déjà dans l'historique."); setBusy(false); return }
+      let ok = 0
+      for (const r of toPush.slice(0, 500)) {
+        try { const res = await fetch("/api/ext/pa-historique", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) }); if ((await res.json())?.ok) ok++ } catch { /* skip */ }
+      }
+      await load()
+      setError(ok > 0 ? "" : "Import terminé mais aucune ligne enregistrée (vérifiez la table fl_pa_historique).")
+    } catch (e) { setError(String(e)) }
+    finally { setBusy(false) }
   }
 
   const remove = async (id: string) => {
@@ -151,7 +198,7 @@ export default function BOPaHistorique() {
         <div className="flex items-center justify-between mb-2">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Tendance · {seriesForChart.length} pts</p>
-            <p className="text-sm font-bold text-slate-700">{filterArticle.trim()}</p>
+            <p className="text-sm font-bold text-slate-700">{artName(filterArticle.trim())}</p>
           </div>
           <div className={`px-3 py-1 rounded-full text-xs font-black ${trendUp ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>
             {trendUp ? "▲" : "▼"} {Math.abs(variation).toFixed(1)}%
@@ -241,23 +288,30 @@ export default function BOPaHistorique() {
 
       {/* Formulaire de saisie rapide */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-        <h3 className="text-sm font-black text-slate-900 mb-4">➕ Saisir un PA marché</h3>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className="text-sm font-black text-slate-900">➕ Saisir un PA marché</h3>
+          <button type="button" onClick={autoFill} disabled={busy}
+            title="Importe automatiquement les PA réellement constatés depuis les bons d'achat"
+            className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60 transition-colors">
+            {busy ? "⏳…" : "⚡ Remplir depuis les bons d'achat"}
+          </button>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold text-slate-700">Article ID</label>
-            <input
-              value={form.articleId}
-              onChange={e => setForm(f => ({ ...f, articleId: e.target.value.trim() }))}
-              placeholder="VFP00046"
-              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            <label className="text-[11px] font-bold text-slate-700">Article</label>
+            <select value={form.articleId} onChange={e => setForm(f => ({ ...f, articleId: e.target.value }))}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+              <option value="">— Choisir un article —</option>
+              {refArticles.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+            </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold text-slate-700">Fournisseur ID (optionnel)</label>
-            <input
-              value={form.fournisseurId}
-              onChange={e => setForm(f => ({ ...f, fournisseurId: e.target.value.trim() }))}
-              placeholder="VFS00001"
-              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            <label className="text-[11px] font-bold text-slate-700">Fournisseur (optionnel)</label>
+            <select value={form.fournisseurId} onChange={e => setForm(f => ({ ...f, fournisseurId: e.target.value }))}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+              <option value="">— Aucun —</option>
+              {refFournisseurs.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+            </select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold text-slate-700">PA constaté (MAD/kg)</label>
@@ -299,11 +353,13 @@ export default function BOPaHistorique() {
       <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-white border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 flex-1 min-w-[200px]">
           <span className="text-xs font-bold text-slate-700 whitespace-nowrap">🔍 Filtrer par article :</span>
-          <input
+          <select
             value={filterArticle}
             onChange={e => setFilterArticle(e.target.value)}
-            placeholder="VFP00046 (vide = tout)"
-            className="flex-1 min-w-[120px] px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            className="flex-1 min-w-[140px] px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+            <option value="">Tous les articles</option>
+            {refArticles.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+          </select>
         </div>
         <button
           type="button"
@@ -318,7 +374,7 @@ export default function BOPaHistorique() {
         <div className="px-4 py-3 rounded-2xl bg-fuchsia-50 border border-fuchsia-200 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="text-[11px] font-bold text-fuchsia-700 uppercase tracking-wider">PA prédit (SQL fl_pa_predit)</p>
-            <p className="text-xs text-fuchsia-700/80">Article <code className="font-mono bg-fuchsia-100 px-1 rounded">{predit.article}</code></p>
+            <p className="text-xs text-fuchsia-700/80">Article <strong>{artName(predit.article)}</strong></p>
           </div>
           <p className="text-3xl font-black text-fuchsia-800 tabular-nums">{fmtMad(predit.value)}</p>
         </div>
@@ -389,8 +445,8 @@ export default function BOPaHistorique() {
               {entries.slice(0, 200).map(e => (
                 <tr key={e.id} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 text-slate-700">{fmtDate(e.date_marche)}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-700">{e.article_id}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{e.fournisseur_id ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-slate-800 font-semibold">{artName(e.article_id)}</td>
+                  <td className="px-4 py-2.5 text-slate-600">{fourName(e.fournisseur_id)}</td>
                   <td className="px-3 py-2.5 text-right font-bold text-slate-900 tabular-nums">{fmtMad(e.pa)}</td>
                   <td className="px-3 py-2.5 text-right text-slate-700 tabular-nums">{e.volume_kg.toLocaleString("fr-MA")}</td>
                   <td className="px-3 py-2.5">
