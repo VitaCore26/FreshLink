@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n"
 import MobileAchat from "./MobileAchat"
 import MobileCommercial from "./MobileCommercial"
 import MobileLogistique from "./MobileLogistique"
+import MessagerieChannel from "../MessagerieChannel"
 import MobileObjectifs from "./MobileObjectifs"
 import MobilePreparation from "./MobilePreparation"
 import MobileControlAchat from "./MobileControlAchat"
@@ -34,7 +35,7 @@ type MobileTab =
   | "achat" | "charges" | "commercial" | "logistique" | "bilan"
   | "preparation" | "ctrl_achat" | "ctrl_prep" | "ctrl_retour"
   | "agent_ia" | "avis" | "magasinier" | "pricing" | "bl_validation" | "alertes"
-  | "client_portail" | "fournisseur_portail"
+  | "client_portail" | "fournisseur_portail" | "messages"
 
 export default function MobileLayout({ user: initialUser, onLogout }: Props) {
   const lang = useLang()
@@ -98,9 +99,11 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
     { id: "alertes",           label: "Alertes",    labelAr: "التنبيهات",        labelEn: "Alerts",     icon: T("M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9") },
     { id: "client_portail",    label: "Mon espace", labelAr: "فضائي",           labelEn: "My Space",   icon: T("M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z") },
     { id: "fournisseur_portail", label: "Portail",  labelAr: "البوابة",         labelEn: "Portal",     icon: T("M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4") },
+    { id: "messages",     label: "Messages",   labelAr: "الرسائل",          labelEn: "Messages",   icon: T("M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 21l1.8-4A8.96 8.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z") },
   ]
 
-  const allowedTabIds: MobileTab[] = ROLE_TAB_ACCESS[activeRole] ?? ["achat"]
+  // Messagerie d'équipe accessible à tous les rôles mobiles
+  const allowedTabIds: MobileTab[] = [...(ROLE_TAB_ACCESS[activeRole] ?? ["achat"]), "messages"]
   const allowedTabs = allTabs.filter(t => allowedTabIds.includes(t.id))
   const [activeTab, setActiveTab] = useState<MobileTab>(allowedTabIds[0] ?? "achat")
 
@@ -212,6 +215,7 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
         {resolvedTab === "alertes"             && <MobileAlertes user={user} />}
         {resolvedTab === "client_portail"      && <MobileClientPortail user={user} />}
         {resolvedTab === "fournisseur_portail" && <MobileFournisseurPortail user={user} />}
+        {resolvedTab === "messages"            && <div className="p-3"><MessagerieChannel user={user} compact /></div>}
       </main>
 
       {/* ── Bottom nav ──────────────────────────────────────────────────────── */}

@@ -786,6 +786,9 @@ export interface Message {
   role: UserRole
   text: string
   createdAt: string
+  channel?: string        // fil de discussion ("general" par défaut)
+  audience?: string[]     // rôles destinataires ; vide/absent = tout le monde
+  readBy?: string[]       // ids des utilisateurs ayant lu
 }
 
 // ── Depot (multi-entrepot) ────────────────────────────────────────────────────

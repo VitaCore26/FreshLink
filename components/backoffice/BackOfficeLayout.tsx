@@ -111,6 +111,7 @@ const BOPerformanceIncentives = dynamic(() => import("./BOPerformanceIncentives"
 const BOTemplateEditor       = dynamic(() => import("./BOTemplateEditor"),       { ssr: false, loading: L("Chargement editeur...") })
 const BOInvestissement       = dynamic(() => import("./BOInvestissement"),       { ssr: false, loading: L("Chargement dossier investisseur...") })
 const BOInvestisseurDashboard = dynamic(() => import("./BOInvestisseurDashboard"), { ssr: false, loading: L("Chargement dashboard investisseur...") })
+const MessagerieChannel      = dynamic(() => import("../MessagerieChannel"),       { ssr: false, loading: L("Chargement messagerie...") })
 const BOFinanceControlGestion  = dynamic(() => import("./BOFinanceControlGestion"),  { ssr: false, loading: L("Chargement finance...") })
 const BOSourcing             = dynamic(() => import("./BOSourcing"),             { ssr: false, loading: L("Chargement sourcing...") })
 const BOPricing              = dynamic(() => import("./BOPricing"),              { ssr: false, loading: L("Chargement releve prix...") })
@@ -165,6 +166,7 @@ export type Tab =
   | "commandes_unifiees"
   | "alertes_clients"
   | "moteur_commercial" | "gifts_v3" | "pa_historique" | "cutoffs_v3" | "feedbacks_v3"
+  | "messagerie"
 
 interface NavItem {
   id: Tab
@@ -249,6 +251,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
     label: "Vue d'ensemble", labelAr: "نظرة عامة",
     items: [
       { id: "dashboard",        label: "Tableau de bord",        labelAr: "لوحة التحكم",      icon: <Icon d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /> },
+      { id: "messagerie",       label: "Messagerie",             labelAr: "المراسلة",         icon: <Icon d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 21l1.8-4A8.96 8.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
       { id: "recap",            label: "Synthese & Recap",       labelAr: "الملخص",           permKey: "canViewRecap",      icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "rapport_livraison", label: "Rapport Livraison",     labelAr: "تقرير التوصيل",    permKey: "canViewLogistique", icon: <Icon d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
     ],
@@ -396,7 +399,7 @@ const NAV_ITEM_MAP: Record<string, NavItem> =
   Object.fromEntries(NAV_GROUPS_RAW.flatMap(g => g.items).map(i => [i.id, i]))
 
 const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
-  { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "recap", "rapport_livraison"] },
+  { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "messagerie", "recap", "rapport_livraison"] },
   { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
   { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
   { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
@@ -416,6 +419,7 @@ const NAV_GROUPS: NavGroup[] = NAV_GROUP_DEF.map(g => ({
 
 const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   dashboard:         (u) => <BODashboard user={u} />,
+  messagerie:        (u) => <MessagerieChannel user={u} />,
   achat:             (_u) => <BOAchat />,
   reception:         (u) => <BOReception user={u} />,
   po:                (_u) => <BOPurchaseOrders />,
