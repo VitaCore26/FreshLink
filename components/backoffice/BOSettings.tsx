@@ -587,22 +587,35 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     setTimeout(() => setDgMsg(null), 6000)
   }
 
-  const ALL_TABLES_KEYS = [
-    "fl_clients","fl_fournisseurs","fl_articles","fl_commandes","fl_bons_livraison",
-    "fl_bons_preparation","fl_bons_achat","fl_purchase_orders","fl_receptions",
-    "fl_trips","fl_retours","fl_visites","fl_transferts_stock","fl_demandes_achat",
-    "fl_messages","fl_notices","fl_non_achats","fl_depots","fl_livreurs","fl_users",
-    "fl_account_requests","fl_commandes_web","fl_prospects","fl_contrats",
-    "fl_caisse_vides","fl_incentives","fl_perf_commercial",
+  // Liste EXHAUSTIVE pour "Tout effacer sauf Jawad" — couvre AUSSI les tables
+  // mobile/finance souvent oubliées (caisse, charges, salaires, PA historique,
+  // factures, concurrence…). Sinon elles restent en base et « reviennent » par
+  // sync sur le BO ET le mobile. (Les *_config de réglages sont volontairement
+  // préservés.) fl_caisses_vides corrigé (était fl_caisse_vides, inexistant).
+  const WIPE_ALL_TABLES = [
+    "fl_users","fl_clients","fl_articles","fl_fournisseurs",
+    "fl_commandes","fl_commandes_web","fl_bons_livraison","fl_bons_preparation",
+    "fl_retours","fl_trips","fl_receptions","fl_bons_achat","fl_purchase_orders",
+    "fl_depots","fl_livreurs","fl_visites","fl_messages","fl_notices",
+    "fl_transferts_stock","fl_demandes_achat","fl_non_achats",
+    "fl_site_access","fl_account_requests","fl_prospects","fl_company_contacts",
+    "fl_documents","fl_contrats","fl_organisations",
+    "fl_caisses_vides","fl_charges","fl_caisse_entries","fl_salaries","fl_actionnaires",
+    "fl_invoices","fl_avoirs","fl_wallet_transactions","fl_paiements",
+    "fl_feedbacks","fl_gift_materials","fl_pa_historique",
+    "fl_referrals","fl_tracking","fl_promotions","fl_coupons","fl_notifications",
+    "fl_intel_prix","fl_conc_pv","fl_conc_ventes_daily","fl_finance_mensuel",
   ]
 
   const handleWipeAllExceptJawad = async () => {
     setWipingAll(true); setShowWipeConfirm(false)
     try {
-      // 1. Vider localStorage
-      ALL_TABLES_KEYS.forEach(k => localStorage.setItem(k, JSON.stringify([])))
+      // 1. Vider localStorage (toutes les tables, y compris mobile/finance)
+      WIPE_ALL_TABLES.forEach(k => localStorage.setItem(k, JSON.stringify([])))
       // 2. Vider Supabase (préserver VFU00001, supprimer aussi l'ancien u_jawad_root)
-      for (const table of ERP_TABLES_SYNC) {
+      //    Liste exhaustive → le mobile, qui resynchronise depuis Supabase, se
+      //    retrouve vide lui aussi au prochain pull.
+      for (const table of WIPE_ALL_TABLES) {
         try {
           await fetch("/api/sync-write", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -672,7 +685,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     setResetingDemo(true); setShowResetConfirm(false)
     try {
       // 1. Vider localStorage
-      ALL_TABLES_KEYS.forEach(k => localStorage.setItem(k, JSON.stringify([])))
+      WIPE_ALL_TABLES.forEach(k => localStorage.setItem(k, JSON.stringify([])))
       // 2. Charger les données démo
       await seedDemoData(store)
       setDgMsg({ ok: true, text: "✅ Données démo rechargées avec succès. Rechargement..." })
@@ -2209,9 +2222,9 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
                 {/* Checklist */}
                 <div className="border border-red-100 rounded-xl p-4 flex flex-col gap-3 bg-red-50/30">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-red-700">Catégories à effacer ({clearTables.size}/27)</span>
+                    <span className="text-xs font-bold text-red-700">Catégories à effacer ({clearTables.size}/{WIPE_ALL_TABLES.length})</span>
                     <div className="flex gap-2">
-                      <button onClick={() => setClearTables(new Set(ALL_TABLES_KEYS))}
+                      <button onClick={() => setClearTables(new Set(WIPE_ALL_TABLES))}
                         className="text-[11px] font-semibold text-red-600 hover:underline px-2 py-0.5 rounded hover:bg-red-100 transition-colors">Tout sélectionner</button>
                       <button onClick={() => setClearTables(new Set())}
                         className="text-[11px] font-semibold text-muted-foreground hover:underline px-2 py-0.5 rounded hover:bg-muted transition-colors">Tout décocher</button>

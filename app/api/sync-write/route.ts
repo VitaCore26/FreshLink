@@ -64,6 +64,10 @@ export async function POST(req: NextRequest) {
       "fl_intel_prix", "fl_conc_pv", "fl_conc_ventes_daily",
       // Suivi financier mensuel agrégé (dossier investisseurs — pas un grand-livre)
       "fl_finance_mensuel",
+      // Opérationnel synchronisé (messagerie, notices, visites, flux achat/stock)
+      // — requis pour autoSync + messagerie cross-device + reset complet.
+      "fl_messages", "fl_notices", "fl_visites",
+      "fl_transferts_stock", "fl_demandes_achat", "fl_non_achats",
     ]
     if (!ALLOWED_TABLES.includes(body.table)) {
       return NextResponse.json({ ok: false, errors: [`Table non autorisée: ${body.table}`] }, { status: 403 })

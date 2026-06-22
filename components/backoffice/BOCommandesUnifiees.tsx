@@ -250,11 +250,13 @@ export default function BOCommandesUnifiees({ user }: Props) {
       if (cmd.source === "erp") {
         store.saveCommandes(store.getCommandes().filter(c => c.id !== cmd.id))
       }
-      // Suppression Supabase via l'API service_role (toutes les commandes sont dans fl_commandes)
+      // Suppression Supabase via l'API service_role — DANS LA BONNE TABLE.
+      // Une commande web vit dans fl_commandes_web ; la supprimer de fl_commandes
+      // la laissait en base → elle « revenait » au prochain fetch. On cible cmd.table.
       const res = await fetch("/api/sync-write", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "fl_commandes", deletes: [cmd.id] }),
+        body: JSON.stringify({ table: cmd.table, deletes: [cmd.id] }),
       })
       const json = await res.json()
       if (!json.ok) throw new Error((json.errors || []).join(", "))

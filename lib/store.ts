@@ -2409,7 +2409,7 @@ export const store = {
     const idx = cl.findIndex(c => c.id === id)
     if (idx >= 0) { cl[idx] = { ...cl[idx], ...updates }; store.saveClients(cl) }
   },
-  deleteClient: (id: string) => { store.saveClients(store.getClients().filter(c => c.id !== id)) },
+  deleteClient: (id: string) => { store.saveClients(store.getClients().filter(c => c.id !== id)); deleteSynced("fl_clients", [id]) },
 
   // --- Articles ---
   // Normalisation défensive : un article importé/synchronisé peut arriver
@@ -2523,7 +2523,7 @@ export const store = {
     const idx = arr.findIndex(a => a.id === id)
     if (idx >= 0) { arr[idx] = { ...arr[idx], ...updates }; store.saveActionnaires(arr) }
   },
-  deleteActionnaire: (id: string) => { store.saveActionnaires(store.getActionnaires().filter(a => a.id !== id)) },
+  deleteActionnaire: (id: string) => { store.saveActionnaires(store.getActionnaires().filter(a => a.id !== id)); deleteSynced("fl_actionnaires", [id]) },
 
   // --- Charges ---
   getCharges: (): Charge[] => getLS("fl_charges", []),
@@ -2534,7 +2534,7 @@ export const store = {
     const idx = arr.findIndex(c => c.id === id)
     if (idx >= 0) { arr[idx] = { ...arr[idx], ...updates }; store.saveCharges(arr) }
   },
-  deleteCharge: (id: string) => { store.saveCharges(store.getCharges().filter(c => c.id !== id)) },
+  deleteCharge: (id: string) => { store.saveCharges(store.getCharges().filter(c => c.id !== id)); deleteSynced("fl_charges", [id]) },
 
   // --- Charges par article (coût de revient) ---
   getChargesArticle: (): ChargeArticle[] => {
@@ -2547,7 +2547,7 @@ export const store = {
   getCaisseEntries: (): CaisseEntry[] => getLS("fl_caisse", []),
   saveCaisseEntries: (e: CaisseEntry[]) => setLS("fl_caisse", e),
   addCaisseEntry: (e: CaisseEntry) => { const arr = store.getCaisseEntries(); arr.push(e); store.saveCaisseEntries(arr) },
-  deleteCaisseEntry: (id: string) => { store.saveCaisseEntries(store.getCaisseEntries().filter(e => e.id !== id)) },
+  deleteCaisseEntry: (id: string) => { store.saveCaisseEntries(store.getCaisseEntries().filter(e => e.id !== id)); deleteSynced("fl_caisse_entries", [id]) },
 
   // --- Reserve caisse historique ---
   getReserveSnaps: (): ReserveCaisseSnap[] => getLS("fl_reserve_snaps", []),
@@ -2566,7 +2566,7 @@ export const store = {
     const idx = arr.findIndex(s => s.id === id)
     if (idx >= 0) { arr[idx] = { ...arr[idx], ...updates }; store.saveSalaries(arr) }
   },
-  deleteSalarie: (id: string) => { store.saveSalaries(store.getSalaries().filter(s => s.id !== id)) },
+  deleteSalarie: (id: string) => { store.saveSalaries(store.getSalaries().filter(s => s.id !== id)); deleteSynced("fl_salaries", [id]) },
 
   // --- RH Notifications ---
   getRHNotifications: (): RHNotification[] => getLS("fl_rh_notifications", []),
@@ -2726,7 +2726,7 @@ export const store = {
     const idx = arr.findIndex(f => f.id === id)
     if (idx >= 0) { arr[idx] = { ...arr[idx], ...updates }; store.saveFournisseurs(arr) }
   },
-  deleteFournisseur: (id: string) => { store.saveFournisseurs(store.getFournisseurs().filter(f => f.id !== id)) },
+  deleteFournisseur: (id: string) => { store.saveFournisseurs(store.getFournisseurs().filter(f => f.id !== id)); deleteSynced("fl_fournisseurs", [id]) },
 
   // --- Livreurs ---
   getLivreurs: (): Livreur[] => getLS("fl_livreurs", DEFAULT_LIVREURS),
