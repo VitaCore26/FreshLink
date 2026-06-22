@@ -134,8 +134,24 @@ function loadPhases(): Phase[] {
   if (typeof window === "undefined") return PHASES
   try {
     const raw = localStorage.getItem(LS_PHASES)
-    if (raw) return JSON.parse(raw) as Phase[]
-  } catch {}
+    if (raw) {
+      const cached = JSON.parse(raw) as Phase[]
+      // Auto-migration : une Phase 1 mise en cache avec l'ancienne date 2025 est
+      // re-synchronisée sur le réel 2026 (période/label/tonnage), sans toucher
+      // aux autres champs ni aux autres phases. Évite le "Réinitialiser" manuel.
+      const c = PHASES.find(p => p.id === 1)
+      let changed = false
+      const fixed = cached.map(p => {
+        if (c && p.id === 1 && typeof p.period === "string" && p.period.includes("2025")) {
+          changed = true
+          return { ...p, label: c.label, period: c.period, tonnage_jour: c.tonnage_jour, tonnage_mois: c.tonnage_mois }
+        }
+        return p
+      })
+      if (changed) { try { localStorage.setItem(LS_PHASES, JSON.stringify(fixed)) } catch { /* noop */ } }
+      return fixed
+    }
+  } catch { /* noop */ }
   return PHASES
 }
 
