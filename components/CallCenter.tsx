@@ -20,9 +20,24 @@ type Phase = "idle" | "calling" | "incoming" | "connected"
 type Signal = { kind: "offer" | "answer" | "ice" | "hangup"; to: string; from: { id: string; name: string }; data?: unknown }
 
 function iceServers(): RTCIceServer[] {
-  const list: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }]
+  const list: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ]
   const turn = process.env.NEXT_PUBLIC_TURN_URL
-  if (turn) list.push({ urls: turn, username: process.env.NEXT_PUBLIC_TURN_USER, credential: process.env.NEXT_PUBLIC_TURN_CRED })
+  if (turn) {
+    list.push({ urls: turn, username: process.env.NEXT_PUBLIC_TURN_USER, credential: process.env.NEXT_PUBLIC_TURN_CRED })
+  } else {
+    // Fallback TURN public GRATUIT (OpenRelay/Metered) — identifiants PUBLICS,
+    // pas un secret. Rate-limité : suffit pour démarrer et faire passer les
+    // appels derrière la 4G / NAT symétrique. Pour la prod, fournir un TURN
+    // dédié via NEXT_PUBLIC_TURN_URL/_USER/_CRED (il prend alors le dessus).
+    list.push(
+      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+    )
+  }
   return list
 }
 
