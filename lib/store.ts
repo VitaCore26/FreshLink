@@ -1684,6 +1684,35 @@ export function getAllFamilles(usedFamilles: string[] = []): string[] {
   return [...set]
 }
 
+// ── Secteurs = Zones unifiés (source de vérité unique mobile/BO/shop) ─────────
+// On unifie « secteur » (commercial) et « zone » (livraison) : un seul libellé
+// fait foi. Les secteurs perso sont partagés via Supabase (autoSync upsert LS).
+const LS_SECTEURS_CUSTOM = "fl_secteurs_custom"
+export function getCustomSecteurs(): string[] {
+  if (typeof window === "undefined") return []
+  try { return JSON.parse(localStorage.getItem(LS_SECTEURS_CUSTOM) ?? "[]") } catch { return [] }
+}
+/** Ajoute un secteur/zone perso (si absent, insensible à la casse) → liste à jour */
+export function addCustomSecteur(nom: string): string[] {
+  const s = String(nom ?? "").trim()
+  const cur = getCustomSecteurs()
+  if (!s) return cur
+  if ([...SECTEURS_VENTE, ...cur].some(x => x.toLowerCase() === s.toLowerCase())) return cur
+  const next = [...cur, s]
+  try { localStorage.setItem(LS_SECTEURS_CUSTOM, JSON.stringify(next)) } catch { /* noop */ }
+  return next
+}
+export function removeCustomSecteur(nom: string): string[] {
+  const next = getCustomSecteurs().filter(x => x !== nom)
+  try { localStorage.setItem(LS_SECTEURS_CUSTOM, JSON.stringify(next)) } catch { /* noop */ }
+  return next
+}
+/** Tous les secteurs/zones : prédéfinis + perso + ceux déjà utilisés (clients) */
+export function getAllSecteurs(usedSecteurs: string[] = []): string[] {
+  const set = new Set<string>([...SECTEURS_VENTE, ...getCustomSecteurs(), ...usedSecteurs.filter(Boolean)])
+  return [...set]
+}
+
 export function isMobileRole(role: UserRole): boolean {
   return ["prevendeur", "resp_logistique", "magasinier", "dispatcheur", "livreur", "acheteur", "ctrl_achat", "ctrl_prep", "client", "fournisseur", "chef_depot", "suivi_commande"].includes(role)
 }

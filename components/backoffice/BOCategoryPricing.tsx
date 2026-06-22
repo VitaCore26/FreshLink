@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
+import * as XLSX from "xlsx"
 import { store } from "@/lib/store"
 import type { Article, Client } from "@/lib/store"
 
@@ -13,31 +14,56 @@ const CAT_COLORS: Record<Cat, string> = {
   particulier: "bg-green-100  text-green-700  border-green-200",
 }
 
-// ── CSV helpers ──────────────────────────────────────────────────────────────
-function exportCSV(articles: Article[]) {
-  const rows = [
-    ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier","ajustCHR","ajustMarchand","ajustParticulier"],
-    ...articles.map(a => [
-      a.id, a.nom, a.famille, a.unite,
-      a.prixAchat ?? "",
-      (a as unknown as Record<string,unknown>).prixCHR ?? "",
-      (a as unknown as Record<string,unknown>).prixMarchand ?? "",
-      (a as unknown as Record<string,unknown>).prixParticulier ?? "",
-      (a as unknown as Record<string,unknown>).promoCHR ?? "",
-      (a as unknown as Record<string,unknown>).promoMarchand ?? "",
-      (a as unknown as Record<string,unknown>).promoParticulier ?? "",
-      (a as unknown as Record<string,unknown>).ajustCHR ?? "",
-      (a as unknown as Record<string,unknown>).ajustMarchand ?? "",
-      (a as unknown as Record<string,unknown>).ajustParticulier ?? "",
-    ]),
-  ]
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n")
-  const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }))
-  const a = document.createElement("a"); a.href = url; a.download = `tarifs_${new Date().toISOString().slice(0,10)}.csv`
+// ── Export / Import helpers (CSV · Excel · JSON) ─────────────────────────────
+const EXPORT_FIELDS = ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier","ajustCHR","ajustMarchand","ajustParticulier"] as const
+
+function articleToObj(a: Article): Record<string, unknown> {
+  const r = a as unknown as Record<string, unknown>
+  const o: Record<string, unknown> = {}
+  EXPORT_FIELDS.forEach(f => { o[f] = r[f] ?? "" })
+  return o
+}
+const stamp = () => new Date().toISOString().slice(0, 10)
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a"); a.href = url; a.download = filename
   a.click(); URL.revokeObjectURL(url)
 }
 
-function importCSV(text: string): Partial<Article>[] {
+function exportCSV(articles: Article[]) {
+  const rows = [[...EXPORT_FIELDS], ...articles.map(a => { const o = articleToObj(a); return EXPORT_FIELDS.map(f => o[f]) })]
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n")
+  downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }), `tarifs_${stamp()}.csv`)
+}
+
+function exportJSON(articles: Article[]) {
+  downloadBlob(new Blob([JSON.stringify(articles.map(articleToObj), null, 2)], { type: "application/json" }), `tarifs_${stamp()}.json`)
+}
+
+function exportExcel(articles: Article[]) {
+  const ws = XLSX.utils.json_to_sheet(articles.map(articleToObj), { header: [...EXPORT_FIELDS] })
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Tarifs")
+  XLSX.writeFile(wb, `tarifs_${stamp()}.xlsx`)
+}
+
+const numOrU = (v: unknown) => { const s = String(v ?? "").trim(); return s === "" ? undefined : Number(s) }
+function rowToArticle(row: Record<string, unknown>): Partial<Article> {
+  return {
+    id:               String(row.id ?? "").trim(),
+    prixCHR:          numOrU(row.prixCHR),
+    prixMarchand:     numOrU(row.prixMarchand),
+    prixParticulier:  numOrU(row.prixParticulier),
+    promoCHR:         numOrU(row.promoCHR),
+    promoMarchand:    numOrU(row.promoMarchand),
+    promoParticulier: numOrU(row.promoParticulier),
+    ajustCHR:         numOrU(row.ajustCHR),
+    ajustMarchand:    numOrU(row.ajustMarchand),
+    ajustParticulier: numOrU(row.ajustParticulier),
+  } as Partial<Article>
+}
+
+function parseCSV(text: string): Record<string, unknown>[] {
   const lines = text.trim().split(/\r?\n/)
   if (lines.length < 2) return []
   const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim())
@@ -45,19 +71,8 @@ function importCSV(text: string): Partial<Article>[] {
     const vals = line.split(",").map(v => v.replace(/^"|"$/g, ""))
     const row: Record<string, unknown> = {}
     headers.forEach((h, i) => { row[h] = vals[i] ?? "" })
-    return {
-      id:              row.id as string,
-      prixCHR:         row.prixCHR        ? Number(row.prixCHR)         : undefined,
-      prixMarchand:    row.prixMarchand   ? Number(row.prixMarchand)    : undefined,
-      prixParticulier: row.prixParticulier? Number(row.prixParticulier) : undefined,
-      promoCHR:        row.promoCHR       ? Number(row.promoCHR)        : undefined,
-      promoMarchand:   row.promoMarchand  ? Number(row.promoMarchand)   : undefined,
-      promoParticulier:row.promoParticulier? Number(row.promoParticulier): undefined,
-      ajustCHR:        row.ajustCHR       ? Number(row.ajustCHR)        : undefined,
-      ajustMarchand:   row.ajustMarchand  ? Number(row.ajustMarchand)   : undefined,
-      ajustParticulier:row.ajustParticulier? Number(row.ajustParticulier): undefined,
-    } as Partial<Article>
-  }).filter(r => r.id)
+    return row
+  })
 }
 
 type PriceField = "prix" | "promo" | "ajust"
@@ -117,10 +132,26 @@ export default function BOCategoryPricing() {
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const name = file.name.toLowerCase()
+    const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls")
+    const isJSON = name.endsWith(".json")
+    const fmt = isExcel ? "Excel" : isJSON ? "JSON" : "CSV"
     const reader = new FileReader()
     reader.onload = ev => {
       try {
-        const rows = importCSV(ev.target?.result as string)
+        let rawRows: Record<string, unknown>[] = []
+        if (isJSON) {
+          const parsed = JSON.parse(ev.target?.result as string)
+          const arr = Array.isArray(parsed) ? parsed : (parsed as { articles?: unknown[] })?.articles
+          rawRows = (Array.isArray(arr) ? arr : []) as Record<string, unknown>[]
+        } else if (isExcel) {
+          const wb = XLSX.read(ev.target?.result as ArrayBuffer, { type: "array" })
+          const ws = wb.Sheets[wb.SheetNames[0]]
+          rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" })
+        } else {
+          rawRows = parseCSV(ev.target?.result as string)
+        }
+        const rows = rawRows.map(rowToArticle).filter(r => r.id)
         if (rows.length === 0) { setImportMsg({ ok: false, text: "Aucune ligne valide trouvée dans le fichier." }); return }
         const all = store.getArticles()
         let updated = 0
@@ -141,14 +172,15 @@ export default function BOCategoryPricing() {
         })
         store.saveArticles(all)
         setArticles([...all])
-        setImportMsg({ ok: true, text: `${updated} article(s) mis à jour depuis le fichier CSV.` })
+        setImportMsg({ ok: true, text: `${updated} article(s) mis à jour depuis le fichier ${fmt}.` })
         setTimeout(() => setImportMsg(null), 4000)
       } catch {
-        setImportMsg({ ok: false, text: "Erreur lors de la lecture du fichier CSV." })
+        setImportMsg({ ok: false, text: `Erreur lors de la lecture du fichier ${fmt}.` })
       }
       if (fileRef.current) fileRef.current.value = ""
     }
-    reader.readAsText(file, "utf-8")
+    if (isExcel) reader.readAsArrayBuffer(file)
+    else reader.readAsText(file, "utf-8")
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -304,25 +336,24 @@ export default function BOCategoryPricing() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Download CSV */}
-          <button
-            onClick={() => exportCSV(articles)}
-            title="Télécharger les tarifs en CSV"
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card text-sm font-semibold hover:bg-muted transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Export CSV
-          </button>
-          {/* Upload CSV */}
+          {/* Exports : CSV · Excel · JSON */}
+          <div className="flex items-center rounded-xl border border-border bg-card overflow-hidden">
+            <span className="px-2 text-xs text-muted-foreground border-r border-border self-stretch flex items-center">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            </span>
+            <button onClick={() => exportCSV(articles)} title="Exporter en CSV" className="px-3 py-2 text-sm font-semibold hover:bg-muted transition-colors">CSV</button>
+            <button onClick={() => exportExcel(articles)} title="Exporter en Excel (.xlsx)" className="px-3 py-2 text-sm font-semibold border-l border-border hover:bg-muted transition-colors">Excel</button>
+            <button onClick={() => exportJSON(articles)} title="Exporter en JSON" className="px-3 py-2 text-sm font-semibold border-l border-border hover:bg-muted transition-colors">JSON</button>
+          </div>
+          {/* Import : CSV · Excel · JSON */}
           <label
-            title="Importer des tarifs depuis un CSV"
+            title="Importer des tarifs (CSV, Excel ou JSON)"
             className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card text-sm font-semibold hover:bg-muted transition-colors cursor-pointer">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Import CSV
-            <input ref={fileRef} type="file" accept=".csv" onChange={handleImport} className="hidden" />
+            Importer
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleImport} className="hidden" />
           </label>
           {/* Save */}
           <button

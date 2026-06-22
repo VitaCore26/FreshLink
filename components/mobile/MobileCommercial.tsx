@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, SECTEURS_VENTE, VILLES_MAROC } from "@/lib/store"
+import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, getAllSecteurs, VILLES_MAROC } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
@@ -1011,11 +1011,8 @@ export default function MobileCommercial({ user }: Props) {
               <select value={newClient.secteur} onChange={e => setNewClient({ ...newClient, secteur: e.target.value })}
                 className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="">— Choisir —</option>
-                {/* Secteur du prévendeur en premier s'il n'est pas déjà listé */}
-                {newClient.secteur && !SECTEURS_VENTE.includes(newClient.secteur) && (
-                  <option value={newClient.secteur}>{newClient.secteur}</option>
-                )}
-                {SECTEURS_VENTE.map(s => <option key={s} value={s}>{s}</option>)}
+                {/* Secteurs/zones unifiés : prédéfinis + perso + déjà utilisés */}
+                {getAllSecteurs([newClient.secteur, ...store.getClients().map(c => c.secteur || "")]).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">

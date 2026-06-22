@@ -1,12 +1,9 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { store, type User, type Client, ROLE_LABELS } from "@/lib/store"
+import { store, type User, type Client, ROLE_LABELS, getAllSecteurs } from "@/lib/store"
 
 interface Props { user: User }
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-function uniq(arr: string[]) { return [...new Set(arr)].filter(Boolean).sort() }
 
 export default function BOAffectationCommerciale({ user }: Props) {
   const [clients, setClients]     = useState<Client[]>([])
@@ -35,10 +32,10 @@ export default function BOAffectationCommerciale({ user }: Props) {
     [users]
   )
   const secteurs = useMemo(
-    () => uniq([
+    () => getAllSecteurs([
       ...clients.map(c => c.secteur),
       ...prevendeurs.map(u => u.secteur || ""),
-    ]),
+    ]).sort(),
     [clients, prevendeurs]
   )
 

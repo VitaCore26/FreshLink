@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type User, type UserRole, type UserAccessType, type GranularPermissions, type Civilite, ROLE_LABELS, ROLE_COLORS, JAWAD_ID, FAMILLES_ARTICLES } from "@/lib/store"
+import { store, type User, type UserRole, type UserAccessType, type GranularPermissions, type Civilite, ROLE_LABELS, ROLE_COLORS, JAWAD_ID, FAMILLES_ARTICLES, getAllSecteurs } from "@/lib/store"
 import { autoAssignPermissions } from "@/lib/rolePermissions"
 import { sendEmail } from "@/lib/email"
 
@@ -1172,10 +1172,7 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
   const canAccess = currentUser.role === "super_super_admin" || currentUser.role === "admin" || currentUser.role === "super_admin" || currentUser.role === "rh_manager"
 
   // Secteurs proposés = ceux déjà utilisés par l'équipe + défauts (combobox : saisie libre conservée)
-  const secteurOptions = Array.from(new Set(
-    [...users.map(u => u.secteur), "Nord", "Centre", "Sud", "Est", "Ouest", "Casa-Anfa", "Ain Sebaa", "Sidi Maarouf"]
-      .filter((s): s is string => Boolean(s && s.trim()))
-  )).sort()
+  const secteurOptions = getAllSecteurs(users.map(u => u.secteur || "")).sort()
 
   useEffect(() => {
     if (canAccess) {
