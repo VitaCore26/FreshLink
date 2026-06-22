@@ -84,6 +84,36 @@ function calcPL(cfg: PLConfig, jours = 22) {
   }
 }
 
+// ── Axes d'amélioration AUTO : diagnostic calculé (P&L vs cibles) ────────────
+type AxeAuto = { sev: "danger" | "warn" | "ok"; titre: string; detail: string }
+function autoAxes(cfg: PLConfig, pl: ReturnType<typeof calcPL>): AxeAuto[] {
+  const axes: AxeAuto[] = []
+  const gapCM1 = pl.cm1Pct - cfg.cm1_cible
+  if (gapCM1 < 0) axes.push({ sev: gapCM1 < -3 ? "danger" : "warn", titre: "Marge brute (CM1) sous la cible",
+    detail: `CM1 ${pl.cm1Pct.toFixed(1)}% vs cible ${cfg.cm1_cible}% (écart ${gapCM1.toFixed(1)} pt). Levier : baisser le taux d'achat (actuel ${cfg.tauxPA}%) d'environ ${Math.ceil(-gapCM1)} pt, ou réduire les pertes (${cfg.tauxPertes}%).` })
+  else axes.push({ sev: "ok", titre: "Marge brute conforme", detail: `CM1 ${pl.cm1Pct.toFixed(1)}% ≥ cible ${cfg.cm1_cible}%.` })
+
+  const logRatio = pl.chargesVariables / pl.caTotal * 100
+  if (logRatio > 12) axes.push({ sev: logRatio > 16 ? "danger" : "warn", titre: "Coût logistique trop élevé",
+    detail: `Logistique ${logRatio.toFixed(1)}% du CA (> 12%). Transport + manutention = ${fmtMAD(cfg.coutTransportJour + cfg.coutMainoeuvre)}/j : tournées groupées + LIFO + retours chargés.` })
+
+  if (pl.resultNetPct < 8) axes.push({ sev: pl.resultNetPct < 0 ? "danger" : "warn", titre: "Résultat net sous l'objectif",
+    detail: `Résultat net ${pl.resultNetPct.toFixed(1)}% (cible ≥ 8%). Agir sur la marge + charges fixes (${fmtMAD(pl.chargesFixes)}/mois).` })
+
+  if (pl.caTotal < pl.pointMortMois) {
+    const manque = pl.pointMortMois - pl.caTotal
+    axes.push({ sev: "danger", titre: "Sous le point mort", detail: `CA ${fmtMAD(pl.caTotal)} < seuil ${fmtMAD(pl.pointMortMois)}. Manque ${fmtMAD(manque)}/mois ≈ ${Math.ceil(manque / cfg.panierMoyen)} commandes au panier moyen (${fmtMAD(cfg.panierMoyen)}).` })
+  } else {
+    axes.push({ sev: "ok", titre: "Au-dessus du point mort", detail: `Marge de sécurité ${fmtMAD(pl.caTotal - pl.pointMortMois)}/mois.` })
+  }
+
+  if (pl.roiAnnuel < 15) axes.push({ sev: pl.roiAnnuel < 0 ? "danger" : "warn", titre: "ROI annuel faible",
+    detail: `ROI ${pl.roiAnnuel.toFixed(1)}% (viser ≥ 15%).` })
+
+  const rank = { danger: 0, warn: 1, ok: 2 }
+  return axes.sort((a, b) => rank[a.sev] - rank[b.sev])
+}
+
 // ── Daily Report Email ────────────────────────────────────────────────────────
 async function sendDailyReport(toEmail: string) {
   const today = new Date().toISOString().split("T")[0]
@@ -344,6 +374,25 @@ export default function BOFinanceControlGestion({ user }: { user: User }) {
               <p className="text-xs text-slate-600">CA : {fmtMAD(realData.caToday)} · Achats : {fmtMAD(realData.achatsToday)}</p>
             </div>
           )}
+          {/* Diagnostic prioritaire auto — calculé sur le P&L vs cibles */}
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">🤖 Diagnostic prioritaire (auto)</h3>
+              <span className="text-xs text-slate-400">basé sur le P&amp;L · {jours} j</span>
+            </div>
+            <div className="p-4 flex flex-col gap-2">
+              {autoAxes(cfg, pl).map((a, i) => {
+                const c = a.sev === "danger" ? "bg-red-50 border-red-200" : a.sev === "warn" ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"
+                const ic = a.sev === "danger" ? "🔴" : a.sev === "warn" ? "🟠" : "🟢"
+                return (
+                  <div key={i} className={`rounded-xl border px-4 py-3 ${c}`}>
+                    <p className="text-sm font-bold text-slate-800">{ic} {a.titre}</p>
+                    <p className="text-xs mt-0.5 text-slate-600">{a.detail}</p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
           {[
             {
               titre: "🎯 Optimisation Achats (Impact CM1)",

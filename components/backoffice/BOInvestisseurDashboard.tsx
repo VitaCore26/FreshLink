@@ -33,9 +33,9 @@ interface Phase {
 
 const PHASES: Phase[] = [
   {
-    id:1, label:'Phase 1 — 1.5T/jour | Fondation', capital:1_500_000, autofinancement:600_000, externe:900_000,
-    period:'Mars – Juin 2025 (Mois 1–3)', status:'complete', roi:28, payback:36, ca_cible:4_200_000, marge:18,
-    tonnage_jour:1.5, tonnage_mois:39, prix_moyen_kg:4.5,
+    id:1, label:'Phase 1 — 1.6T/jour | Fondation', capital:1_500_000, autofinancement:600_000, externe:900_000,
+    period:'Mars – Juin 2026 (Mois 1–4)', status:'complete', roi:28, payback:36, ca_cible:4_200_000, marge:18,
+    tonnage_jour:1.6, tonnage_mois:40, prix_moyen_kg:4.5,
     objectifs:["Lancement FreshLink Pro (MVP) — pilotage Jariri", "3 camions frigos opérationnels", "50 clients actifs (restaurants + marchands)", "Certification halal & normes ONSSA", "Thomas : contrôle de gestion", "S.Abdelilah : expert qualité", "Abdelali : contrôle qualité", "Ayoub : responsable affectation transport"],
     risques:["Délais administratifs autorisations", "Trouver les 600K MAD autofinancement", "Acquisition clients premiers mois"],
     kpis:["CA mensuel ≥ 350K MAD à M3", "Taux satisfaction client ≥ 85%", "Taux de livraison à l'heure ≥ 92%"],

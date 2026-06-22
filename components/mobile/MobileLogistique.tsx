@@ -21,6 +21,13 @@ function Icon({ d, className = "w-5 h-5" }: { d: string; className?: string }) {
   )
 }
 
+// Ouvre une URL dans un nouvel onglet (contourne le sandbox iframe)
+function openNewTab(url: string) {
+  const link = document.createElement("a")
+  link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"
+  document.body.appendChild(link); link.click(); document.body.removeChild(link)
+}
+
 // ── Statut badge ──────────────────────────────────────────────────────────────
 const STATUT_BL_COLORS: Record<string, string> = {
   livre: "bg-green-100 text-green-800",
@@ -177,28 +184,24 @@ function DeliveryCard({ commande, motifs, onUpdate }: DeliveryCardProps) {
             </div>
           )}
 
-          {/* GPS info */}
+          {/* GPS : guidage (navigation) + voir position */}
           {commande.gpsLat && commande.gpsLng && (
-            <a
-              href={`https://maps.google.com/maps?q=${commande.gpsLat},${commande.gpsLng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => {
-                // Force new tab by creating and clicking a link (avoids iframe sandbox block)
-                e.preventDefault()
-                const link = document.createElement("a")
-                link.href = `https://maps.google.com/maps?q=${commande.gpsLat},${commande.gpsLng}`
-                link.target = "_blank"
-                link.rel = "noopener noreferrer"
-                document.body.appendChild(link)
-                link.click()
-                document.body.removeChild(link)
-              }}
-              className="flex items-center gap-2 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
-            >
-              <Icon d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" className="w-4 h-4" />
-              Ouvrir dans Maps
-            </a>
+            <div className="flex gap-2">
+              <button
+                onClick={() => openNewTab(`https://www.google.com/maps/dir/?api=1&destination=${commande.gpsLat},${commande.gpsLng}&travelmode=driving`)}
+                className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+              >
+                <Icon d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" className="w-4 h-4" />
+                Naviguer
+              </button>
+              <button
+                onClick={() => openNewTab(`https://maps.google.com/maps?q=${commande.gpsLat},${commande.gpsLng}`)}
+                className="flex items-center gap-2 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
+              >
+                <Icon d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" className="w-4 h-4" />
+                Voir
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -267,26 +270,39 @@ export default function MobileLogistique({ user }: Props) {
         attribution: "© OpenStreetMap contributors",
       }).addTo(map)
 
-      const icon = L.divIcon({
-        html: `<div style="background:#0891b2;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
+      const numberedIcon = (n: number, delivered: boolean) => L.divIcon({
+        html: `<div style="background:${delivered ? "#16a34a" : "#0891b2"};color:#fff;width:22px;height:22px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${n}</div>`,
         className: "",
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
       })
 
-      const deliveredIcon = L.divIcon({
-        html: `<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
-        className: "",
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
-      })
+      // Ordonne le circuit : séquence du trip si dispo, sinon par heure de livraison
+      const withGps = store.getCommandes().filter(c => c.gpsLat && c.gpsLng)
+      const order = new Map((activeTrip?.commandeIds ?? []).map((id, i) => [id, i]))
+      const ordered = [...withGps].sort((a, b) =>
+        (order.has(a.id) || order.has(b.id))
+          ? (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999)
+          : String(a.heurelivraison ?? "").localeCompare(String(b.heurelivraison ?? ""))
+      )
 
-      store.getCommandes().filter(c => c.gpsLat && c.gpsLng).forEach(c => {
+      const routePts: [number, number][] = []
+      const allPts: [number, number][] = []
+      ordered.forEach((c, i) => {
         const bl = store.getBonsLivraison().find(b => b.commandeId === c.id)
-        L.marker([c.gpsLat, c.gpsLng], { icon: bl?.statutLivraison === "livre" ? deliveredIcon : icon })
+        const delivered = bl?.statutLivraison === "livre"
+        allPts.push([c.gpsLat, c.gpsLng])
+        if (!delivered) routePts.push([c.gpsLat, c.gpsLng])
+        L.marker([c.gpsLat, c.gpsLng], { icon: numberedIcon(i + 1, delivered) })
           .addTo(map)
-          .bindPopup(`<b>${c.clientNom}</b><br>${c.statut}<br>${c.heurelivraison}`)
+          .bindPopup(`<b>${i + 1}. ${c.clientNom}</b><br>${c.statut}<br>${c.heurelivraison ?? ""}`)
       })
+
+      // Tracé du circuit (arrêts restants, dans l'ordre)
+      if (routePts.length >= 2) {
+        L.polyline(routePts, { color: "#0891b2", weight: 3, opacity: 0.7, dashArray: "6,8" }).addTo(map)
+      }
+      if (allPts.length) map.fitBounds(allPts, { padding: [30, 30] })
 
       leafletMapRef.current = map
       setMapLoaded(true)
