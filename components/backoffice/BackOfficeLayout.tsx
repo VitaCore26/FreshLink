@@ -112,6 +112,7 @@ const BOTemplateEditor       = dynamic(() => import("./BOTemplateEditor"),      
 const BOInvestissement       = dynamic(() => import("./BOInvestissement"),       { ssr: false, loading: L("Chargement dossier investisseur...") })
 const BOInvestisseurDashboard = dynamic(() => import("./BOInvestisseurDashboard"), { ssr: false, loading: L("Chargement dashboard investisseur...") })
 const MessagerieChannel      = dynamic(() => import("../MessagerieChannel"),       { ssr: false, loading: L("Chargement messagerie...") })
+const CallCenter             = dynamic(() => import("../CallCenter"),               { ssr: false })
 const BOFinanceControlGestion  = dynamic(() => import("./BOFinanceControlGestion"),  { ssr: false, loading: L("Chargement finance...") })
 const BOSourcing             = dynamic(() => import("./BOSourcing"),             { ssr: false, loading: L("Chargement sourcing...") })
 const BOPricing              = dynamic(() => import("./BOPricing"),              { ssr: false, loading: L("Chargement releve prix...") })
@@ -895,6 +896,9 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
             </PanelErrorBoundary>
           </div>
         </main>
+
+        {/* Appels audio in-app (WebRTC) — sonne quel que soit l'onglet ouvert */}
+        <CallCenter user={user} />
 
         {/* ── Footer ─────────────────────────────────────── */}
         <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-2 flex items-center justify-between gap-4 flex-wrap">

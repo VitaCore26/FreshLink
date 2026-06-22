@@ -35,7 +35,10 @@ export default function MessagerieChannel({ user, compact = false }: { user: Use
   const [text, setText] = useState("")
   const [aud, setAud] = useState<string>("tous")
   const [sending, setSending] = useState(false)
+  const [callPick, setCallPick] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+
+  const contacts = callPick ? store.getUsers().filter(u => u.id !== user.id && u.actif !== false) : []
 
   const load = () => {
     const all = store.getMessages()
@@ -80,8 +83,27 @@ export default function MessagerieChannel({ user, compact = false }: { user: Use
           <p className="font-bold text-slate-900 text-sm">💬 Messagerie d'équipe</p>
           <p className="text-[11px] text-slate-400">Livreurs · commerciaux · logistique · responsables · clients</p>
         </div>
-        <button onClick={load} className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100">↻ Actualiser</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCallPick(v => !v)} className="text-xs font-semibold text-emerald-700 px-2 py-1 rounded-lg hover:bg-emerald-50">📞 Appeler</button>
+          <button onClick={load} className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100">↻ Actualiser</button>
+        </div>
       </div>
+      {callPick && (
+        <div className="px-3 py-2 border-b border-slate-200 bg-white max-h-44 overflow-y-auto">
+          <p className="text-[11px] text-slate-400 mb-1">Appel audio dans l'ERP (sans WhatsApp) :</p>
+          <div className="flex flex-col gap-1">
+            {contacts.length === 0 && <span className="text-xs text-slate-400">Aucun contact disponible.</span>}
+            {contacts.map(c => (
+              <button key={c.id}
+                onClick={() => { setCallPick(false); window.dispatchEvent(new CustomEvent("fl-call-start", { detail: { id: c.id, name: c.name } })) }}
+                className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-emerald-50 text-sm">
+                <span className="truncate">{c.name} <span className="text-[11px] text-slate-400">· {String(c.role)}</span></span>
+                <span className="text-emerald-600">📞</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 bg-slate-50/40">
         {msgs.length === 0 && (

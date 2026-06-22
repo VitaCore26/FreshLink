@@ -7,6 +7,7 @@ import MobileAchat from "./MobileAchat"
 import MobileCommercial from "./MobileCommercial"
 import MobileLogistique from "./MobileLogistique"
 import MessagerieChannel from "../MessagerieChannel"
+import CallCenter from "../CallCenter"
 import MobileObjectifs from "./MobileObjectifs"
 import MobilePreparation from "./MobilePreparation"
 import MobileControlAchat from "./MobileControlAchat"
@@ -217,6 +218,9 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
         {resolvedTab === "fournisseur_portail" && <MobileFournisseurPortail user={user} />}
         {resolvedTab === "messages"            && <div className="p-3"><MessagerieChannel user={user} compact /></div>}
       </main>
+
+      {/* Appels audio in-app (WebRTC) — sonne quel que soit l'écran */}
+      <CallCenter user={user} />
 
       {/* ── Bottom nav ──────────────────────────────────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 w-full z-40 mobile-nav-safe bg-white border-t border-slate-200"
