@@ -1,7 +1,16 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { store } from "@/lib/store"
+import { store, type CutoffNotification, type UserRole, type User } from "@/lib/store"
+
+// Rôles proposés pour cibler une étape (horaire) — les plus opérationnels
+const CUTOFF_ROLES: { v: UserRole; l: string }[] = [
+  { v: "acheteur", l: "Acheteur" }, { v: "resp_achat", l: "Resp. Achat" },
+  { v: "prevendeur", l: "Prévendeur" }, { v: "resp_commercial", l: "Resp. Commercial" },
+  { v: "magasinier", l: "Magasinier" }, { v: "dispatcheur", l: "Dispatcheur" },
+  { v: "resp_logistique", l: "Resp. Logistique" }, { v: "livreur", l: "Livreur" },
+  { v: "admin", l: "Admin" },
+]
 
 // ══════════════════════════════════════════════════════════════════
 //  BOCutoffs — Centre de régulation des flux (Section 4)
@@ -53,6 +62,26 @@ export default function BOCutoffs({ currentUserId }: { currentUserId?: string })
   const [error, setError] = useState("")
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
+
+  // ── Horaires & tâches de l'équipe (notifications cut-off temporisées) ──────
+  const [timed, setTimed] = useState<CutoffNotification[]>([])
+  const [team, setTeam] = useState<User[]>([])
+  const [timedSaved, setTimedSaved] = useState(false)
+  useEffect(() => {
+    try { setTimed(store.getCutoffs()); setTeam(store.getUsers().filter(u => u.actif && !["client", "fournisseur"].includes(u.role))) } catch { /* noop */ }
+  }, [])
+  const persistTimed = (next: CutoffNotification[]) => {
+    setTimed(next)
+    try { store.saveCutoffs(next); setTimedSaved(true); setTimeout(() => setTimedSaved(false), 1800) } catch { /* noop */ }
+  }
+  const patchTimed = (id: string, patch: Partial<CutoffNotification>) => persistTimed(timed.map(c => c.id === id ? { ...c, ...patch } : c))
+  const toggleTimedRole = (id: string, role: UserRole) => {
+    const c = timed.find(x => x.id === id); if (!c) return
+    const roles = c.roles.includes(role) ? c.roles.filter(r => r !== role) : [...c.roles, role]
+    patchTimed(id, { roles })
+  }
+  const addTimed = () => persistTimed([...timed, { id: `co_${Date.now().toString(36)}`, label: "Nouvelle étape", time: "08:00", message: "", active: true, roles: [], tache: "", assignedUserIds: [] }])
+  const removeTimed = (id: string) => { if (window.confirm("Supprimer cette étape horaire ?")) persistTimed(timed.filter(c => c.id !== id)) }
 
   // Formulaire de création
   const [form, setForm] = useState({
@@ -212,6 +241,62 @@ export default function BOCutoffs({ currentUserId }: { currentUserId?: string })
           <button onClick={saveSeuil} className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">Enregistrer</button>
           {seuilSaved && <span className="text-xs font-semibold text-emerald-600 self-center">✓ Enregistré</span>}
         </div>
+      </div>
+
+      {/* ── Horaires & tâches de l'équipe (notifications temporisées) ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col gap-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">⏰ Horaires & tâches de l&apos;équipe</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">Chaque étape déclenche une notification (téléphone) à l&apos;heure, pour les rôles/personnes ciblés, avec la tâche à faire.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {timedSaved && <span className="text-xs font-semibold text-emerald-600">✓ Enregistré</span>}
+            <button onClick={addTimed} className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">➕ Ajouter une étape</button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {[...timed].sort((a, b) => (a.time || "").localeCompare(b.time || "")).map(c => (
+            <div key={c.id} className={`rounded-xl border p-3 flex flex-col gap-2 ${c.active ? "border-slate-200 bg-slate-50/60" : "border-slate-100 bg-white opacity-70"}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input type="time" value={c.time} onChange={e => patchTimed(c.id, { time: e.target.value })}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-bold bg-white w-28" />
+                <input value={c.label ?? ""} onChange={e => patchTimed(c.id, { label: e.target.value })}
+                  placeholder="Nom de l'étape" className="flex-1 min-w-[140px] px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold bg-white" />
+                <button onClick={() => patchTimed(c.id, { active: !c.active })}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${c.active ? "bg-emerald-500" : "bg-slate-300"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${c.active ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+                <button onClick={() => removeTimed(c.id)} className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 text-sm">🗑️</button>
+              </div>
+              <input value={c.tache ?? ""} onChange={e => patchTimed(c.id, { tache: e.target.value })}
+                placeholder="Tâche à accomplir (ex : clôturer les achats légumes, charger le camion 1…)"
+                className="px-2 py-1.5 rounded-lg border border-slate-200 text-sm bg-white" />
+              {/* Rôles ciblés */}
+              <div className="flex flex-wrap gap-1.5">
+                {CUTOFF_ROLES.map(r => (
+                  <button key={r.v} onClick={() => toggleTimedRole(c.id, r.v)}
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold border transition-colors ${c.roles.includes(r.v) ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-emerald-300"}`}>
+                    {r.l}
+                  </button>
+                ))}
+              </div>
+              {/* Personnes nommément assignées */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-500">Personnes :</span>
+                <select multiple value={c.assignedUserIds ?? []}
+                  onChange={e => patchTimed(c.id, { assignedUserIds: Array.from(e.target.selectedOptions).map(o => o.value) })}
+                  className="flex-1 min-w-[180px] px-2 py-1 rounded-lg border border-slate-200 text-xs bg-white max-h-20">
+                  {team.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                </select>
+                {(c.assignedUserIds?.length ?? 0) > 0 && <span className="text-[10px] text-emerald-600 font-semibold">{c.assignedUserIds!.length} assigné(s)</span>}
+              </div>
+            </div>
+          ))}
+          {timed.length === 0 && <p className="text-xs text-slate-400 py-2">Aucune étape configurée. Cliquez « Ajouter une étape ».</p>}
+        </div>
+        <p className="text-[10px] text-slate-400">💡 Maintenir Ctrl/Cmd pour sélectionner plusieurs personnes. Les notifications partent sur le téléphone de chaque personne ciblée (app ouverte).</p>
       </div>
 
       {/* ── Toggle ultra-rapide par cible ── */}

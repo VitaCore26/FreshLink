@@ -3353,6 +3353,8 @@ export interface CutoffNotification {
   message: string
   active: boolean
   roles: UserRole[]
+  tache?: string        // tâche à accomplir à cette heure (affichée dans la notif)
+  assignedUserIds?: string[]  // personnes nommément assignées (en + des rôles)
 }
 
 // Seuil d'alerte tonnage : si le tonnage commandé du jour dépasse ce seuil,

@@ -57,14 +57,18 @@ export default function CutoffNotifier({ user }: { user: User }) {
       let cutoffs: ReturnType<typeof store.getCutoffs> = []
       try { cutoffs = store.getCutoffs() } catch { return }
       for (const c of cutoffs) {
-        if (!c.active || !Array.isArray(c.roles) || !c.roles.includes(user.role)) continue
+        // Ciblé si mon rôle est dans les rôles OU si je suis nommément assigné
+        const assigned = Array.isArray(c.assignedUserIds) && c.assignedUserIds.includes(user.id)
+        const byRole = Array.isArray(c.roles) && c.roles.includes(user.role)
+        if (!c.active || (!byRole && !assigned)) continue
         const cutMin = toMin(c.time)
         const delta = nowMin - cutMin
         // Atteint l'heure (ou jusqu'à FIRE_WINDOW_MIN après) et pas déjà notifié aujourd'hui
         if (delta >= 0 && delta <= FIRE_WINDOW_MIN && !localStorage.getItem(firedKey(c.id))) {
           localStorage.setItem(firedKey(c.id), "1")
           const titre = c.label ? `⏰ ${c.label} (${c.time})` : `⏰ Cut-off ${c.time}`
-          void showNotif(`${titre} — Vita Fresh`, c.message, `fl-cutoff-${c.id}`)
+          const corps = c.tache ? `📋 ${c.tache}${c.message ? `\n${c.message}` : ""}` : c.message
+          void showNotif(`${titre} — Vita Fresh`, corps, `fl-cutoff-${c.id}`)
         }
       }
 
