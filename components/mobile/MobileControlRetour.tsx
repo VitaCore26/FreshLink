@@ -56,6 +56,26 @@ export default function MobileControlRetour({ user }: Props) {
 
   useEffect(() => { setRetours(getRetours()) }, [])
 
+  // ── Listes déroulantes : clients livrés + articles livrés au client ──────────
+  const clients = useState(() => store.getClients().map(c => c.nom).filter(Boolean).sort((a, b) => a.localeCompare(b, "fr")))[0]
+  // Map nom client (normalisé) → articles qui lui ont été livrés/commandés
+  const articlesParClient = useState(() => {
+    const norm = (s: string) => String(s ?? "").toLowerCase().trim()
+    const m: Record<string, Set<string>> = {}
+    const add = (client: string, art: string) => { if (!client || !art) return; const k = norm(client); (m[k] ??= new Set()).add(art) }
+    try { store.getCommandes().forEach(c => (c.lignes ?? []).forEach(l => add(c.clientNom, l.articleNom))) } catch { /* noop */ }
+    try { store.getBonsLivraison().forEach((b: { clientNom?: string; lignes?: { articleNom?: string }[] }) => (b.lignes ?? []).forEach(l => add(b.clientNom ?? "", l.articleNom ?? ""))) } catch { /* noop */ }
+    const out: Record<string, string[]> = {}
+    Object.entries(m).forEach(([k, set]) => { out[k] = [...set].sort((a, b) => a.localeCompare(b, "fr")) })
+    return out
+  })[0]
+  const allArticles = useState(() => store.getArticles().map(a => a.nom).filter(Boolean).sort((a, b) => a.localeCompare(b, "fr")))[0]
+  const articleOptions = (() => {
+    const k = (form.clientNom ?? "").toLowerCase().trim()
+    const forClient = k ? articlesParClient[k] : undefined
+    return forClient && forClient.length ? forClient : allArticles
+  })()
+
   function addRetour() {
     if (!form.articleNom || !form.qteRetour) return
     const item: RetourItem = {

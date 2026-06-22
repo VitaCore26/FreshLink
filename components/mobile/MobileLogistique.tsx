@@ -476,7 +476,7 @@ export default function MobileLogistique({ user }: Props) {
           { id: "validation", label: "Validation", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z", roles: null },
           { id: "trip",       label: "Tournée",    icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4", roles: null },
           { id: "map",        label: "Carte GPS",  icon: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7", roles: null },
-          { id: "reception",  label: "Reception",  icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", roles: ["magasinier", "resp_logistique", "admin", "super_admin"] },
+          { id: "reception",  label: "Reception",  icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", roles: ["magasinier", "resp_logistique", "admin", "super_admin", "super_super_admin"] },
         ] as const)
           .filter(t => !t.roles || (t.roles as readonly string[]).includes(user.role))
           .map(t => (

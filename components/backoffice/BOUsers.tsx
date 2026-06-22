@@ -410,7 +410,7 @@ const ALL_ROLES: UserRole[] = [
 
 // User grade display categories for the list
 const USER_GRADE_CATEGORIES = [
-  { id: "direction", label: "🏆 Direction & Admin", labelAr: "الإدارة", roles: ["super_admin", "admin"] },
+  { id: "direction", label: "🏆 Direction & Admin", labelAr: "الإدارة", roles: ["super_super_admin", "super_admin", "admin"] },
   { id: "directeurs", label: "👔 Directeurs & Managers", labelAr: "المديرون", roles: ["resp_commercial", "team_leader", "resp_logistique", "resp_achat"] },
   { id: "finance", label: "💰 Finance & Comptabilité", labelAr: "المالية", roles: ["financier", "cash_man", "comptable", "charge_recouvrement"] },
   { id: "rh", label: "👥 RH & Administration", labelAr: "الموارد البشرية", roles: ["rh_manager", "auditeur", "it_admin"] },
@@ -846,7 +846,7 @@ function PermissionsTabs({
 }) {
   // Only super_super_admin (Jawad) is immutable — super_admin can have perms configured
   const isFullAccessRole = form.role === "super_super_admin"
-  const isSuperAdminRole = form.role === "super_admin" || form.role === "admin"
+  const isSuperAdminRole = form.role === "super_admin" || form.role === "admin" || form.role === "super_super_admin"
 
   const handleToggleAll = (on: boolean) => {
     const update: Partial<Omit<User, "id">> = {}
