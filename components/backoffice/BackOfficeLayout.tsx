@@ -434,7 +434,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   articles:          (u) => <BOArticles user={u} />,
   finance:           (u) => <BOFinance user={u} />,
   whatsapp:          (u) => <BOWhatsApp user={u} />,
-  cash:              (_u) => <BOCash />,
+  cash:              (u) => <BOCash user={u} />,
   recap:             (_u) => <BORecap />,
   users:             (u) => <BOUsers currentUser={u} />,
   depots:            (u) => <BODepots user={u} />,

@@ -1716,6 +1716,20 @@ export function getAllSecteurs(usedSecteurs: string[] = []): string[] {
   return [...set]
 }
 
+// ── Verrou d'édition (anti-falsification des pièces : BL, factures) ───────────
+// super_super_admin : toujours autorisé. Sinon :
+//  • date seule "YYYY-MM-DD" → éditable uniquement le jour même
+//  • horodatage ISO complet  → éditable dans la fenêtre (défaut 30 min)
+export function canEditRecord(dateOrIso: string | undefined, user: User, windowMin = 30): boolean {
+  if (isSuperSuperAdmin(user)) return true
+  if (!dateOrIso) return false
+  const s = String(dateOrIso)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s === new Date().toISOString().slice(0, 10)
+  const t = new Date(s).getTime()
+  if (isNaN(t)) return false
+  return (Date.now() - t) <= windowMin * 60_000
+}
+
 export function isMobileRole(role: UserRole): boolean {
   return ["prevendeur", "resp_logistique", "magasinier", "dispatcheur", "livreur", "acheteur", "ctrl_achat", "ctrl_prep", "client", "fournisseur", "chef_depot", "suivi_commande"].includes(role)
 }

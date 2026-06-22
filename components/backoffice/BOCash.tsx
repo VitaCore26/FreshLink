@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type BonLivraison, DEFAULT_CAISSE_PRICING, type CaissePricing, DEFAULT_FRAIS_BL, type FraisBlConfig } from "@/lib/store"
+import { store, type BonLivraison, type User, DEFAULT_CAISSE_PRICING, type CaissePricing, DEFAULT_FRAIS_BL, type FraisBlConfig, canEditRecord } from "@/lib/store"
 import { printBL, printFacture as printFactureLib } from "@/lib/print"
 
 // ── FMT ──────────────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ interface FactInvoice {
   lignes?: FactLigne[]
 }
 
-export default function BOCash() {
+export default function BOCash({ user }: { user: User }) {
   const [bls, setBls] = useState<BonLivraison[]>([])
   const [filter, setFilter] = useState({ date: store.today(), livreur: "", secteur: "", prevendeur: "", client: "" })
   const [selected, setSelected] = useState<BonLivraison | null>(null)
@@ -386,6 +386,7 @@ export default function BOCash() {
     const all = store.getBonsLivraison()
     const idx = all.findIndex(b => b.id === id)
     if (idx < 0) return
+    if (!canEditRecord(all[idx].date, user)) { setEditingCaisseId(null); return }   // verrou édition
     const pricing = store.getCaissePricing()
     all[idx] = {
       ...all[idx],
@@ -676,8 +677,10 @@ export default function BOCash() {
                         </div>
                       ) : (
                         <button
-                          onClick={() => { setEditingCaisseId(bl.id); setEditCaisseGros(String(bl.nbCaisseGros ?? 0)); setEditCaisseDemi(String(bl.nbCaisseDemi ?? 0)) }}
-                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                          onClick={() => { if (!canEditRecord(bl.date, user)) return; setEditingCaisseId(bl.id); setEditCaisseGros(String(bl.nbCaisseGros ?? 0)); setEditCaisseDemi(String(bl.nbCaisseDemi ?? 0)) }}
+                          disabled={!canEditRecord(bl.date, user)}
+                          title={canEditRecord(bl.date, user) ? "Modifier les caisses" : "🔒 Verrouillé — BL antérieur, modification réservée au super_super_admin"}
+                          className={`flex items-center gap-1.5 text-xs transition-colors ${canEditRecord(bl.date, user) ? "text-muted-foreground hover:text-foreground" : "opacity-60 cursor-not-allowed"}`}>
                           {(bl.nbCaisseGros ?? 0) > 0 || (bl.nbCaisseDemi ?? 0) > 0 ? (
                             <span className="font-semibold text-amber-700">
                               {bl.nbCaisseGros ?? 0}G + {bl.nbCaisseDemi ?? 0}D
