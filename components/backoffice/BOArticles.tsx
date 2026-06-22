@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type Article, type HistoriquePrixAchat, FAMILLES_ARTICLES, FAMILLE_GROUPES } from "@/lib/store"
+import { store, type Article, type HistoriquePrixAchat, FAMILLE_GROUPES, getAllFamilles, addCustomFamille } from "@/lib/store"
 import { createClient, uploadToStorage, getStorageUrl } from "@/lib/supabase/client"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 import { getArticlePhoto } from "@/lib/articlePhotos"
@@ -51,6 +51,17 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncAllDone, setSyncAllDone] = useState(false)
   const [reloadingFromSb, setReloadingFromSb] = useState(false)
+  const [familleTick, setFamilleTick] = useState(0)   // force re-render après ajout d'une famille
+
+  // Toutes les familles (prédéfinies + perso + utilisées) pour les listes déroulantes
+  const familleOptions = (() => { void familleTick; return getAllFamilles(articles.map(a => a.famille)) })()
+  const promptNewFamille = (apply: (nom: string) => void) => {
+    const nom = window.prompt("Nom de la nouvelle famille :")?.trim()
+    if (!nom) return
+    addCustomFamille(nom)
+    setFamilleTick(t => t + 1)
+    apply(nom)
+  }
 
   const EMPTY_FORM: Omit<Article, "id"> = {
     nom: "", nomAr: "", famille: "Légumes fruits", unite: "kg",
@@ -315,7 +326,7 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
     count: articles.filter(a => familles.includes(a.famille)).length,
   }))
 
-  const byFamille = FAMILLES_ARTICLES.map(f => ({
+  const byFamille = familleOptions.map(f => ({
     famille: f,
     count: articles.filter(a => a.famille === f).length,
   })).filter(f => f.count > 0)
@@ -343,6 +354,17 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
   }
 
   const reloadCaisses = () => setCaisses(store.getCaissesVides())
+
+  // Réassigne en masse les articles sélectionnés à une famille (refonte d'assignation)
+  const bulkReassignFamille = (fam: string) => {
+    if (!fam || selectedArticleIds.size === 0) return
+    const all = store.getArticles().map(a => selectedArticleIds.has(a.id) ? { ...a, famille: fam } : a)
+    store.saveArticles(all); setArticles(all)
+    import("@/lib/supabase/db").then(db => {
+      all.filter(a => selectedArticleIds.has(a.id)).forEach(a => { try { db.upsertArticle(a) } catch { /* offline */ } })
+    }).catch(() => {})
+    setSelectedArticleIds(new Set())
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -627,6 +649,18 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
               <button onClick={() => setConfirmResetDefect(false)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted">Annuler</button>
             </div>
           )}
+          {/* Réassignation famille en masse */}
+          <div className="flex items-center gap-1">
+            <select defaultValue="" onChange={e => { bulkReassignFamille(e.target.value); e.target.value = "" }}
+              title="Déplacer les articles sélectionnés vers une famille"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-blue-300 bg-white text-blue-800">
+              <option value="">📁 Déplacer vers famille…</option>
+              {familleOptions.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <button type="button" onClick={() => promptNewFamille(nom => bulkReassignFamille(nom))}
+              title="Créer une famille et y déplacer la sélection"
+              className="px-2 py-1.5 rounded-lg text-xs font-bold border border-blue-300 text-blue-700 hover:bg-blue-100">➕</button>
+          </div>
           <button onClick={() => setSelectedArticleIds(new Set())} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-300 hover:bg-blue-100 transition-colors">
             Deselectionner tout
           </button>
@@ -727,10 +761,15 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold">Famille</label>
-              <select value={form.famille} onChange={e => setForm(f => ({ ...f, famille: e.target.value }))}
-                className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none">
-                {FAMILLES_ARTICLES.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
+              <div className="flex gap-2">
+                <select value={form.famille} onChange={e => setForm(f => ({ ...f, famille: e.target.value }))}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none">
+                  {familleOptions.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                <button type="button" onClick={() => promptNewFamille(nom => setForm(f => ({ ...f, famille: nom })))}
+                  title="Créer une nouvelle famille"
+                  className="px-3 py-2.5 rounded-xl border border-primary/30 text-primary text-sm font-bold hover:bg-primary/5">➕</button>
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold">Unite de base / وحدة القياس</label>

@@ -140,6 +140,17 @@ export default function MobileControlRetour({ user }: Props) {
   const waitingLog   = retours.filter(r => r.statut === "valide_commercial")
   const done         = retours.filter(r => ["valide_logistique","rejete"].includes(r.statut))
 
+  // ── Listes déroulantes : clients livrés + articles livrés à CE client ───────
+  const clientsList = store.getClients().slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
+  const articlesForClient: string[] = (() => {
+    const all = store.getArticles().map(a => a.nom)
+    if (!form.clientNom) return all
+    const names = new Set<string>()
+    store.getBonsLivraison().filter(b => b.clientNom === form.clientNom).forEach(b => (b.lignes ?? []).forEach(l => { if (l.articleNom) names.add(l.articleNom) }))
+    store.getCommandes().filter(c => c.clientNom === form.clientNom).forEach(c => (c.lignes ?? []).forEach(l => { if (l.articleNom) names.add(l.articleNom) }))
+    return names.size ? [...names].sort((a, b) => a.localeCompare(b, "fr")) : all
+  })()
+
   const statusBadge = (s: RetourItem["statut"]) => {
     if (s === "en_attente")        return "bg-amber-100 text-amber-800 border-amber-300"
     if (s === "valide_commercial") return "bg-blue-100 text-blue-800 border-blue-300"
@@ -203,12 +214,16 @@ export default function MobileControlRetour({ user }: Props) {
         <div className="flex flex-col gap-4">
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-3">
             <p className="text-sm font-bold text-foreground">Nouveau retour livreur</p>
-            <input type="text" value={form.clientNom} onChange={e=>setForm(f=>({...f,clientNom:e.target.value}))}
-              placeholder="Nom du client"
-              className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-            <input type="text" value={form.articleNom} onChange={e=>setForm(f=>({...f,articleNom:e.target.value}))}
-              placeholder="Article retourne"
-              className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <select value={form.clientNom} onChange={e=>setForm(f=>({...f,clientNom:e.target.value,articleNom:""}))}
+              className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+              <option value="">— Choisir le client à livrer —</option>
+              {clientsList.map(c => <option key={c.id} value={c.nom}>{c.nom}</option>)}
+            </select>
+            <select value={form.articleNom} onChange={e=>setForm(f=>({...f,articleNom:e.target.value}))}
+              className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+              <option value="">— Choisir l&apos;article{form.clientNom ? " livré à ce client" : ""} —</option>
+              {articlesForClient.map(nom => <option key={nom} value={nom}>{nom}</option>)}
+            </select>
             <div className="flex gap-2">
               <input type="number" value={form.qteRetour} onChange={e=>setForm(f=>({...f,qteRetour:e.target.value}))}
                 placeholder="Quantite"

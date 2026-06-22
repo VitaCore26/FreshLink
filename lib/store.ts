@@ -1656,6 +1656,34 @@ export function getFamilleGroupe(famille: string): string {
   return "Autres"
 }
 
+// ── Familles personnalisées (créées par l'utilisateur) ─────────────────────────
+const LS_FAMILLES_CUSTOM = "fl_familles_custom"
+export function getCustomFamilles(): string[] {
+  if (typeof window === "undefined") return []
+  try { return JSON.parse(localStorage.getItem(LS_FAMILLES_CUSTOM) ?? "[]") } catch { return [] }
+}
+/** Ajoute une famille perso (si pas déjà présente, insensible à la casse) → liste à jour */
+export function addCustomFamille(nom: string): string[] {
+  const f = String(nom ?? "").trim()
+  const cur = getCustomFamilles()
+  if (!f) return cur
+  const exists = [...FAMILLES_ARTICLES, ...cur].some(x => x.toLowerCase() === f.toLowerCase())
+  if (exists) return cur
+  const next = [...cur, f]
+  try { localStorage.setItem(LS_FAMILLES_CUSTOM, JSON.stringify(next)) } catch { /* noop */ }
+  return next
+}
+export function removeCustomFamille(nom: string): string[] {
+  const next = getCustomFamilles().filter(x => x !== nom)
+  try { localStorage.setItem(LS_FAMILLES_CUSTOM, JSON.stringify(next)) } catch { /* noop */ }
+  return next
+}
+/** Toutes les familles : prédéfinies + perso + celles déjà utilisées par des articles */
+export function getAllFamilles(usedFamilles: string[] = []): string[] {
+  const set = new Set<string>([...FAMILLES_ARTICLES, ...getCustomFamilles(), ...usedFamilles.filter(Boolean)])
+  return [...set]
+}
+
 export function isMobileRole(role: UserRole): boolean {
   return ["prevendeur", "resp_logistique", "magasinier", "dispatcheur", "livreur", "acheteur", "ctrl_achat", "ctrl_prep", "client", "fournisseur", "chef_depot", "suivi_commande"].includes(role)
 }
