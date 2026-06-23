@@ -170,8 +170,12 @@ export default function MobileControlAchat({ user }: Props) {
     ))
   }
 
+  // Camera contrôle achat désactivable depuis BO Settings → Process → Achat
+  // ("Contrôle achat" / cameraControlAchat) — défaut activé si jamais réglé.
+  const photoRequise = store.getProcessConfig().cameraControlAchat !== false
+
   const allQtyFilled = entries.length > 0 && entries.every(e => e.qteScannee !== "")
-  const allPhotosTaken = entries.every(e => e.photos.length >= 1)
+  const allPhotosTaken = !photoRequise || entries.every(e => e.photos.length >= 1)
   const canSubmit = allQtyFilled && allPhotosTaken
   const anomalies = entries.filter(e => e.conforme === false)
   const conformes = entries.filter(e => e.conforme === true)
@@ -297,7 +301,7 @@ export default function MobileControlAchat({ user }: Props) {
       <div>
         <h2 className="text-lg font-bold text-foreground">Controle Chargement Marche</h2>
         <p className="text-sm text-muted-foreground">
-          Quantites + photo obligatoire par article — {store.today()}
+          Quantites{photoRequise ? " + photo obligatoire" : ""} par article — {store.today()}
         </p>
       </div>
 
@@ -331,7 +335,7 @@ export default function MobileControlAchat({ user }: Props) {
             {[
               { label: "A controler", val: entries.length, bg: "bg-blue-50 border-blue-200", txt: "text-blue-800" },
               { label: "Qty OK", val: entries.filter(e=>e.qteScannee!=="").length, bg: "bg-green-50 border-green-200", txt: "text-green-800" },
-              { label: "Photos OK", val: entries.filter(e=>e.photos.length>=1).length, bg: "bg-purple-50 border-purple-200", txt: "text-purple-800" },
+              ...(photoRequise ? [{ label: "Photos OK", val: entries.filter(e=>e.photos.length>=1).length, bg: "bg-purple-50 border-purple-200", txt: "text-purple-800" }] : []),
               { label: "Anomalies", val: anomalies.length, bg: "bg-red-50 border-red-200", txt: "text-red-800" },
             ].map(s => (
               <div key={s.label} className={`flex-1 min-w-0 border rounded-xl px-2 py-2 text-center ${s.bg}`}>
@@ -352,7 +356,7 @@ export default function MobileControlAchat({ user }: Props) {
               return (
                 <div key={e.articleId}
                   className={`rounded-2xl border p-4 flex flex-col gap-3 transition-colors ${
-                    e.conforme === true && hasPhoto ? "border-green-300 bg-green-50" :
+                    e.conforme === true && (!photoRequise || hasPhoto) ? "border-green-300 bg-green-50" :
                     e.conforme === false ? "border-red-300 bg-red-50" :
                     "border-border bg-card"
                   }`}>
@@ -387,36 +391,38 @@ export default function MobileControlAchat({ user }: Props) {
                     </div>
                   </div>
 
-                  {/* Photo section */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-semibold ${hasPhoto ? "text-purple-700" : "text-red-600"}`}>
-                        {hasPhoto ? `${e.photos.length} photo(s)` : "Photo obligatoire — aucune prise"}
-                      </span>
-                      <button onClick={() => openCamera(e.articleId)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-opacity ${hasPhoto ? "opacity-80" : ""}`}
-                        style={{ background: hasPhoto ? "oklch(0.5 0.18 300)" : "oklch(0.45 0.2 25)" }}>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {hasPhoto ? "Ajouter photo" : "Prendre photo"}
-                      </button>
-                    </div>
-                    {e.photos.length > 0 && (
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {e.photos.map((p, i) => (
-                          <div key={i} className="relative shrink-0">
-                            <img src={p} alt={`Caisse ${i+1}`} className="h-20 w-20 rounded-xl object-cover border-2 border-purple-300" />
-                            <button onClick={() => removePhoto(e.articleId, i)}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">
-                              x
-                            </button>
-                          </div>
-                        ))}
+                  {/* Photo section — masquee si la camera Controle Achat est desactivee (BO Settings) */}
+                  {photoRequise && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-semibold ${hasPhoto ? "text-purple-700" : "text-red-600"}`}>
+                          {hasPhoto ? `${e.photos.length} photo(s)` : "Photo obligatoire — aucune prise"}
+                        </span>
+                        <button onClick={() => openCamera(e.articleId)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-opacity ${hasPhoto ? "opacity-80" : ""}`}
+                          style={{ background: hasPhoto ? "oklch(0.5 0.18 300)" : "oklch(0.45 0.2 25)" }}>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          {hasPhoto ? "Ajouter photo" : "Prendre photo"}
+                        </button>
                       </div>
-                    )}
-                  </div>
+                      {e.photos.length > 0 && (
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {e.photos.map((p, i) => (
+                            <div key={i} className="relative shrink-0">
+                              <img src={p} alt={`Caisse ${i+1}`} className="h-20 w-20 rounded-xl object-cover border-2 border-purple-300" />
+                              <button onClick={() => removePhoto(e.articleId, i)}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">
+                                x
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Brut / Net toggle */}
                   <div className="flex items-center gap-2">
@@ -505,7 +511,7 @@ export default function MobileControlAchat({ user }: Props) {
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex flex-col gap-1">
               <p className="text-xs font-bold text-amber-800">Pour valider le controle :</p>
               {!allQtyFilled && <p className="text-xs text-amber-700">— Renseignez les quantites pour tous les articles ({entries.filter(e=>e.qteScannee==="").length} restants)</p>}
-              {!allPhotosTaken && <p className="text-xs text-amber-700">— Prenez au moins 1 photo par article ({entries.filter(e=>e.photos.length===0).length} sans photo)</p>}
+              {photoRequise && !allPhotosTaken && <p className="text-xs text-amber-700">— Prenez au moins 1 photo par article ({entries.filter(e=>e.photos.length===0).length} sans photo)</p>}
             </div>
           )}
 
@@ -520,7 +526,7 @@ export default function MobileControlAchat({ user }: Props) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
-                {canSubmit ? `Valider controle (${anomalies.length} anomalie${anomalies.length!==1?"s":""})` : "Completer quantites + photos pour valider"}
+                {canSubmit ? `Valider controle (${anomalies.length} anomalie${anomalies.length!==1?"s":""})` : `Completer quantites${photoRequise ? " + photos" : ""} pour valider`}
               </>
             )}
           </button>

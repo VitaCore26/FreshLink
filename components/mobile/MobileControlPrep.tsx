@@ -405,6 +405,10 @@ export default function MobileControlPrep({ user }: Props) {
 
   const activeTc = tripControls.find(t => t.trip.id === activeTrip)
 
+  // Camera contrôle prép. désactivable depuis BO Settings → Process → Préparation
+  // ("Contrôle préparation" / cameraControlPrep) — défaut activé si jamais réglé.
+  const photoRequise = store.getProcessConfig().cameraControlPrep !== false
+
   // ── Camera overlay ──────────────────────────────────────────────────────────
   if (cam.active && camTarget) {
     const artNom = activeTc?.lines.find(l => l.articleId === camTarget.artId)?.articleNom ?? ""
@@ -600,7 +604,7 @@ export default function MobileControlPrep({ user }: Props) {
               return (
                 <div key={line.articleId}
                   className={`rounded-2xl border p-4 flex flex-col gap-3 ${
-                    line.conforme === true && hasPhoto ? "border-green-300 bg-green-50" :
+                    line.conforme === true && (!photoRequise || hasPhoto) ? "border-green-300 bg-green-50" :
                     line.conforme === false ? "border-red-300 bg-red-50" : "border-border bg-card"
                   }`}>
                   {/* Header */}
@@ -619,7 +623,8 @@ export default function MobileControlPrep({ user }: Props) {
                     </div>
                   </div>
 
-                  {/* Photo */}
+                  {/* Photo — masquee si la camera Controle Preparation est desactivee (BO Settings) */}
+                  {photoRequise && (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className={`text-xs font-semibold ${hasPhoto ? "text-purple-700":"text-red-600"}`}>
@@ -644,6 +649,7 @@ export default function MobileControlPrep({ user }: Props) {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* Caisse suggestion */}
                   {line.unite === "kg" && line.colisageCaisses && line.colisageCaisses > 0 && (() => {
@@ -762,7 +768,7 @@ export default function MobileControlPrep({ user }: Props) {
           {/* Validation blockers */}
           {(() => {
             const allQtyOK = activeTc.lines.every(l=>l.qtePrepared!=="")
-            const allPhotosOK = activeTc.lines.every(l=>l.photos.length>=1)
+            const allPhotosOK = !photoRequise || activeTc.lines.every(l=>l.photos.length>=1)
             const allCaissesOK = activeTc.lines.every(l =>
               (Number(l.nbCaisseGros) > 0 || Number(l.nbCaisseDemi) > 0)
             )
@@ -780,7 +786,7 @@ export default function MobileControlPrep({ user }: Props) {
                       — Caisses obligatoires: {activeTc.lines.filter(l=>!(Number(l.nbCaisseGros)>0||Number(l.nbCaisseDemi)>0)).map(l=>l.articleNom).join(", ")}
                     </p>}
                     {!allQtyOK && <p className="text-xs" style={{ color: "oklch(0.65 0.14 72)" }}>— Quantites manquantes ({activeTc.lines.filter(l=>l.qtePrepared==="").length} articles)</p>}
-                    {!allPhotosOK && <p className="text-xs" style={{ color: "oklch(0.65 0.14 72)" }}>— Photos obligatoires ({activeTc.lines.filter(l=>l.photos.length===0).length} articles)</p>}
+                    {photoRequise && !allPhotosOK && <p className="text-xs" style={{ color: "oklch(0.65 0.14 72)" }}>— Photos obligatoires ({activeTc.lines.filter(l=>l.photos.length===0).length} articles)</p>}
                   </div>
                 )}
                 {caissesError && (
