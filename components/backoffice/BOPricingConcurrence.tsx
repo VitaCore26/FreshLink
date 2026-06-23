@@ -24,9 +24,16 @@ const LS_PV   = "fl_conc_pv"      // PV concurrent (catalogue — repli)
 const LS_VENTES = "fl_conc_ventes" // factures concurrent (PV réel = PU)
 const LS_PARAMS = "fl_pricing_params"
 
-// Groupes WhatsApp de diffusion (fournis par le client)
-const WA_GROUP_PV    = "https://chat.whatsapp.com/GBk6nV7wpcV1i8yMa6QprD"  // diffusion PV → force de vente
-const WA_GROUP_ALERT = "https://chat.whatsapp.com/EQWyXnilBxY4J425sXfiwl"  // alerte PA trop cher → achat
+// Groupes WhatsApp de diffusion : récupérés via /api/wa-groups (route
+// authentifiée), jamais hardcodés ici — sinon ils finiraient dans le bundle
+// JS public (_next/static n'est pas protégé par l'auth, faille #7).
+async function fetchWaGroupUrl(which: "pv" | "alert"): Promise<string> {
+  try {
+    const res = await fetch("/api/wa-groups", { cache: "no-store" })
+    const j = await res.json() as { pv?: string; alert?: string }
+    return j[which] ?? ""
+  } catch { return "" }
+}
 
 interface CompetitorEntry { sku: string; prixConcurrent: number; source?: string; date?: string }
 interface ConcPV { ref: string; libelle: string; unite: string; pv: number }
@@ -104,8 +111,10 @@ export default function BOPricingConcurrence({ user }: Props) {
   // WhatsApp groupe : les liens d'invitation ne permettent pas de pré-remplir le
   // message → on copie le texte dans le presse-papier puis on ouvre le groupe
   // pour que l'utilisateur colle (Ctrl/Cmd+V) et envoie.
-  const sendToWhatsAppGroup = (link: string, message: string) => {
+  const sendToWhatsAppGroup = async (which: "pv" | "alert", message: string) => {
     try { navigator.clipboard?.writeText(message) } catch { /* noop */ }
+    const link = await fetchWaGroupUrl(which)
+    if (!link) { flash(false, "Lien du groupe WhatsApp non configuré côté serveur."); return }
     try { window.open(link, "_blank", "noopener") } catch { /* noop */ }
   }
 
@@ -242,12 +251,12 @@ export default function BOPricingConcurrence({ user }: Props) {
     const corps = `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("💰 Nouveaux PV conseillés (imbattables)", corps, "commercial", "notice")
     // Diffusion WhatsApp → groupe force de vente
-    sendToWhatsAppGroup(WA_GROUP_PV, `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
+    await sendToWhatsAppGroup("pv", `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
     setBusy(false)
     flash(true, `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`)
   }
 
-  const alerterAchat = () => {
+  const alerterAchat = async () => {
     const cible = articles.map(computeRow).filter(r => r.alertePA)
     if (cible.length === 0) { flash(false, "Aucun écart PA défavorable détecté."); return }
     if (!window.confirm(`Envoyer une alerte à l'équipe achat pour ${cible.length} article(s) où notre PA > PA concurrent ?`)) return
@@ -255,7 +264,7 @@ export default function BOPricingConcurrence({ user }: Props) {
     const corps = `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("⚠️ PA plus cher que le concurrent", corps, "resp_achat", "reclamation")
     // Alerte WhatsApp → groupe achat
-    sendToWhatsAppGroup(WA_GROUP_ALERT, `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
+    await sendToWhatsAppGroup("alert", `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
     flash(true, `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`)
   }
 
