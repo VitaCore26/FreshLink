@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type EmailConfig, type MotifRetour, type CompanyConfig, type CompanyContacts, type WorkflowConfig, type WorkflowStep, type ContenantTare, DEFAULT_WORKFLOW_STEPS, type ProcessConfig, DEFAULT_PROCESS_CONFIG, type TransportCompany } from "@/lib/store"
+import { store, type EmailConfig, type MotifRetour, type CompanyConfig, type CompanyContacts, type WorkflowConfig, type WorkflowStep, type ContenantTare, DEFAULT_WORKFLOW_STEPS, type ProcessConfig, DEFAULT_PROCESS_CONFIG, type TransportCompany, ROLE_LABELS, type UserRole } from "@/lib/store"
 import { useRealtimeSync } from "@/lib/supabase/useRealtimeSync"
 import { seedDemoData } from "@/lib/seedData"
 // EmailJS retiré — l'envoi d'email passe par Resend (serveur, /api/send-email)
@@ -39,7 +39,7 @@ function MonCompteContent({ user, monNom, setMonNom, monPwd, setMonPwd, monPwdCo
         </div>
         <div>
           <p className="font-bold text-slate-900">{user.name}</p>
-          <p className="text-xs text-blue-700 mt-0.5">{user.role} — {user.email ?? ""}</p>
+          <p className="text-xs text-blue-700 mt-0.5">{ROLE_LABELS[user.role as UserRole] ?? user.role} — {user.email ?? ""}</p>
         </div>
       </div>
 
@@ -58,7 +58,7 @@ function MonCompteContent({ user, monNom, setMonNom, monPwd, setMonPwd, monPwdCo
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-slate-600">Rôle</label>
-          <input type="text" value={user.role} readOnly
+          <input type="text" value={ROLE_LABELS[user.role as UserRole] ?? user.role} readOnly
             className="px-3 py-2.5 border border-border rounded-xl text-sm bg-muted text-muted-foreground cursor-not-allowed" />
         </div>
       </div>

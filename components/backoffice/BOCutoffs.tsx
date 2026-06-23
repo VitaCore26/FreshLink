@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { store, type CutoffNotification, type UserRole, type User } from "@/lib/store"
+import { store, type CutoffNotification, type UserRole, type User, ROLE_LABELS } from "@/lib/store"
 
 // Rôles proposés pour cibler une étape (horaire) — les plus opérationnels
 const CUTOFF_ROLES: { v: UserRole; l: string }[] = [
@@ -288,7 +288,7 @@ export default function BOCutoffs({ currentUserId }: { currentUserId?: string })
                 <select multiple value={c.assignedUserIds ?? []}
                   onChange={e => patchTimed(c.id, { assignedUserIds: Array.from(e.target.selectedOptions).map(o => o.value) })}
                   className="flex-1 min-w-[180px] px-2 py-1 rounded-lg border border-slate-200 text-xs bg-white max-h-20">
-                  {team.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                  {team.map(u => <option key={u.id} value={u.id}>{u.name} ({ROLE_LABELS[u.role] ?? u.role})</option>)}
                 </select>
                 {(c.assignedUserIds?.length ?? 0) > 0 && <span className="text-[10px] text-emerald-600 font-semibold">{c.assignedUserIds!.length} assigné(s)</span>}
               </div>

@@ -1322,6 +1322,7 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
     const toKeep = all.filter(u => u.id === JAWAD_ID || u.role === "super_super_admin")
     const toDelete = all.filter(u => u.id !== JAWAD_ID && u.role !== "super_super_admin")
     store.saveUsers(toKeep)
+    await Promise.all(toDelete.map(u => deleteUserFromSupabase(u.id)))
     setPurgeCount(toDelete.length)
     reload()
     setShowPurge(false)

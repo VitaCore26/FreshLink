@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type BonAchat, type PurchaseOrder, type Reception, type Article, type Fournisseur, type ContenantTare } from "@/lib/store"
+import { store, type BonAchat, type PurchaseOrder, type Reception, type Article, type Fournisseur, type ContenantTare, ROLE_LABELS } from "@/lib/store"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
 type SourceTab = "bons" | "po" | "manuel" | "historique"
@@ -321,7 +321,7 @@ export default function BOReception({ user }: { user: { id: string; name: string
             La reception de marchandises est reservee exclusivement aux membres de la <strong>Logistique</strong> (Resp. Logistique, Magasinier, Dispatcheur) et aux <strong>Administrateurs</strong>.
           </p>
           <p className="text-xs text-muted-foreground mt-2 font-mono bg-muted px-3 py-1.5 rounded-lg inline-block">
-            Votre role: <strong>{user.role}</strong> — non autorise
+            Votre role: <strong>{ROLE_LABELS[user.role] ?? user.role}</strong> — non autorise
           </p>
         </div>
       </div>

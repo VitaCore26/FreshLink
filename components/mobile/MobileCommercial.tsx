@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, getAllSecteurs, VILLES_MAROC } from "@/lib/store"
+import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, getAllSecteurs, VILLES_MAROC, ROLE_LABELS } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
@@ -813,7 +813,7 @@ export default function MobileCommercial({ user }: Props) {
             }}
             className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
             {allUsers.map(u => (
-              <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+              <option key={u.id} value={u.id}>{u.name} — {ROLE_LABELS[u.role] ?? u.role}</option>
             ))}
           </select>
         </div>
