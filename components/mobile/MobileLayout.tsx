@@ -44,6 +44,7 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
   // Local user state so role-switch re-renders the layout instantly
   const [user, setUser] = useState<User>(initialUser)
   const isDemo = isDemoUser(user)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
 
   useEffect(() => {
     setIsOnline(navigator.onLine)
@@ -247,16 +248,20 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
             )
           })}
 
-          {/* Overflow "Plus" button for roles with many tabs */}
+          {/* Overflow "Plus" button for roles with many tabs — ouvre un menu
+              listant TOUS les onglets caches (l'ancienne version sautait
+              toujours vers le 1er onglet cache, rendant les suivants —
+              dont Messages, toujours en dernier — inaccessibles). */}
           {allowedTabs.length > 5 && (
             <button
-              onClick={() => {
-                const visible   = allowedTabs.slice(0, 4).map(t => t.id)
-                const nextHidden = allowedTabs.slice(4).find(t => !visible.includes(t.id))
-                if (nextHidden) setActiveTab(nextHidden.id)
-              }}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-w-0 transition-colors text-slate-400"
+              onClick={() => setShowMoreMenu(true)}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-w-0 transition-colors relative ${
+                allowedTabs.slice(4).some(t => t.id === resolvedTab) ? "text-green-700" : "text-slate-400"
+              }`}
             >
+              {allowedTabs.slice(4).some(t => t.id === resolvedTab) && (
+                <span className="absolute top-0 inset-x-3 h-0.5 rounded-full bg-green-600" />
+              )}
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01" />
               </svg>
@@ -265,6 +270,33 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
           )}
         </div>
       </nav>
+
+      {/* ── Overflow menu : tous les onglets au-dela des 4 affiches ─────────── */}
+      {showMoreMenu && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setShowMoreMenu(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full bg-white rounded-t-2xl mobile-nav-safe pb-4 pt-3 px-3" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 rounded-full bg-slate-300 mx-auto mb-3" />
+            <div className="grid grid-cols-4 gap-2">
+              {allowedTabs.slice(4).map(tab => {
+                const isActive = resolvedTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setActiveTab(tab.id); setShowMoreMenu(false) }}
+                    className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl transition-colors ${isActive ? "bg-green-50 text-green-700" : "text-slate-500 hover:bg-slate-50"}`}
+                  >
+                    <span className="w-5 h-5">{tab.icon}</span>
+                    <span className="text-[10px] font-semibold truncate max-w-full px-0.5">
+                      {(lang as string) === "en" ? tab.labelEn : lang === "ar" ? tab.labelAr : tab.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
