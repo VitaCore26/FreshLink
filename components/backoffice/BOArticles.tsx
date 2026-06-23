@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react"
 import { store, type Article, type HistoriquePrixAchat, FAMILLE_GROUPES, getAllFamilles, addCustomFamille } from "@/lib/store"
-import { createClient, uploadToStorage, getStorageUrl } from "@/lib/supabase/client"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 import { getArticlePhoto } from "@/lib/articlePhotos"
 
@@ -101,25 +100,32 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
     setForm(f => ({ ...f, photo: localUrl }))
 
     try {
-      const sb = createClient()
-      const ext = file.name.split(".").pop() ?? "jpg"
-      const path = `articles/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: upErr } = await sb.storage.from("freshlink-media").upload(`articles/${path}`, file, { upsert: true, contentType: file.type })
-      if (upErr) throw new Error(upErr.message)
-      const { data } = sb.storage.from("freshlink-media").getPublicUrl(`articles/${path}`)
-      // Replace blob URL with the permanent Supabase URL
-      setForm(f => ({ ...f, photo: data.publicUrl }))
+      // Lire le fichier en base64 (data URL)
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(r.result as string)
+        r.onerror = () => reject(new Error("lecture fichier"))
+        r.readAsDataURL(file)
+      })
+      // Upload CÔTÉ SERVEUR (service_role) → URL publique permanente
+      const resp = await fetch("/api/upload-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl, folder: "articles" }),
+      })
+      const json = await resp.json().catch(() => ({ ok: false, error: "reponse invalide" }))
+      if (!json.ok || !json.url) throw new Error(json.error || "upload echoue")
+      setForm(f => ({ ...f, photo: json.url }))
       URL.revokeObjectURL(localUrl)
     } catch {
-      // Supabase unavailable — encode to base64 so photo persists in localStorage
+      // Repli : encode en base64 pour que la photo persiste quand même
       const reader = new FileReader()
       reader.onload = ev => {
-        const b64 = ev.target?.result as string
-        setForm(f => ({ ...f, photo: b64 }))
+        setForm(f => ({ ...f, photo: ev.target?.result as string }))
         URL.revokeObjectURL(localUrl)
       }
       reader.readAsDataURL(file)
-      setPhotoError("Supabase inaccessible — photo enregistree localement (base64)")
+      setPhotoError("Upload serveur indisponible — photo enregistree localement (base64)")
     } finally {
       setPhotoUploading(false)
     }
