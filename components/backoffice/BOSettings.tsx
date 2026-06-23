@@ -605,6 +605,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
     "fl_feedbacks","fl_gift_materials","fl_pa_historique",
     "fl_referrals","fl_tracking","fl_promotions","fl_coupons","fl_notifications",
     "fl_intel_prix","fl_conc_pv","fl_conc_ventes_daily","fl_finance_mensuel",
+    "fl_credits_fournisseurs","fl_charges_article",
   ]
 
   const handleWipeAllExceptJawad = async () => {

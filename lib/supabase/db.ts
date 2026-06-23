@@ -82,7 +82,10 @@ export async function fetchUsers(): Promise<User[]> {
   try {
     const { data, error } = await sbRead().from("fl_users").select("id, payload")
     if (error) throw error
-    if (data && data.length > 0) {
+    if (data) {
+      // Remplace toujours (même liste vide) : une connexion réussie qui renvoie
+      // 0 ligne signifie "Supabase est vide" (ex. apres reinitialisation), pas
+      // "hors-ligne" — dans ce cas le cache local doit aussi se vider.
       const users = (data as { id: string; payload: unknown }[]).map(r => fromRow<User>(r))
       store.saveUsers(users)
       return users
@@ -110,13 +113,13 @@ export async function fetchClients(): Promise<{ clients: Client[]; source: "supa
   try {
     const { data, error } = await sbRead().from("fl_clients").select("id, payload")
     if (error) throw error
-    // Connection OK — could be empty table
-    if (data && data.length > 0) {
+    // Connexion OK — remplace toujours le cache local, même si la table est
+    // vide (ex. apres "Réinitialiser les données" : la vacuité doit se propager).
+    if (data) {
       const clients = (data as { id: string; payload: unknown }[]).map(r => fromRow<Client>(r))
       suppressAutoSync(() => store.saveClients(clients))
       return { clients, source: "supabase" }
     }
-    // Connected but empty table → still report supabase connected
     return { clients: store.getClients(), source: "supabase" }
   } catch { /* truly offline or unreachable */ }
   return { clients: store.getClients(), source: "local" }
@@ -157,8 +160,11 @@ export async function fetchArticles(): Promise<Article[]> {
     const res = await fetch("/api/sync-read?table=fl_articles", { cache: "no-store" })
     if (res.ok) {
       const j = await res.json() as { ok?: boolean; data?: { id: string; payload?: unknown }[] }
-      const rows = j?.data ?? []
-      if (rows.length > 0) {
+      // j.ok === true avec data=[] signifie "Supabase a répondu, la table est
+      // vide" (ex. apres réinitialisation) — on doit alors vider le cache local
+      // aussi, pas juste quand il y a des lignes.
+      if (j?.ok !== false) {
+        const rows = j?.data ?? []
         const articles = rows.map(r => fromRow<Article>(r as { id: string; payload: unknown }))
         suppressAutoSync(() => store.saveArticles(articles))
         return store.getArticles()   // normalisé (nom/famille/unite garantis)
@@ -168,7 +174,7 @@ export async function fetchArticles(): Promise<Article[]> {
   // Repli : client anon (si l'API est inaccessible mais la RLS ouverte)
   try {
     const { data, error } = await sbRead().from("fl_articles").select("id, payload")
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       const articles = (data as { id: string; payload: unknown }[]).map(r => fromRow<Article>(r))
       suppressAutoSync(() => store.saveArticles(articles))
       return store.getArticles()
@@ -191,7 +197,7 @@ export async function fetchFournisseurs(): Promise<Fournisseur[]> {
   try {
     const { data, error } = await sbRead().from("fl_fournisseurs").select("id, payload")
     if (error) throw error
-    if (data && data.length > 0) {
+    if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Fournisseur>(r))
       suppressAutoSync(() => store.saveFournisseurs(items))
       return items
@@ -436,9 +442,12 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
       try {
         const { data, error } = await sbRead().from(table as "fl_clients").select("id, payload").limit(5000)
         if (error) { errors.push(`${table}: ${error.message}`); return }
-        if (data && Array.isArray(data) && data.length > 0) {
+        // Remplace TOUJOURS le cache local par le résultat distant (même vide) :
+        // une table vidée par "Réinitialiser les données" doit aussi se vider en
+        // local sur cet appareil. Seule une vraie erreur réseau (catch ci-dessous)
+        // doit préserver le cache local existant.
+        if (data && Array.isArray(data)) {
           const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<unknown>(r))
-          // Hydratation : on écrit le cache sans repousser vers Supabase (seed snapshot)
           suppressAutoSync(() => save(items))
           tables.push(table)
         }

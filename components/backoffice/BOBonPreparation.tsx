@@ -468,6 +468,11 @@ export default function BOBonPreparation({ user }: Props) {
     if (!confirm("Supprimer ce bon de préparation ?")) return
     const arr = store.getBonsPreparation().filter(b => b.id !== id)
     store.saveBonsPreparation(arr)
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_bons_preparation", deletes: [id] }),
+    }).catch(e => console.error("[BOBonPreparation] delete sync error:", e))
     refresh()
     if (viewing?.id === id) setViewing(null)
   }

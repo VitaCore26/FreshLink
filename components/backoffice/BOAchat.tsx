@@ -141,13 +141,24 @@ export default function BOAchat() {
   }
 
   // ── Charges coût de revient (catalogue + affectation par article) ─────────
+  // fl_charges_article : table partagée Supabase (sync explicite, pas d'auto-diff
+  // possible sur un upsert de liste complète sans cle stable -> upsert ligne par ligne).
+  const syncChargeArticle = (c: { id: string; nom: string; montant: number }) => {
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_charges_article", upserts: [{ id: c.id, payload: c, updated_at: new Date().toISOString() }] }),
+    }).catch(() => {})
+  }
   const handleAddCharge = () => {
     const nom = newChargeNom.trim()
     const montant = Number(newChargeMontant)
     if (!nom || !(montant >= 0) || Number.isNaN(montant)) return
-    const next = [...chargesArticle, { id: store.genId(), nom, montant }]
+    const charge = { id: store.genId(), nom, montant }
+    const next = [...chargesArticle, charge]
     store.saveChargesArticle(next)
     setChargesArticle(next)
+    syncChargeArticle(charge)
     setNewChargeNom(""); setNewChargeMontant(""); setShowChargeForm(false)
   }
 
@@ -157,12 +168,19 @@ export default function BOAchat() {
     const next = chargesArticle.map(c => c.id === id ? { ...c, montant: Number.isNaN(montant) ? 0 : montant } : c)
     store.saveChargesArticle(next)
     setChargesArticle(next)
+    const updated = next.find(c => c.id === id)
+    if (updated) syncChargeArticle(updated)
   }
 
   const handleDeleteCharge = (id: string) => {
     const next = chargesArticle.filter(c => c.id !== id)
     store.saveChargesArticle(next)
     setChargesArticle(next)
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_charges_article", deletes: [id] }),
+    }).catch(() => {})
     // Détacher la charge des articles qui la référençaient
     const arts = store.getArticles().map(a => a.chargeArticleId === id ? { ...a, chargeArticleId: undefined } : a)
     store.saveArticles(arts)

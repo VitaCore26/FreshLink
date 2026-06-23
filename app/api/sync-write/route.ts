@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
       // — requis pour autoSync + messagerie cross-device + reset complet.
       "fl_messages", "fl_notices", "fl_visites",
       "fl_transferts_stock", "fl_demandes_achat", "fl_non_achats",
+      // Credits fournisseurs + charges de revient — table existante en Supabase
+      // mais jusqu'ici absente de la whitelist (upserts silencieusement rejetés).
+      "fl_credits_fournisseurs", "fl_charges_article",
     ]
     if (!ALLOWED_TABLES.includes(body.table)) {
       return NextResponse.json({ ok: false, errors: [`Table non autorisée: ${body.table}`] }, { status: 403 })

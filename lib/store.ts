@@ -3044,6 +3044,7 @@ export const store = {
     if (id === DEFAULT_DEPOT.id) return // cannot delete the principal depot
     const depots = store.getDepots().filter(d => d.id !== id)
     store.saveDepots(depots)
+    deleteSynced("fl_depots", [id])
   },
 
   // --- Messages ---

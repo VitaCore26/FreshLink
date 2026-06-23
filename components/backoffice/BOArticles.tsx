@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { store, type Article, type HistoriquePrixAchat, FAMILLE_GROUPES, getAllFamilles, addCustomFamille } from "@/lib/store"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 import { getArticlePhoto } from "@/lib/articlePhotos"
+import { deleteArticle } from "@/lib/supabase/db"
 
 const DH = (n: number) => `${n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
 
@@ -304,9 +305,8 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
 
   const handleDelete = (id: string) => {
     if (!window.confirm("Supprimer définitivement cet article ? Cette action est irréversible.")) return
-    const all = store.getArticles().filter(a => a.id !== id)
-    store.saveArticles(all)
-    setArticles(store.getArticles())
+    deleteArticle(id).catch(e => console.error("[BOArticles] delete sync error:", e))
+    setArticles(store.getArticles().filter(a => a.id !== id))
   }
 
   const handleToggleActif = (id: string) => {

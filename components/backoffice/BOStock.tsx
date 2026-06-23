@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { store, type Article, type TransfertStock, type CaisseVide, type CaisseVideMouvement, type ContenantTare, DEFAULT_CONTENANTS_TARE, FAMILLES_ARTICLES, type BonLivraison, type Retour } from "@/lib/store"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
+import { deleteArticle } from "@/lib/supabase/db"
 
 const DH = (n: number) => `${n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
 
@@ -235,7 +236,7 @@ export default function BOStock({ user }: { user: { id: string; name: string } }
 
   const handleDeleteArt = (a: Article) => {
     if (!confirm(`Supprimer l'article "${a.nom}" ?`)) return
-    store.saveArticles(store.getArticles().filter(x => x.id !== a.id))
+    deleteArticle(a.id).catch(e => console.error("[BOStock] delete sync error:", e))
     reload()
   }
 

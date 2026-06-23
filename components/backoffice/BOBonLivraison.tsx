@@ -1059,6 +1059,11 @@ export default function BOBonLivraison({ user }: { user: User }) {
     const updated = bls.filter(b => b.id !== id)
     saveBLs(updated)
     store.saveBonsLivraison(updated as unknown as import("@/lib/store").BonLivraison[])
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_bons_livraison", deletes: [id] }),
+    }).catch(e => console.error("[BOBonLivraison] delete sync error:", e))
     setBLs(updated)
   }
 

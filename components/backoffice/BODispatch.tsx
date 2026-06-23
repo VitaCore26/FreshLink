@@ -318,11 +318,24 @@ export default function BODispatch({ user }: Props) {
   const deleteLivreur = (l: Livreur) => {
     if (!window.confirm(`Supprimer définitivement le livreur « ${l.prenom} ${l.nom} » ?\n\nCette action retire aussi son compte utilisateur lié (le cas échéant).`)) return
     store.saveLivreurs(store.getLivreurs().filter(x => x.id !== l.id))
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_livreurs", deletes: [l.id] }),
+    }).catch(e => console.error("[BODispatch] livreur delete sync error:", e))
     // Retire le compte utilisateur lié (rôle livreur, même nom) s'il existe
     try {
       const fullName = `${l.prenom} ${l.nom}`.trim().toLowerCase()
+      const linkedUser = store.getUsers().find(u => u.role === "livreur" && (u.name ?? "").trim().toLowerCase() === fullName)
       const users = store.getUsers().filter(u => !(u.role === "livreur" && (u.name ?? "").trim().toLowerCase() === fullName))
       store.saveUsers(users)
+      if (linkedUser) {
+        fetch("/api/sync-write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "fl_users", deletes: [linkedUser.id] }),
+        }).catch(e => console.error("[BODispatch] linked user delete sync error:", e))
+      }
     } catch { /* noop */ }
     refresh()
   }

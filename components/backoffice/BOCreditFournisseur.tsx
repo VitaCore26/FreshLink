@@ -159,6 +159,11 @@ export default function BOCreditFournisseur({ user }: { user: User }) {
     const updated = credits.filter(c => c.id !== id)
     setCredits(updated)
     saveCredits(updated)
+    fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "fl_credits_fournisseurs", deletes: [id] }),
+    }).catch(() => {})
     setSelectedId(null)
   }
 
