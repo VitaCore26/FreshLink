@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, Component } from "react"
 import dynamic from "next/dynamic"
 import LangSwitcher from "@/components/ui/LangSwitcher"
 import ThemeToggle from "@/components/ui/ThemeToggle"
+import BONotifications from "./BONotifications"
 import type { User } from "@/lib/store"
 import { store, ROLE_LABELS, ROLE_COLORS, isDemoUser, isSuperSuperAdmin, JAWAD_ID } from "@/lib/store"
 import { useLang, T } from "@/lib/i18n"
@@ -653,6 +654,8 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="flex h-screen overflow-hidden font-sans bg-slate-50 text-slate-800">
+
+      {isAdminOrAbove && <BONotifications navigate={navigate} />}
 
       {/* Desktop sidebar — collapsible */}
       <div className={`hidden lg:flex flex-col shrink-0 transition-all duration-300 ${sidebarCollapsed ? "w-16" : "w-60"}`}>

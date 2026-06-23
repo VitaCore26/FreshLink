@@ -84,6 +84,18 @@ export default function BOMoteurCommercial() {
     [articlesRef]
   )
 
+  // ── Prévendeurs (pour la liste roulante du simulateur de bonus — nom, jamais d'ID saisi) ──
+  const [prevendeursRef, setPrevendeursRef] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    try {
+      const users = store.getUsers()
+        .filter(u => u.role === "prevendeur" && u.actif)
+        .map(u => ({ id: u.id, name: u.name }))
+      users.sort((a, b) => a.name.localeCompare(b.name, "fr"))
+      setPrevendeursRef(users)
+    } catch { setPrevendeursRef([]) }
+  }, [])
+
   const [showRuleForm, setShowRuleForm] = useState(false)
   const [ruleForm, setRuleForm] = useState({
     nom: "",
@@ -741,7 +753,10 @@ export default function BOMoteurCommercial() {
             </div>
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-2 gap-2">
-                <input value={simBonus.prevendeur} onChange={e => setSimBonus(s => ({ ...s, prevendeur: e.target.value }))} placeholder="VFU00001" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <select value={simBonus.prevendeur} onChange={e => setSimBonus(s => ({ ...s, prevendeur: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                  <option value="">— Prévendeur —</option>
+                  {prevendeursRef.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
                 <input type="number" min={0} value={simBonus.ca} onChange={e => setSimBonus(s => ({ ...s, ca: Number(e.target.value) || 0 }))} placeholder="CA (MAD)" className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 <select value={simBonus.segment} onChange={e => setSimBonus(s => ({ ...s, segment: e.target.value }))} className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
                   <option value="chr">🏨 CHR</option>
