@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireDeviceApi } from "@/lib/auth/requireDeviceApi"
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SERVICE_KEY  = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY) ?? ""
@@ -14,6 +15,11 @@ function getAdminClient() {
 }
 
 export async function GET(req: NextRequest) {
+  // 🔒 Auth : refuse les requêtes sans cookie d'appareil à signature HMAC valide
+  // (bloque l'accès direct/forgé à la base via service_role).
+  const denied = requireDeviceApi(req)
+  if (denied) return denied
+
   if (!SERVICE_KEY) {
     return NextResponse.json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY manquante" }, { status: 500 })
   }
