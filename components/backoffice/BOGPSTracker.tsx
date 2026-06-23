@@ -11,6 +11,7 @@ interface TrackedUser {
   role: string
   lat: number
   lng: number
+  hasPosition: boolean   // false = aucune position GPS reelle jamais recue (pas une position inventee)
   accuracy: number
   speed: number | null
   heading: number | null
@@ -47,6 +48,17 @@ const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-violet-500",
 }
 
+// Mêmes couleurs que ROLE_COLORS mais en hex — nécessaire pour le HTML inline
+// des divIcon Leaflet (les classes Tailwind ne s'appliquent pas dans ce contexte).
+const ROLE_COLOR_HEX: Record<string, string> = {
+  livreur: "#eab308",
+  prevendeur: "#10b981",
+  commercial: "#10b981",
+  logistique: "#06b6d4",
+  admin: "#3b82f6",
+  super_admin: "#8b5cf6",
+}
+
 const STATUS_CONFIG = {
   actif:    { label: "Actif",    class: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   inactif:  { label: "Inactif",  class: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
@@ -56,7 +68,7 @@ const STATUS_CONFIG = {
 
 const GPS_STORAGE_KEY = "freshlink_gps_positions"
 
-function savePosition(userId: string, pos: Omit<TrackedUser, "id" | "name" | "role">) {
+function savePosition(userId: string, pos: Omit<TrackedUser, "id" | "name" | "role" | "hasPosition">) {
   try {
     const all = JSON.parse(localStorage.getItem(GPS_STORAGE_KEY) || "{}")
     all[userId] = { ...all[userId], ...pos, timestamp: Date.now() }
@@ -101,7 +113,15 @@ export default function BOGPSTracker({ user }: Props) {
   const [gpsLoading, setGpsLoading] = useState(false)
   const [myStatus, setMyStatus] = useState<TrackedUser["status"]>("actif")
   const [filter, setFilter] = useState<"all" | "livreur" | "prevendeur" | "commercial">("all")
-  const [mapUrl, setMapUrl] = useState<string>("")
+  // Carte live (Leaflet + OpenStreetMap, gratuit, sans clé API) — affiche TOUS
+  // les acteurs traces simultanement (un seul user a la fois avec un iframe
+  // Google Maps avant ; en plus l'iframe etait bloque par la CSP frame-src).
+  const mapElRef = useRef<HTMLDivElement>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const leafletMapRef = useRef<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markersRef = useRef<Record<string, any>>({})
+  const [mapReady, setMapReady] = useState(false)
   // ETA estimator state
   const [etaClients, setEtaClients] = useState<Client[]>([])
   const [etaStartLat, setEtaStartLat] = useState<number | null>(null)
@@ -135,16 +155,20 @@ export default function BOGPSTracker({ user }: Props) {
       .filter(u => ["livreur", "prevendeur", "commercial", "logistique"].includes(u.role))
       .map(u => {
         const pos = saved[u.id]
+        const hasPosition = pos?.lat != null && pos?.lng != null
         return {
           id: u.id,
           name: u.name,
           role: u.role,
-          lat: pos?.lat ?? (DEPOT_LAT + (Math.random() - 0.5) * 0.2),
-          lng: pos?.lng ?? (DEPOT_LNG + (Math.random() - 0.5) * 0.3),
-          accuracy: pos?.accuracy ?? 50,
+          // Pas de position connue → on ancre au dépôt sans la considérer comme réelle
+          // (hasPosition=false) : jamais de coordonnées inventées affichées comme vraies.
+          lat: hasPosition ? pos!.lat! : DEPOT_LAT,
+          lng: hasPosition ? pos!.lng! : DEPOT_LNG,
+          hasPosition,
+          accuracy: pos?.accuracy ?? 0,
           speed: pos?.speed ?? null,
           heading: pos?.heading ?? null,
-          timestamp: pos?.timestamp ?? Date.now() - 300000,
+          timestamp: pos?.timestamp ?? 0,
           status: (pos?.status as TrackedUser["status"]) ?? "inactif",
         }
       })
@@ -187,10 +211,6 @@ export default function BOGPSTracker({ user }: Props) {
           status: myStatus,
         })
         refreshTracked()
-        // Update map
-        setMapUrl(
-          `https://www.openstreetmap.org/export/embed.html?bbox=${pos.coords.longitude - 0.05},${pos.coords.latitude - 0.03},${pos.coords.longitude + 0.05},${pos.coords.latitude + 0.03}&layer=mapnik&marker=${pos.coords.latitude},${pos.coords.longitude}`
-        )
       },
       (err) => {
         setGpsLoading(false)
@@ -336,6 +356,102 @@ export default function BOGPSTracker({ user }: Props) {
     return true
   })
 
+  // ── Carte Leaflet/OSM — initialisation (une fois par passage sur l'onglet "live") ──
+  // Remplace l'ancien <iframe src="openstreetmap.org/export/embed.html"> : en plus
+  // d'être limité à un seul acteur à la fois, cet iframe était bloqué par la CSP
+  // (frame-src absent → repli sur default-src 'self', qui interdit les iframes
+  // externes — message Chrome "Ce contenu est bloqué..."). Leaflet rend les tuiles
+  // en <img> (déjà autorisées par img-src), donc pas de souci CSP, et affiche TOUS
+  // les acteurs simultanément avec des marqueurs live, sans clé API ni quota.
+  useEffect(() => {
+    if (gpsTrackerTab !== "live") return
+    let cancelled = false
+    ;(async () => {
+      if (!mapElRef.current || leafletMapRef.current) return
+      if (!document.getElementById("leaflet-cdn-css")) {
+        const link = document.createElement("link")
+        link.id = "leaflet-cdn-css"
+        link.rel = "stylesheet"
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        document.head.appendChild(link)
+      }
+      try {
+        const L = (await import("leaflet")).default
+        if (cancelled || !mapElRef.current) return
+        const map = L.map(mapElRef.current).setView([DEPOT_LAT, DEPOT_LNG], 11)
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map)
+        leafletMapRef.current = map
+        setMapReady(true)
+      } catch { /* leaflet indisponible */ }
+    })()
+    return () => {
+      cancelled = true
+      leafletMapRef.current?.remove()
+      leafletMapRef.current = null
+      markersRef.current = {}
+      setMapReady(false)
+    }
+  }, [gpsTrackerTab])
+
+  // ── Carte Leaflet — synchronisation des marqueurs (tous les acteurs + moi) ──
+  useEffect(() => {
+    if (!mapReady || !leafletMapRef.current) return
+    let cancelled = false
+    ;(async () => {
+      const L = (await import("leaflet")).default
+      if (cancelled) return
+      const map = leafletMapRef.current
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const upsert = (key: string, lat: number, lng: number, html: string, popupHtml: string, onClick?: () => void) => {
+        const icon = L.divIcon({ html, className: "", iconSize: [28, 28], iconAnchor: [14, 14] })
+        const existing = markersRef.current[key]
+        if (existing) {
+          existing.setLatLng([lat, lng])
+          existing.setIcon(icon)
+          existing.setPopupContent(popupHtml)
+        } else {
+          const marker = L.marker([lat, lng], { icon }).addTo(map).bindPopup(popupHtml)
+          if (onClick) marker.on("click", onClick)
+          markersRef.current[key] = marker
+        }
+      }
+
+      if (myPosition) {
+        upsert(
+          "__me__", myPosition.coords.latitude, myPosition.coords.longitude,
+          `<div style="background:#2563eb;color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,.25)">MOI</div>`,
+          `<b>Moi (${user.name})</b>`
+        )
+      } else if (markersRef.current.__me__) {
+        markersRef.current.__me__.remove()
+        delete markersRef.current.__me__
+      }
+
+      filteredTracked.forEach(t => {
+        if (!t.hasPosition) {
+          if (markersRef.current[t.id]) { markersRef.current[t.id].remove(); delete markersRef.current[t.id] }
+          return
+        }
+        const initial = t.name[0]?.toUpperCase() ?? "?"
+        const bg = ROLE_COLOR_HEX[t.role] ?? "#6b7280"
+        upsert(
+          t.id, t.lat, t.lng,
+          `<div style="background:${bg};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white">${initial}</div>`,
+          `<b>${t.name}</b><br/>${ROLE_LABELS[t.role] ?? t.role}<br/>${STATUS_CONFIG[t.status].label}`,
+          () => setSelected(t)
+        )
+      })
+
+      // Retire les marqueurs des acteurs qui ne sont plus dans la liste filtrée
+      const validIds = new Set(["__me__", ...filteredTracked.filter(t => t.hasPosition).map(t => t.id)])
+      Object.keys(markersRef.current).forEach(k => {
+        if (!validIds.has(k)) { markersRef.current[k].remove(); delete markersRef.current[k] }
+      })
+    })()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracked, filter, myPosition, mapReady, user.name])
+
   // ── ETA calculations ────────────────────────────────────────────
   const etaResults = useMemo(() => {
     if (!etaStartLat || !etaStartLng || etaOrderedIds.length === 0) return []
@@ -368,9 +484,10 @@ export default function BOGPSTracker({ user }: Props) {
 
   const zoomToUser = (t: TrackedUser) => {
     setSelected(t)
-    setMapUrl(
-      `https://www.openstreetmap.org/export/embed.html?bbox=${t.lng - 0.05},${t.lat - 0.03},${t.lng + 0.05},${t.lat + 0.03}&layer=mapnik&marker=${t.lat},${t.lng}`
-    )
+    if (t.hasPosition && leafletMapRef.current) {
+      leafletMapRef.current.flyTo([t.lat, t.lng], 14, { duration: 0.6 })
+      markersRef.current[t.id]?.openPopup()
+    }
   }
 
   const activeCount = tracked.filter(t => t.status === "actif" || t.status === "en_route").length
@@ -564,21 +681,15 @@ export default function BOGPSTracker({ user }: Props) {
               <span className="text-xs text-blue-400 font-medium">{selected.name}</span>
             )}
           </div>
-          {mapUrl ? (
-            <iframe
-              src={mapUrl}
-              className="w-full h-72 border-0"
-              title="Carte GPS"
-              loading="lazy"
-            />
-          ) : (
-            <div className="h-72 flex flex-col items-center justify-center text-gray-500 gap-3">
-              <svg className="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-              <p className="text-sm">Activez votre GPS ou selectionnez un acteur pour afficher la carte</p>
-            </div>
-          )}
+          <div className="relative w-full h-72" style={{ background: "#0f172a" }}>
+            <div ref={mapElRef} className="absolute inset-0" />
+            {!mapReady && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 gap-3 pointer-events-none">
+                <span className="w-5 h-5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                <p className="text-sm">Chargement de la carte...</p>
+              </div>
+            )}
+          </div>
           {/* Google Maps link */}
           {(myPosition || selected) && (
             <div className="px-4 py-3 border-t border-gray-800 flex gap-2">
@@ -653,16 +764,22 @@ export default function BOGPSTracker({ user }: Props) {
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium flex-shrink-0 ${st.class}`}>{st.label}</span>
                       </div>
                       <p className="text-xs text-gray-400">{ROLE_LABELS[t.role] ?? t.role}</p>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        <span className="text-xs text-gray-500">
-                          {t.lat.toFixed(4)}, {t.lng.toFixed(4)}
-                        </span>
-                        <span className="text-xs text-blue-400 font-medium">{distKm.toFixed(1)} km du depot</span>
-                        {t.speed != null && (
-                          <span className="text-xs text-cyan-400">{(t.speed * 3.6).toFixed(1)} km/h</span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-gray-600 mt-0.5">{timeSince(t.timestamp)}</p>
+                      {t.hasPosition ? (
+                        <>
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            <span className="text-xs text-gray-500">
+                              {t.lat.toFixed(4)}, {t.lng.toFixed(4)}
+                            </span>
+                            <span className="text-xs text-blue-400 font-medium">{distKm.toFixed(1)} km du depot</span>
+                            {t.speed != null && (
+                              <span className="text-xs text-cyan-400">{(t.speed * 3.6).toFixed(1)} km/h</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{timeSince(t.timestamp)}</p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-600 italic mt-1">Position inconnue — n&apos;a jamais activé son GPS</p>
+                      )}
                     </div>
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${t.status === "en_route" || t.status === "actif" ? "bg-emerald-500 animate-pulse" : "bg-gray-600"}`} />
                   </button>
@@ -695,6 +812,7 @@ export default function BOGPSTracker({ user }: Props) {
               </svg>
             </button>
           </div>
+          {selected.hasPosition ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <InfoBox label="Latitude" value={selected.lat.toFixed(5)} />
             <InfoBox label="Longitude" value={selected.lng.toFixed(5)} />
@@ -704,7 +822,13 @@ export default function BOGPSTracker({ user }: Props) {
             {selected.heading != null && <InfoBox label="Direction" value={`${selected.heading.toFixed(0)}°`} />}
             <InfoBox label="Derniere MAJ" value={timeSince(selected.timestamp)} />
           </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-700 p-4 text-center text-sm text-gray-500">
+              Aucune position GPS reçue — cet acteur n&apos;a jamais activé le GPS sur son appareil.
+            </div>
+          )}
           <div className="flex gap-2 mt-4 flex-wrap">
+            {selected.hasPosition && (
             <a
               href={`https://www.google.com/maps?q=${selected.lat},${selected.lng}`}
               target="_blank"
@@ -717,6 +841,7 @@ export default function BOGPSTracker({ user }: Props) {
               </svg>
               Voir sur Google Maps
             </a>
+            )}
             <a
               href={`https://wa.me/${allUsers.find(u => u.id === selected.id)?.telephone?.replace(/\s/g, "")}`}
               target="_blank"
