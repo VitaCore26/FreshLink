@@ -30,6 +30,7 @@
     }
   ],
   "crons": [
-    { "path": "/api/ext/rapport-credit?send=1&key=vita-bypass-2026", "schedule": "0 19 * * *" }
+    { "path": "/api/ext/rapport-credit?send=1&key=vita-bypass-2026", "schedule": "0 19 * * *" },
+    { "path": "/api/ext/rapport-journalier?send=1&key=vita-bypass-2026", "schedule": "0 19 * * *" }
   ]
 }

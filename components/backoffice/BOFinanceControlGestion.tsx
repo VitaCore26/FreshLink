@@ -156,9 +156,10 @@ Envoyé automatiquement par FreshLink Vita Fresh
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: toEmail, subject: `Rapport Journalier Vita Fresh — ${today}`, body })
     })
-    return res.ok
-  } catch {
-    return false
+    const data = await res.json().catch(() => ({})) as { error?: string }
+    return { ok: res.ok, error: data.error }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -170,6 +171,7 @@ export default function BOFinanceControlGestion({ user }: { user: User }) {
   const [editMode, setEditMode] = useState(false)
   const [sending, setSending] = useState(false)
   const [sentOk, setSentOk] = useState<boolean | null>(null)
+  const [sentError, setSentError] = useState<string>("")
   const [activeTab, setActiveTab] = useState<"pl" | "kpi" | "amelio" | "rapport">("pl")
   const [rapportEmail, setRapportEmail] = useState(() => getRapportEmail())
   const [emailSaved, setEmailSaved] = useState(false)
@@ -181,10 +183,11 @@ export default function BOFinanceControlGestion({ user }: { user: User }) {
 
   const handleSend = async () => {
     setSending(true)
-    const ok = await sendDailyReport(rapportEmail)
+    const { ok, error } = await sendDailyReport(rapportEmail)
     setSentOk(ok)
+    setSentError(ok ? "" : (error ?? ""))
     setSending(false)
-    setTimeout(() => setSentOk(null), 4000)
+    setTimeout(() => setSentOk(null), 6000)
   }
 
   const handleSaveEmail = () => {
@@ -506,18 +509,17 @@ Date : ${new Date().toISOString().split("T")[0]}
               {sending ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Envoi...</> : <>📧 Envoyer le rapport maintenant</>}
             </button>
             {sentOk === true && <p className="text-emerald-600 font-semibold text-sm mt-2">✅ Rapport envoyé à {rapportEmail}</p>}
-            {sentOk === false && <p className="text-red-600 text-sm mt-2">❌ Erreur d'envoi — vérifier config SMTP dans .env.local</p>}
+            {sentOk === false && (
+              <p className="text-red-600 text-sm mt-2">❌ Erreur d'envoi{sentError ? ` — ${sentError}` : ""}</p>
+            )}
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
             <p className="font-bold mb-1">⚙️ Configuration email automatique</p>
-            <p>Pour l'envoi automatique quotidien à 20h, configurez un cron job ou utilisez Vercel Cron :</p>
-            <code className="block mt-2 bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-mono text-amber-900">
-              SMTP_FROM=noreply@vita-fresh.co.site<br />
-              SMTP_HOST=mail.vita-fresh.co.site<br />
-              SMTP_USER=noreply@vita-fresh.co.site<br />
-              SMTP_PASS=VOTRE_MOT_DE_PASSE
-            </code>
+            <p>
+              L&apos;envoi (manuel ou automatique) passe par <code className="bg-white border border-amber-300 rounded px-1">/api/ext/send-email</code> (Resend ou Brevo — jamais de SMTP brut). Si l&apos;erreur ci-dessus persiste, vérifiez dans Vercel que <code className="bg-white border border-amber-300 rounded px-1">RESEND_API_KEY</code> ou <code className="bg-white border border-amber-300 rounded px-1">BREVO_API_KEY</code> est bien défini.
+            </p>
+            <p className="mt-2">Envoi automatique quotidien à 20h : déjà programmé via Vercel Cron (<code className="bg-white border border-amber-300 rounded px-1">vercel.json</code> → <code className="bg-white border border-amber-300 rounded px-1">/api/ext/rapport-journalier?send=1</code>), destinataire = <code className="bg-white border border-amber-300 rounded px-1">REPORT_EMAIL</code> (variable d&apos;env, sinon contact@vita-core.org).</p>
           </div>
         </div>
       )}
