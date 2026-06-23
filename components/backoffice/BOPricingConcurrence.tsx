@@ -111,11 +111,12 @@ export default function BOPricingConcurrence({ user }: Props) {
   // WhatsApp groupe : les liens d'invitation ne permettent pas de pré-remplir le
   // message → on copie le texte dans le presse-papier puis on ouvre le groupe
   // pour que l'utilisateur colle (Ctrl/Cmd+V) et envoie.
-  const sendToWhatsAppGroup = async (which: "pv" | "alert", message: string) => {
+  const sendToWhatsAppGroup = async (which: "pv" | "alert", message: string): Promise<boolean> => {
     try { navigator.clipboard?.writeText(message) } catch { /* noop */ }
     const link = await fetchWaGroupUrl(which)
-    if (!link) { flash(false, "Lien du groupe WhatsApp non configuré côté serveur."); return }
+    if (!link) return false
     try { window.open(link, "_blank", "noopener") } catch { /* noop */ }
+    return true
   }
 
   const findComp = useCallback((nom: string, map: Record<string, number>): number => {
@@ -251,9 +252,11 @@ export default function BOPricingConcurrence({ user }: Props) {
     const corps = `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("💰 Nouveaux PV conseillés (imbattables)", corps, "commercial", "notice")
     // Diffusion WhatsApp → groupe force de vente
-    await sendToWhatsAppGroup("pv", `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
+    const waOk = await sendToWhatsAppGroup("pv", `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
     setBusy(false)
-    flash(true, `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`)
+    flash(waOk, waOk
+      ? `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`
+      : `⚠️ ${cible.length} PV diffusés en interne (notice envoyée aux prévendeurs) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_PV_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
   }
 
   const alerterAchat = async () => {
@@ -264,8 +267,10 @@ export default function BOPricingConcurrence({ user }: Props) {
     const corps = `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("⚠️ PA plus cher que le concurrent", corps, "resp_achat", "reclamation")
     // Alerte WhatsApp → groupe achat
-    await sendToWhatsAppGroup("alert", `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
-    flash(true, `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`)
+    const waOk = await sendToWhatsAppGroup("alert", `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
+    flash(waOk, waOk
+      ? `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`
+      : `⚠️ Alerte envoyée en interne (notice à l'équipe achat) pour ${cible.length} article(s) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_ALERT_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
   }
 
   const appliquerPV = async (r: Row) => {
