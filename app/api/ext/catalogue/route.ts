@@ -157,34 +157,31 @@ function byOrdre(a: Record<string, unknown>, b: Record<string, unknown>) {
   return ((a.ordre as number) ?? 999) - ((b.ordre as number) ?? 999)
 }
 
+// ── Prix web (visiteurs SANS compte) ─────────────────────────────────────────
+// Règle confirmée : PV web = moyenne des prix segments renseignés
+// (PV marchand + PV CHR + PV particulier, pour les clients avec compte) /
+// nombre de segments renseignés. Toujours recalculé en live à partir des
+// segments actuels — jamais figé sur un ancien marketplacePrixPublic enregistré
+// (sinon le prix affiché peut diverger du calcul dès qu'un segment change).
+// Si aucun segment n'est renseigné → repli sur le prix système (PA + pvMethode/pvValeur).
+function computeWebPV(a: Record<string, unknown>): number {
+  const seg = [a.prixCHR, a.prixMarchand, a.prixParticulier]
+    .map(v => parseFloat(String(v ?? 0)) || 0)
+    .filter(v => v > 0)
+  if (seg.length) return Math.round((seg.reduce((s, v) => s + v, 0) / seg.length) * 100) / 100
+  const pa = parseFloat(String(a.prixAchat)) || 0
+  const pv = parseFloat(String(a.pvValeur)) || 0
+  if (a.pvMethode === "pourcentage") return Math.round(pa * (1 + pv / 100) * 100) / 100
+  if (a.pvMethode === "montant") return Math.round((pa + pv) * 100) / 100
+  return pv || pa
+}
+
 /**
  * Normalise un article issu du payload JSONB fl_articles (champs camelCase ERP).
  * Calcule le prix depuis pvMethode/pvValeur/prixAchat si marketplacePrixPublic absent.
  */
 function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
-  // ── Prix système (plancher absolu) ───────────────────────────────────────
-  let prixSysteme = parseFloat(String(a.marketplacePrixPublic ?? a.prix_public ?? 0)) || 0
-  if (!prixSysteme && a.prixAchat) {
-    const pa = parseFloat(String(a.prixAchat)) || 0
-    const pv = parseFloat(String(a.pvValeur)) || 0
-    if (a.pvMethode === "pourcentage") prixSysteme = Math.round(pa * (1 + pv / 100) * 100) / 100
-    else if (a.pvMethode === "montant") prixSysteme = Math.round((pa + pv) * 100) / 100
-    else prixSysteme = pv || pa
-  }
-  if (!prixSysteme) prixSysteme = parseFloat(String(a.pvValeur ?? 0)) || 0
-
-  // ── Prix public catalogue = PV PARTICULIER (visiteur SANS compte) ─────────
-  // La boutique publique s'adresse aux particuliers non connectés : on affiche
-  // le prix Particulier. Les tarifs CHR / Marchand sont des prix de compte
-  // (négociés) et ne s'appliquent QU'APRÈS connexion au portail, jamais ici.
-  // Priorité : 1) marketplacePrixPublic (prix web explicite admin)
-  //            2) prixParticulier   3) prix système (PV calculé).
-  const prixWebExplicite = parseFloat(String(a.marketplacePrixPublic ?? 0)) || 0
-  const prixPart         = parseFloat(String(a.prixParticulier ?? 0)) || 0
-
-  let prixBase = prixSysteme
-  if (prixWebExplicite > 0)  prixBase = prixWebExplicite
-  else if (prixPart > 0)     prixBase = prixPart
+  const prixBase = computeWebPV(a)
 
   // ── Promo ─────────────────────────────────────────────────────────────────
   const promoObj = (a.marketplacePromo && typeof a.marketplacePromo === "object" && (a.marketplacePromo as Record<string, unknown>).actif)

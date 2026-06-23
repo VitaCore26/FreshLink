@@ -16,28 +16,26 @@ function sbSyncErr(errors: string[]): string {
   return `⚠️ Erreur synchronisation Supabase${first ? " : " + first.slice(0, 120) : ""}`
 }
 
+// Règle confirmée : PV web (visiteurs sans compte) = moyenne des prix segments
+// renseignés (CHR / Marchand / Particulier) pour les clients avec compte —
+// jamais plafonné/flooré par le prix système (sinon le calcul affiché diverge
+// du résultat réel, ex: CHR=20/Marchand=19/Particulier=17 → 18.67, pas 19.50).
+// Repli sur le prix système (PA + pvMethode/pvValeur) si aucun segment renseigné.
 function computePV(a: Article): number {
   // ⚠️ Coercition Number obligatoire : les valeurs venant de Supabase/localStorage
   // peuvent être des strings, ce qui casse .toFixed() ("E.toFixed is not a function")
-  const prixAchat = Number(a.prixAchat) || 0
-  const pvValeur  = Number(a.pvValeur)  || 0
-  let base: number
-  switch (a.pvMethode) {
-    case "pourcentage": base = Math.round(prixAchat * (1 + pvValeur / 100) * 100) / 100; break
-    case "montant":     base = Math.round((prixAchat + pvValeur) * 100) / 100; break
-    default:            base = pvValeur
-  }
-  // ⚡ Si des prix par segment existent (CHR / Marchand / Particulier), le « PV
-  // interne » affiché = MOYENNE de ces prix réels (jamais en-dessous du PV de base),
-  // pour rester cohérent avec le prix boutique. Évite d'afficher 15 DH alors que
-  // CHR=80 / Marchand=60 / Particulier=20.
   const rec = a as unknown as Record<string, unknown>
   const seg = [Number(rec.prixCHR) || 0, Number(rec.prixMarchand) || 0, Number(rec.prixParticulier) || 0].filter(p => p > 0)
   if (seg.length) {
-    const avg = Math.round((seg.reduce((s, p) => s + p, 0) / seg.length) * 100) / 100
-    return Math.max(avg, base)
+    return Math.round((seg.reduce((s, p) => s + p, 0) / seg.length) * 100) / 100
   }
-  return base
+  const prixAchat = Number(a.prixAchat) || 0
+  const pvValeur  = Number(a.pvValeur)  || 0
+  switch (a.pvMethode) {
+    case "pourcentage": return Math.round(prixAchat * (1 + pvValeur / 100) * 100) / 100
+    case "montant":     return Math.round((prixAchat + pvValeur) * 100) / 100
+    default:            return pvValeur
+  }
 }
 
 function stockLabel(a: Article): { label: string; labelAr: string; cls: string; icon: string } {
@@ -91,7 +89,6 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
     marketplaceActif:           article.marketplaceActif ?? false,
     marketplaceStatut:          (article.marketplaceStatut ?? "disponible") as MarketplaceStatut,
     marketplaceCommentaire:     article.marketplaceCommentaire ?? "",
-    marketplacePrixPublic:      String(article.marketplacePrixPublic ?? pvCalcule),
     marketplaceDescription:     article.marketplaceDescription ?? "",
     marketplaceDescriptionAr:   article.marketplaceDescriptionAr ?? "",
     // ⚡ Stock WEB alloué — TOTALEMENT indépendant du stock réel ERP.
@@ -146,7 +143,9 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
       marketplaceActif:        form.marketplaceActif,
       marketplaceStatut:       form.marketplaceStatut,
       marketplaceCommentaire:  form.marketplaceCommentaire,
-      marketplacePrixPublic:   Number(form.marketplacePrixPublic) || pvCalcule,
+      // Toujours le PV calculé (moyenne des segments) — plus de saisie manuelle
+      // qui pouvait diverger du calcul (voir computePV ci-dessus).
+      marketplacePrixPublic:   pvCalcule,
       marketplaceDescription:  form.marketplaceDescription,
       marketplaceDescriptionAr:form.marketplaceDescriptionAr,
       // Stock web alloué (indépendant du stock réel) — décide la dispo boutique
@@ -164,7 +163,7 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
     onSave(updated)
   }
 
-  const prixPublicNum = Number(form.marketplacePrixPublic) || pvCalcule
+  const prixPublicNum = pvCalcule
   const promoNum      = Number(form.promoPrix) || 0
   const promoReducPct = prixPublicNum > 0 && promoNum > 0
     ? Math.round((1 - promoNum / prixPublicNum) * 100)
@@ -269,10 +268,10 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-semibold text-foreground">Prix affiché (DH / {article.unite})</label>
-                  <input type="number" min="0" step="0.5" value={form.marketplacePrixPublic}
-                    onChange={e => setForm(f => ({ ...f, marketplacePrixPublic: e.target.value }))}
-                    className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary" />
-                  <p className="text-[10px] text-muted-foreground">PV interne calculé : <span className="font-bold text-foreground">{pvCalcule.toFixed(2)} DH</span></p>
+                  <input type="text" readOnly value={`${pvCalcule.toFixed(2)} DH`}
+                    title="Calculé automatiquement = moyenne des prix CHR/Marchand/Particulier renseignés (ou prix système si aucun segment renseigné). Pour un prix temporaire différent, utilisez le Prix promotionnel ci-dessous."
+                    className="px-3 py-2.5 rounded-xl border border-border bg-muted text-sm font-bold text-foreground cursor-not-allowed" />
+                  <p className="text-[10px] text-muted-foreground">Calculé automatiquement (moyenne CHR/Marchand/Particulier) — pour un prix différent, utilisez le Prix promotionnel ci-dessous.</p>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-semibold text-foreground">Ordre d'affichage</label>
@@ -409,7 +408,7 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
                     marketplaceActif: form.marketplaceActif,
                     marketplaceStatut: form.marketplaceStatut,
                     marketplaceCommentaire: form.marketplaceCommentaire,
-                    marketplacePrixPublic: Number(form.marketplacePrixPublic) || pvCalcule,
+                    marketplacePrixPublic: pvCalcule,
                     marketplaceTags: form.marketplaceTags,
                     marketplacePromo: form.promoActif ? { actif: true, prixPromo: Number(form.promoPrix), etiquette: form.promoEtiquette } : undefined,
                   }}
@@ -440,7 +439,7 @@ function EditDrawer({ article, onClose, onSave }: EditDrawerProps) {
 
 function ArticleCard({ article, preview = false, onClick }: { article: Article; preview?: boolean; onClick?: () => void }) {
   const pv = Number(computePV(article)) || 0
-  const prix = Number(article.marketplacePrixPublic ?? pv) || 0
+  const prix = pv
   const statut = article.marketplaceStatut ?? "disponible"
   const promoPrix = Number(article.marketplacePromo?.prixPromo ?? 0) || 0
   const hasPromo = article.marketplacePromo?.actif && promoPrix > 0
@@ -568,7 +567,7 @@ function ApiPreview({ articles }: { articles: Article[] }) {
     tags: a.marketplaceTags ?? [],
     description: a.marketplaceDescription ?? null,
     descriptionAr: a.marketplaceDescriptionAr ?? null,
-    prix: a.marketplacePrixPublic ?? computePV(a),
+    prix: computePV(a),
     promo: a.marketplacePromo?.actif ? { prix: a.marketplacePromo.prixPromo, etiquette: a.marketplacePromo.etiquette ?? null } : null,
     statut: a.marketplaceStatut ?? "disponible",
     commentaire: a.marketplaceCommentaire ?? null,
