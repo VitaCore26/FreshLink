@@ -15,7 +15,7 @@ const CAT_COLORS: Record<Cat, string> = {
 }
 
 // ── Export / Import helpers (CSV · Excel · JSON) ─────────────────────────────
-const EXPORT_FIELDS = ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier","ajustCHR","ajustMarchand","ajustParticulier"] as const
+const EXPORT_FIELDS = ["id","nom","famille","unite","prixAchat","prixCHR","prixMarchand","prixParticulier","promoCHR","promoMarchand","promoParticulier","ajustCHR","ajustMarchand","ajustParticulier","tauxMargeCHR","tauxMargeMarchand","tauxMargeParticulier"] as const
 
 function articleToObj(a: Article): Record<string, unknown> {
   const r = a as unknown as Record<string, unknown>
@@ -60,6 +60,9 @@ function rowToArticle(row: Record<string, unknown>): Partial<Article> {
     ajustCHR:         numOrU(row.ajustCHR),
     ajustMarchand:    numOrU(row.ajustMarchand),
     ajustParticulier: numOrU(row.ajustParticulier),
+    tauxMargeCHR:         numOrU(row.tauxMargeCHR),
+    tauxMargeMarchand:    numOrU(row.tauxMargeMarchand),
+    tauxMargeParticulier: numOrU(row.tauxMargeParticulier),
   } as Partial<Article>
 }
 
@@ -75,13 +78,13 @@ function parseCSV(text: string): Record<string, unknown>[] {
   })
 }
 
-type PriceField = "prix" | "promo" | "ajust"
-const FIELD_MAP: Record<Cat, { prix: keyof Article; promo: keyof Article; ajust: keyof Article }> = {
-  chr:         { prix: "prixCHR" as keyof Article,         promo: "promoCHR" as keyof Article,         ajust: "ajustCHR" as keyof Article },
-  marchand:    { prix: "prixMarchand" as keyof Article,    promo: "promoMarchand" as keyof Article,    ajust: "ajustMarchand" as keyof Article },
-  particulier: { prix: "prixParticulier" as keyof Article, promo: "promoParticulier" as keyof Article, ajust: "ajustParticulier" as keyof Article },
+type PriceField = "prix" | "promo" | "ajust" | "taux"
+const FIELD_MAP: Record<Cat, { prix: keyof Article; promo: keyof Article; ajust: keyof Article; taux: keyof Article }> = {
+  chr:         { prix: "prixCHR" as keyof Article,         promo: "promoCHR" as keyof Article,         ajust: "ajustCHR" as keyof Article,         taux: "tauxMargeCHR" as keyof Article },
+  marchand:    { prix: "prixMarchand" as keyof Article,    promo: "promoMarchand" as keyof Article,    ajust: "ajustMarchand" as keyof Article,    taux: "tauxMargeMarchand" as keyof Article },
+  particulier: { prix: "prixParticulier" as keyof Article, promo: "promoParticulier" as keyof Article, ajust: "ajustParticulier" as keyof Article, taux: "tauxMargeParticulier" as keyof Article },
 }
-const getField = (cat: Cat): { prix: keyof Article; promo: keyof Article; ajust: keyof Article } => FIELD_MAP[cat]
+const getField = (cat: Cat): { prix: keyof Article; promo: keyof Article; ajust: keyof Article; taux: keyof Article } => FIELD_MAP[cat]
 
 export default function BOCategoryPricing() {
   const [articles, setArticles]     = useState<Article[]>([])
@@ -91,7 +94,7 @@ export default function BOCategoryPricing() {
   const [mode, setMode]             = useState<Mode>("segment")
   const [activeCat, setActiveCat]   = useState<Cat>("chr")
   const [selectedClient, setSelectedClient] = useState<string>("")
-  const [edits, setEdits]           = useState<Record<string, { prix?: number; promo?: number; ajust?: number }>>({})
+  const [edits, setEdits]           = useState<Record<string, { prix?: number; promo?: number; ajust?: number; taux?: number }>>({})
   const [saved, setSaved]           = useState(false)
   const [importMsg, setImportMsg]   = useState<{ ok: boolean; text: string } | null>(null)
   const fileRef                     = useRef<HTMLInputElement>(null)
@@ -168,6 +171,9 @@ export default function BOCategoryPricing() {
           if ((row as Record<string,unknown>).ajustCHR !== undefined)         a.ajustCHR         = (row as Record<string,unknown>).ajustCHR
           if ((row as Record<string,unknown>).ajustMarchand !== undefined)    a.ajustMarchand    = (row as Record<string,unknown>).ajustMarchand
           if ((row as Record<string,unknown>).ajustParticulier !== undefined) a.ajustParticulier = (row as Record<string,unknown>).ajustParticulier
+          if ((row as Record<string,unknown>).tauxMargeCHR !== undefined)         a.tauxMargeCHR         = (row as Record<string,unknown>).tauxMargeCHR
+          if ((row as Record<string,unknown>).tauxMargeMarchand !== undefined)    a.tauxMargeMarchand    = (row as Record<string,unknown>).tauxMargeMarchand
+          if ((row as Record<string,unknown>).tauxMargeParticulier !== undefined) a.tauxMargeParticulier = (row as Record<string,unknown>).tauxMargeParticulier
           updated++
         })
         store.saveArticles(all)
@@ -277,10 +283,11 @@ export default function BOCategoryPricing() {
       if (idx < 0) continue
       touchedIds.push(artId)
       if (mode === "segment") {
-        const { prix: prixKey, promo: promoKey, ajust: ajustKey } = getField(activeCat)
+        const { prix: prixKey, promo: promoKey, ajust: ajustKey, taux: tauxKey } = getField(activeCat)
         if (edit.prix  !== undefined) (all[idx] as unknown as Record<string, unknown>)[prixKey  as string] = edit.prix
         if (edit.promo !== undefined) (all[idx] as unknown as Record<string, unknown>)[promoKey as string] = edit.promo
         if (edit.ajust !== undefined) (all[idx] as unknown as Record<string, unknown>)[ajustKey as string] = edit.ajust
+        if (edit.taux  !== undefined) (all[idx] as unknown as Record<string, unknown>)[tauxKey  as string] = edit.taux
       } else if (selectedClient) {
         if (!all[idx].clientPrices) all[idx].clientPrices = {}
         const prev = all[idx].clientPrices![selectedClient] ?? {}
@@ -550,6 +557,7 @@ export default function BOCategoryPricing() {
                       </th>
                       <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Remise %</th>
                       <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Ajust. PV (DH)</th>
+                      <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Taux marge cible (%)</th>
                     </>
                   ) : (
                     <>
@@ -614,6 +622,30 @@ export default function BOCategoryPricing() {
                               className="w-20 px-2 py-1.5 rounded-lg border border-border bg-background text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
                             <span className="text-xs text-muted-foreground">DH</span>
                           </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {(() => {
+                            const cout = (Number(art.prixAchat) || 0) + chargeOf(art)
+                            const margeReelle = final > 0 ? ((final - cout) / final) * 100 : 0
+                            const tauxCible = Number(getSegVal(art, activeCat, "taux")) || 0
+                            const sousCible = tauxCible > 0 && margeReelle < tauxCible
+                            return (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <div className="flex items-center justify-center gap-1">
+                                  <input type="number" min={0} max={100} step={0.5}
+                                    value={getSegVal(art, activeCat, "taux")}
+                                    onChange={e => setVal(art.id, "taux", e.target.value)}
+                                    placeholder="0"
+                                    title="Taux de marge cible (%) — indicatif, n'affecte pas le prix final"
+                                    className="w-16 px-2 py-1.5 rounded-lg border border-border bg-background text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
+                                  <span className="text-xs text-muted-foreground">%</span>
+                                </div>
+                                <span className={`text-[10px] font-semibold ${sousCible ? "text-red-600" : "text-muted-foreground"}`}>
+                                  réel : {margeReelle.toFixed(1)}%
+                                </span>
+                              </div>
+                            )
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`font-bold font-mono ${hasCustom ? "text-primary" : "text-muted-foreground"}`}>

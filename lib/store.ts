@@ -284,6 +284,12 @@ export interface Article {
   ajustCHR?: number
   ajustMarchand?: number
   ajustParticulier?: number
+  // Taux de marge CIBLE (%) par segment — purement informatif (n'affecte pas
+  // le calcul du prix final), pour comparer la marge visée à la marge réelle
+  // (PV final vs PA+charge) directement sur l'écran Tarifs par Catégorie.
+  tauxMargeCHR?: number
+  tauxMargeMarchand?: number
+  tauxMargeParticulier?: number
   clientPrices?: Record<string, { prix?: number; promo?: number; ajust?: number }> // overrides par client individuel
   // Charge appliquée à cet article pour le calcul du coût de revient
   // (transport, manutention, perte…) — référence un ChargeArticle du catalogue.
