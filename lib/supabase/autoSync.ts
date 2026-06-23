@@ -21,7 +21,7 @@ const SYNCED_KEYS = new Set<string>([
   "fl_users", "fl_clients", "fl_articles", "fl_fournisseurs", "fl_commandes",
   "fl_bons_achat", "fl_purchase_orders", "fl_receptions", "fl_bons_livraison",
   "fl_retours", "fl_trips", "fl_bons_preparation", "fl_messages", "fl_notices",
-  "fl_visites",
+  "fl_visites", "fl_demandes_achat", "fl_non_achats",
 ])
 
 // Configs (objets uniques, PAS des tableaux) : process, workflow, alertes, emails.

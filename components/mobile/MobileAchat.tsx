@@ -394,6 +394,19 @@ export default function MobileAchat({ user }: Props) {
     if (pos.length > 0 && poPushMode === "auto") {
       setActiveTab("po_push")
     }
+    // Hydratation depuis Supabase en arrière-plan (cache local seul = vide sur
+    // un appareil neuf/jamais synchronisé). Affichage instantané avec le cache
+    // local ci-dessus, puis mise à jour silencieuse dès que Supabase répond.
+    import("@/lib/supabase/db").then(async db => {
+      try {
+        const [freshArts, freshFourns, { clients: freshClients }] = await Promise.all([
+          db.fetchArticles(), db.fetchFournisseurs(), db.fetchClients(),
+        ])
+        if (freshArts?.length) { setArticles(freshArts); setBesoinSKU(calcBesoinSKU(freshArts)) }
+        if (freshFourns?.length) setFournisseurs(freshFourns)
+        if (freshClients?.length) setClients(freshClients)
+      } catch { /* offline */ }
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -454,6 +467,7 @@ export default function MobileAchat({ user }: Props) {
 
     // Update historique PA on each article
     const allArticles = store.getArticles()
+    const touchedIdx: number[] = []
     lignes.forEach(l => {
       const idx = allArticles.findIndex(a => a.id === l.articleId)
       if (idx < 0) return
@@ -472,8 +486,13 @@ export default function MobileAchat({ user }: Props) {
         historiquePrixAchat: [...existing, histEntry].slice(-20), // keep last 20
         prixAchat: pa, // update current PA
       }
+      touchedIdx.push(idx)
     })
     store.saveArticles(allArticles)
+    try {
+      const { upsertArticle } = await import("@/lib/supabase/db")
+      for (const idx of touchedIdx) await upsertArticle(allArticles[idx])
+    } catch { /* offline */ }
 
     const selectedDepot = depots.find(d => d.id === selectedDepotId)
     const bon = {
@@ -491,6 +510,10 @@ export default function MobileAchat({ user }: Props) {
     }
 
     store.addBonAchat(bon)
+    try {
+      const { upsertBonAchat } = await import("@/lib/supabase/db")
+      await upsertBonAchat(bon)
+    } catch { /* offline */ }
 
     await sendEmail({
       to_email: emailDest,

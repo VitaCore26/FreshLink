@@ -454,6 +454,8 @@ export default function MobileCommercial({ user }: Props) {
       categorie: newClient.categorie,
     }
     store.addClient(client)
+    // Sync le nouveau client vers Supabase (back-office)
+    import("@/lib/supabase/db").then(db => db.upsertClient(client)).catch(e => console.error("[MobileCommercial] sync client error:", e))
     setClients(store.getClients())
     setSelectedClientId(client.id)
     setShowAddClient(false)
