@@ -971,9 +971,17 @@ function SidebarContent({
   const ACTIVE = "#22c55e"
 
   // Groupes (grandes rubriques) repliés — liste déroulable, persistée.
+  // Par défaut sur mobile (drawer hamburger) : tous repliés au 1er affichage
+  // pour ne pas noyer l'utilisateur sous la liste complète des rubriques —
+  // sur desktop le comportement historique (tout déplié) est conservé.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set()
-    try { return new Set(JSON.parse(localStorage.getItem("fl_nav_collapsed") ?? "[]") as string[]) } catch { return new Set() }
+    try {
+      const saved = localStorage.getItem("fl_nav_collapsed")
+      if (saved != null) return new Set(JSON.parse(saved) as string[])
+    } catch { /* noop */ }
+    if (window.innerWidth < 1024) return new Set(filteredGroups.map(g => g.label))
+    return new Set()
   })
   const toggleGroup = (label: string) => setCollapsedGroups(prev => {
     const next = new Set(prev)
