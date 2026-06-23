@@ -172,6 +172,65 @@ export default function BOPricingConcurrence({ user }: Props) {
     }
   }, [articles, computeRow])
 
+  // ── Volume vendu (30j) par article — pour estimer l'impact réel (DH) d'un
+  // changement de PV, pas juste un écart unitaire sans contexte de volume.
+  const volMap30j = useMemo(() => {
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+    const m: Record<string, number> = {}
+    try {
+      store.getCommandes().filter(c => c.date >= cutoff).forEach(c => {
+        c.lignes.forEach(l => { m[l.articleId] = (m[l.articleId] ?? 0) + (Number(l.quantite) || 0) })
+      })
+    } catch { /* noop */ }
+    return m
+  }, [])
+
+  // ── Regroupement par stratégie — pour les boutons "Appliquer tout" + recap gain/perte ──
+  interface StratGroup { label: string; rows: Row[]; nb: number; gainDH: number; perteDH: number; diffDH: number; belowComp: number }
+  const strategyGroups = useMemo((): StratGroup[] => {
+    const all = articles.map(computeRow).filter(r => r.hasComp && r.strat !== "—" && r.pvImb > 0)
+    const byStrat: Record<string, Row[]> = {}
+    all.forEach(r => { (byStrat[r.strat] ??= []).push(r) })
+    return Object.entries(byStrat).map(([label, grpRows]) => {
+      let gainDH = 0, perteDH = 0, belowComp = 0
+      grpRows.forEach(r => {
+        const vol = volMap30j[r.a.id] ?? 0
+        const impact = (r.pvImb - r.ourPV) * vol
+        if (impact > 0) gainDH += impact
+        else if (impact < 0) perteDH += -impact
+        if (r.compPV > 0 && r.pvImb < r.compPV) belowComp++
+      })
+      return { label, rows: grpRows, nb: grpRows.length, gainDH, perteDH, diffDH: gainDH - perteDH, belowComp }
+    }).sort((a, b) => b.nb - a.nb)
+  }, [articles, computeRow, volMap30j])
+
+  const applyStrategyGroup = async (group: StratGroup) => {
+    if (group.belowComp > 0) {
+      const ok = window.confirm(
+        `⚠️ ${group.belowComp} article(s) sur ${group.nb} dans « ${group.label} » seront vendus MOINS CHER que le concurrent.\n\nAppliquer le nouveau PV à la totalité des ${group.nb} article(s) de cette stratégie ?`
+      )
+      if (!ok) return
+    } else if (!window.confirm(`Appliquer le nouveau PV à la totalité des ${group.nb} article(s) de « ${group.label} » ?`)) {
+      return
+    }
+    setBusy(true)
+    const all = store.getArticles()
+    const touchedIds: string[] = []
+    group.rows.forEach(r => {
+      const idx = all.findIndex(x => x.id === r.a.id)
+      if (idx < 0) return
+      all[idx] = { ...all[idx], pvMethode: "manuel", pvValeur: r.pvImb, pvImbattable: r.pvImb, pvImbattableMaj: new Date().toISOString() }
+      touchedIds.push(r.a.id)
+    })
+    store.saveArticles(all); setArticles(all)
+    try {
+      const { upsertArticle } = await import("@/lib/supabase/db")
+      for (const id of touchedIds) { const art = all.find(a => a.id === id); if (art) await upsertArticle(art) }
+    } catch { /* offline */ }
+    setBusy(false)
+    flash(true, `✅ ${touchedIds.length} article(s) mis à jour pour « ${group.label} ».`)
+  }
+
   // ── Classification "type client" : on matche le nom du client de la facture
   //    concurrent avec NOTRE base clients pour déduire CHR / Marchand / Particulier.
   const clientCat = useMemo(() => {
@@ -345,6 +404,47 @@ export default function BOPricingConcurrence({ user }: Props) {
           {busy ? "⏳…" : "📤 Diffuser PV à la force de vente"}
         </button>
       </div>
+
+      {/* ── Stratégies de pricing — appliquer en masse + recap gain/perte ── */}
+      {strategyGroups.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-sm font-black text-slate-800">🎯 Stratégies de pricing — vue d&apos;ensemble</h3>
+            <span className="text-[11px] text-slate-400">Impact estimé sur le volume vendu des 30 derniers jours</span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {strategyGroups.map(g => {
+              const total = g.gainDH + g.perteDH
+              const gainPct = total > 0 ? (g.gainDH / total) * 100 : 50
+              return (
+                <div key={g.label} className="rounded-2xl border border-slate-200 p-4 flex flex-col gap-2.5">
+                  <p className="text-xs font-bold text-slate-700 leading-snug">{g.label}</p>
+                  <p className="text-[11px] text-slate-400">{g.nb} article(s){g.belowComp > 0 ? ` · ⚠️ ${g.belowComp} sous le prix concurrent` : ""}</p>
+
+                  {/* Remplissage gain vs perte */}
+                  <div className="h-2 rounded-full bg-red-100 overflow-hidden flex">
+                    <div className="h-full bg-emerald-500" style={{ width: `${gainPct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-emerald-700 font-bold">+{money(g.gainDH)}</span>
+                    <span className="text-red-600 font-bold">−{money(g.perteDH)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-600">Différence (gain − perte)</span>
+                    <span className={`text-sm font-black ${g.diffDH >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {g.diffDH >= 0 ? "+" : ""}{money(g.diffDH)}
+                    </span>
+                  </div>
+                  <button onClick={() => applyStrategyGroup(g)} disabled={busy}
+                    className="mt-1 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 disabled:opacity-50">
+                    Appliquer tout ({g.nb})
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher article / famille…"
