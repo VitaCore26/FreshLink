@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rateLimit"
 
 function corsHeaders(origin: string | null): HeadersInit {
   return {
@@ -69,6 +70,8 @@ async function injectToLogistique(
 // Format attendu : { nom_client, telephone, lignes[], montant_total, ... }
 export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin")
+  const limited = rateLimit(req, { key: "commandes", limit: 10, windowMs: 60_000 }, corsHeaders(origin))
+  if (limited) return limited
 
   let body: Record<string, unknown> = {}
   try { body = await req.json() } catch {

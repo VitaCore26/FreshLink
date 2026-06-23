@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rateLimit"
 import { createHmac } from "crypto"
 import bcrypt from "bcryptjs"
 
@@ -119,6 +120,8 @@ async function phoneExists(tel: string): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin")
+  const limited = rateLimit(req, { key: "demande-compte", limit: 5, windowMs: 60_000 }, cors(origin))
+  if (limited) return limited
 
   let body: Record<string, string> = {}
   try { body = await req.json() } catch {

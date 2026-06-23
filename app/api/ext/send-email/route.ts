@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rateLimit"
 
 // ══════════════════════════════════════════════════════════════════════════════
 // /api/ext/send-email — envoi email côté SERVEUR (clé secrète jamais exposée)
@@ -81,6 +82,8 @@ async function resendVerifiedFrom(name: string): Promise<string | null> {
 
 export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin")
+  const limited = rateLimit(req, { key: "send-email", limit: 5, windowMs: 60_000 }, cors(origin))
+  if (limited) return limited
   let body: { to?: string; subject?: string; html?: string; text?: string; from?: string; replyTo?: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: "invalid JSON" }, { status: 400, headers: cors(origin) }) }
 
