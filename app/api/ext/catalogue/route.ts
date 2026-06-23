@@ -205,8 +205,12 @@ function normalizePayload(a: Record<string, unknown>): Record<string, unknown> {
     ? "hors_saison"
     : (stockWeb <= 0 ? "out_of_stock" : "disponible")
 
+  // ⚠️ Endpoint PUBLIC sans authentification (lu par tout visiteur du site).
+  // On ne renvoie QU'une liste blanche de champs catalogue — jamais le prixAchat,
+  // la marge, le stock réel ERP, ou tout autre champ interne (chargeArticleId,
+  // source d'import, notes admin…) qui pourrait se trouver dans le payload brut.
   return {
-    ...a,
+    id:               a.id,
     // Champs snake_case attendus par mapERPArticle côté website
     nom:              a.nom ?? "",
     nom_ar:           darijaName(String(a.nom ?? "")) ?? a.nomAr ?? a.nom_ar ?? "",
