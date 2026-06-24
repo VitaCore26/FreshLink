@@ -214,6 +214,15 @@ export default function LoginPage({ onLogin }: Props) {
     return () => clearTimeout(t)
   }, [])
 
+  // ── Rafraîchir fl_users depuis Supabase au chargement de la page ───────────
+  // store.login() ne lit QUE le cache localStorage : un compte créé sur un
+  // autre appareil (visible dans Supabase + BO) restait invisible ici jusqu'à
+  // ce qu'une synchro post-connexion se déclenche — sauf qu'il faut déjà être
+  // connecté pour ça. On hydrate donc le cache AVANT toute tentative de login.
+  useEffect(() => {
+    import("@/lib/supabase/db").then(db => db.fetchUsers()).catch(() => { /* offline → cache local existant */ })
+  }, [])
+
   useEffect(() => {
     if (!panelIn) return
     let i = 0
@@ -335,7 +344,12 @@ export default function LoginPage({ onLogin }: Props) {
         setError("CHR : utilisez votre email ou téléphone / CHR: دير الإيميل ولا الهاتف")
         setLoading(false); return
       }
-      const extUser = store.loginExternal(raw, loginSubtype)
+      let extUser = store.loginExternal(raw, loginSubtype)
+      if (!extUser) {
+        // Cache local pas encore hydraté (compte créé depuis un autre appareil) → un
+        // dernier essai après un rafraîchissement explicite avant de déclarer l'échec.
+        try { const db = await import("@/lib/supabase/db"); await db.fetchUsers(); extUser = store.loginExternal(raw, loginSubtype) } catch { /* offline */ }
+      }
       if (!extUser) { setError("Identifiant non trouvé — contactez votre commercial / ما لقيناكش — تواصل مع المسؤول"); setLoading(false); return }
       // CHR clients require a password
       if (externalType === "chr") {
@@ -348,7 +362,13 @@ export default function LoginPage({ onLogin }: Props) {
       return
     }
     if (!identifier.trim() || !password.trim()) { setError("Remplissez tous les champs"); setLoading(false); return }
-    const user = store.login(identifier.trim(), password)
+    let user = store.login(identifier.trim(), password)
+    if (!user) {
+      // Cache local pas encore hydraté (compte créé/modifié depuis un autre appareil,
+      // visible dans Supabase + BO mais absent du cache localStorage de CET appareil)
+      // → un dernier essai après un rafraîchissement explicite avant de déclarer l'échec.
+      try { const db = await import("@/lib/supabase/db"); await db.fetchUsers(); user = store.login(identifier.trim(), password) } catch { /* offline */ }
+    }
     if (user) {
       // ── Super admin bypass: exempt du Device Guard (pas de validation MAC) ──
       if (user.role === "super_super_admin") {
