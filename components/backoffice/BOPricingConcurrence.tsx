@@ -111,12 +111,25 @@ export default function BOPricingConcurrence({ user }: Props) {
   // WhatsApp groupe : les liens d'invitation ne permettent pas de pré-remplir le
   // message → on copie le texte dans le presse-papier puis on ouvre le groupe
   // pour que l'utilisateur colle (Ctrl/Cmd+V) et envoie.
-  const sendToWhatsAppGroup = async (which: "pv" | "alert", message: string): Promise<boolean> => {
-    try { navigator.clipboard?.writeText(message) } catch { /* noop */ }
+  // Résultat fiable de l'envoi WhatsApp :
+  //   "opened"   → l'onglet du groupe s'est bien ouvert (message copié à coller)
+  //   "blocked"  → lien OK mais le navigateur a bloqué le popup
+  //   "noconfig" → WA_GROUP_*_URL absent côté serveur
+  // IMPORTANT : window.open doit garder l'« activation utilisateur ». Comme on
+  // appelle cette fonction APRÈS des await (upsert Supabase + fetch des liens),
+  // le geste est perdu et le popup serait bloqué. On ouvre donc un onglet vide
+  // SYNCHRONEMENT dans le handler (waWin), puis on y charge le lien ici.
+  const sendToWhatsAppGroup = async (
+    which: "pv" | "alert",
+    message: string,
+    waWin: Window | null,
+  ): Promise<"opened" | "blocked" | "noconfig"> => {
+    try { await navigator.clipboard?.writeText(message) } catch { /* noop */ }
     const link = await fetchWaGroupUrl(which)
-    if (!link) return false
-    try { window.open(link, "_blank", "noopener") } catch { /* noop */ }
-    return true
+    if (!link) { try { if (waWin && !waWin.closed) waWin.close() } catch { /* noop */ } return "noconfig" }
+    if (waWin && !waWin.closed) { try { waWin.location.href = link; return "opened" } catch { /* noop */ } }
+    const w = (() => { try { return window.open(link, "_blank", "noopener") } catch { return null } })()
+    return w ? "opened" : "blocked"
   }
 
   const findComp = useCallback((nom: string, map: Record<string, number>): number => {
@@ -294,6 +307,8 @@ export default function BOPricingConcurrence({ user }: Props) {
     const cible = rows.filter(r => r.pvImb > 0)
     if (cible.length === 0) { flash(false, "Aucun PV à diffuser."); return }
     if (!window.confirm(`Diffuser ${cible.length} PV imbattable(s) à la force de vente ?\nLes prévendeurs verront ces prix conseillés.`)) return
+    // Onglet ouvert MAINTENANT (geste utilisateur encore actif) — rempli après les await.
+    const waWin = (() => { try { return window.open("about:blank", "_blank") } catch { return null } })()
     setBusy(true)
     const now = new Date().toISOString()
     const all = store.getArticles()
@@ -311,25 +326,33 @@ export default function BOPricingConcurrence({ user }: Props) {
     const corps = `${cible.length} prix de vente conseillés diffusés par ${user.name}.\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("💰 Nouveaux PV conseillés (imbattables)", corps, "commercial", "notice")
     // Diffusion WhatsApp → groupe force de vente
-    const waOk = await sendToWhatsAppGroup("pv", `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`)
+    const waRes = await sendToWhatsAppGroup("pv", `💰 *PV conseillés Vita Fresh* — ${new Date().toLocaleDateString("fr-MA")}\n\n${top}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`, waWin)
     setBusy(false)
-    flash(waOk, waOk
-      ? `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`
-      : `⚠️ ${cible.length} PV diffusés en interne (notice envoyée aux prévendeurs) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_PV_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
+    flash(waRes === "opened",
+      waRes === "opened"
+        ? `✅ ${cible.length} PV diffusés. Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp qui vient de s'ouvrir.`
+        : waRes === "blocked"
+        ? `⚠️ ${cible.length} PV diffusés en interne. Le navigateur a bloqué l'ouverture de WhatsApp — autorisez les popups pour ce site, le message est déjà copié (Ctrl+V dans le groupe).`
+        : `⚠️ ${cible.length} PV diffusés en interne (notice envoyée aux prévendeurs) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_PV_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
   }
 
   const alerterAchat = async () => {
     const cible = articles.map(computeRow).filter(r => r.alertePA)
     if (cible.length === 0) { flash(false, "Aucun écart PA défavorable détecté."); return }
     if (!window.confirm(`Envoyer une alerte à l'équipe achat pour ${cible.length} article(s) où notre PA > PA concurrent ?`)) return
+    // Onglet ouvert MAINTENANT (geste utilisateur encore actif) — rempli après les await.
+    const waWin = (() => { try { return window.open("about:blank", "_blank") } catch { return null } })()
     const lignes = cible.slice(0, 40).map(r => `• ${r.a.nom} : notre PA ${money(r.ourPA)} > concurrent ${money(r.compPA)} (écart +${money(r.ourPA - r.compPA)})`).join("\n")
     const corps = `${cible.length} article(s) où notre prix d'achat dépasse celui du concurrent — à renégocier.\n\n${lignes}${cible.length > 40 ? `\n… +${cible.length - 40} autres` : ""}`
     addNotice("⚠️ PA plus cher que le concurrent", corps, "resp_achat", "reclamation")
     // Alerte WhatsApp → groupe achat
-    const waOk = await sendToWhatsAppGroup("alert", `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`)
-    flash(waOk, waOk
-      ? `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`
-      : `⚠️ Alerte envoyée en interne (notice à l'équipe achat) pour ${cible.length} article(s) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_ALERT_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
+    const waRes = await sendToWhatsAppGroup("alert", `⚠️ *Alerte achat — PA trop cher* — ${new Date().toLocaleDateString("fr-MA")}\n\n${corps}`, waWin)
+    flash(waRes === "opened",
+      waRes === "opened"
+        ? `🚨 Alerte envoyée pour ${cible.length} article(s). Message copié → collez-le (Ctrl+V) dans le groupe WhatsApp achat ouvert.`
+        : waRes === "blocked"
+        ? `⚠️ Alerte envoyée en interne pour ${cible.length} article(s). Le navigateur a bloqué l'ouverture de WhatsApp — autorisez les popups, le message est déjà copié (Ctrl+V dans le groupe).`
+        : `⚠️ Alerte envoyée en interne (notice à l'équipe achat) pour ${cible.length} article(s) mais le groupe WhatsApp n'est pas configuré côté serveur (WA_GROUP_ALERT_URL manquant sur Vercel) — rien n'a été envoyé sur WhatsApp.`)
   }
 
   const appliquerPV = async (r: Row) => {
