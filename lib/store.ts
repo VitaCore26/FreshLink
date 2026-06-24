@@ -1,5 +1,7 @@
 ﻿"use client"
 
+import bcrypt from "bcryptjs"
+
 // ============================================================
 // TYPES
 // ============================================================
@@ -2257,6 +2259,19 @@ function guardWrite<T extends unknown[]>(
   }
 }
 
+// Les comptes auto-inscrits (demande de compte web, /api/ext/demande-compte)
+// sont stockés avec un mot de passe haché bcrypt ($2a$/$2b$...). Sans ce
+// helper, login() comparait en texte brut et ces comptes ne pouvaient JAMAIS
+// se connecter (visibles dans Supabase + BO, mais "mot de passe incorrect"
+// systématique) — c'est exactement le même algorithme que /api/ext/auth.
+export function passwordMatches(stored: string | undefined, input: string): boolean {
+  if (!stored) return false
+  if (/^\$2[aby]\$/.test(stored)) {
+    try { return bcrypt.compareSync(input, stored) } catch { return false }
+  }
+  return stored === input
+}
+
 // ============================================================
 // STORE API
 // ============================================================
@@ -2316,9 +2331,9 @@ export const store = {
       if (!idMatch || !u.actif) return false
       // Check all password variants
       return (
-        u.password === password ||
-        (u.passwordMobile && u.passwordMobile === password) ||
-        (u.passwordBO && u.passwordBO === password)
+        passwordMatches(u.password, password) ||
+        passwordMatches(u.passwordMobile, password) ||
+        passwordMatches(u.passwordBO, password)
       )
     }) || null
   },
@@ -2334,8 +2349,8 @@ export const store = {
       return idMatch && u.actif
     })
     if (!u) return null
-    if (u.passwordMobile && u.passwordMobile === password) return "mobile"
-    if (u.passwordBO && u.passwordBO === password) return "backoffice"
+    if (passwordMatches(u.passwordMobile, password)) return "mobile"
+    if (passwordMatches(u.passwordBO, password)) return "backoffice"
     return null
   },
 

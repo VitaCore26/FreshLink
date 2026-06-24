@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { store, type User, type UserRole, ROLE_LABELS, getUserInterface } from "@/lib/store"
+import { store, type User, type UserRole, ROLE_LABELS, getUserInterface, passwordMatches } from "@/lib/store"
 import FreshLinkLogo from "@/components/ui/FreshLinkLogo"
 import { sendEmail } from "@/lib/email"
 
@@ -354,7 +354,7 @@ export default function LoginPage({ onLogin }: Props) {
       // CHR clients require a password
       if (externalType === "chr") {
         if (!chrPwd.trim()) { setError("Mot de passe requis pour les clients CHR / كلمة السر ضرورية"); setLoading(false); return }
-        if (extUser.password && extUser.password !== chrPwd.trim()) {
+        if (extUser.password && !passwordMatches(extUser.password, chrPwd.trim())) {
           setError("Mot de passe incorrect / كلمة السر خاطئة"); setLoading(false); return
         }
       }
