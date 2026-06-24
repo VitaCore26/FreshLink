@@ -387,8 +387,8 @@ export default function BODashboard({ user }: Props) {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black" style={{ color: "oklch(0.95 0.005 250)" }}>
-                Tableau de bord <span className="font-normal text-base" style={{ color: "oklch(0.48 0.010 255)" }}>/ لوحة القيادة</span>
+              <h2 className="text-xl font-black text-foreground">
+                Tableau de bord <span className="font-normal text-base text-muted-foreground">/ لوحة القيادة</span>
               </h2>
               {/* LIVE badge */}
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider"
@@ -398,7 +398,7 @@ export default function BODashboard({ user }: Props) {
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs" style={{ color: "oklch(0.48 0.010 255)" }}>
+              <p className="text-xs text-muted-foreground">
                 {today} — {user.name} — màj {lastRefreshed.toLocaleTimeString("fr-MA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </p>
               <button
@@ -437,46 +437,45 @@ export default function BODashboard({ user }: Props) {
 
       {/* ============================== CREDIT ALERTS BANNER ============================== */}
       {isAdmin && creditAlerts.length > 0 && (
-        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: "oklch(0.13 0.030 27)", border: "1px solid oklch(0.30 0.14 27)" }}>
+        <div className="rounded-2xl p-4 flex flex-col gap-3 bg-red-50 border border-red-200">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "oklch(0.20 0.06 27)" }}>
-                <svg className="w-4 h-4" style={{ color: "oklch(0.72 0.20 27)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-red-100">
+                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-bold" style={{ color: "oklch(0.85 0.14 27)" }}>
+                <p className="text-sm font-bold text-red-800">
                   {creditAlerts.length} alerte(s) credit — {DH(totalEnRetard + totalHorsPlafond)} en situation critique
                 </p>
-                <p className="text-xs" style={{ color: "oklch(0.65 0.12 27)" }}>Clients hors plafond ou en retard de paiement</p>
+                <p className="text-xs text-red-600">Clients hors plafond ou en retard de paiement</p>
               </div>
             </div>
             <button onClick={() => setDashTab("credit")}
-              className="px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90"
-              style={{ background: "oklch(0.52 0.22 27)" }}>
+              className="px-4 py-1.5 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90 bg-red-600">
               Voir Credit
             </button>
           </div>
           {/* Quick preview of top 3 alerts */}
           <div className="flex flex-col gap-1.5">
             {creditAlerts.slice(0, 3).map(c => (
-              <div key={c.client.id} className="flex items-center justify-between rounded-xl px-3 py-2 gap-2" style={{ background: "oklch(0.10 0.012 145)", border: "1px solid oklch(0.25 0.08 27)" }}>
+              <div key={c.client.id} className="flex items-center justify-between rounded-xl px-3 py-2 gap-2 bg-card border border-red-200">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   {c.isOverPlafond && (
-                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.18 0.06 27)", color: "oklch(0.72 0.20 27)", border: "1px solid oklch(0.28 0.10 27)" }}>Hors plafond</span>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-300">Hors plafond</span>
                   )}
                   {c.isOverdue && !c.isOverPlafond && (
-                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "oklch(0.18 0.06 72)", color: "oklch(0.80 0.18 72)", border: "1px solid oklch(0.30 0.10 72)" }}>En retard</span>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">En retard</span>
                   )}
-                  <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{c.client.nom}</span>
+                  <span className="text-sm font-semibold truncate text-foreground">{c.client.nom}</span>
                 </div>
-                <span className="text-sm font-black shrink-0" style={{ color: "oklch(0.72 0.20 27)" }}>{DH(c.solde)}</span>
+                <span className="text-sm font-black shrink-0 text-red-600">{DH(c.solde)}</span>
               </div>
             ))}
           </div>
           {creditAlerts.length > 3 && (
-            <p className="text-xs text-center" style={{ color: "oklch(0.65 0.12 27)" }}>+ {creditAlerts.length - 3} autre(s) client(s) — voir onglet Credit</p>
+            <p className="text-xs text-center text-red-600">+ {creditAlerts.length - 3} autre(s) client(s) — voir onglet Credit</p>
           )}
         </div>
       )}
@@ -492,32 +491,32 @@ export default function BODashboard({ user }: Props) {
                 value: DH(caToday), sub: `${cmdsToday.length} commande(s)`,
                 delta1: <Delta current={caToday} previous={caYday} label="vs J-1" />,
                 delta2: <Delta current={caToday} previous={caLastWkDay} label="vs sem. passee" />,
-                icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", iconBg: "oklch(0.18 0.040 148)", iconClr: "oklch(0.65 0.18 148)", valClr: "oklch(0.72 0.18 148)",
+                icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", iconBg: "bg-emerald-50", iconClr: "text-emerald-600", valClr: "text-emerald-600",
               },
               {
                 label: "CA semaine", labelAr: "رقم الأعمال الأسبوع",
                 value: DH(caWeek), sub: `${cmdsWeek.length} commandes`,
                 delta1: <Delta current={caWeek} previous={caLastWeek} label="vs S-1" />,
                 delta2: null,
-                icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", iconBg: "oklch(0.18 0.040 72)", iconClr: "oklch(0.72 0.18 72)", valClr: "oklch(0.80 0.18 72)",
+                icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", iconBg: "bg-amber-50", iconClr: "text-amber-600", valClr: "text-amber-600",
               },
               {
                 label: "CA mois", labelAr: "رقم الأعمال الشهر",
                 value: DH(caMonth), sub: `${cmdsMonth.length} commandes`,
                 delta1: null, delta2: null,
-                icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", iconBg: "oklch(0.18 0.035 210)", iconClr: "oklch(0.65 0.18 210)", valClr: "oklch(0.72 0.18 210)",
+                icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z", iconBg: "bg-blue-50", iconClr: "text-blue-600", valClr: "text-blue-600",
               },
             ].map(k => (
-              <div key={k.label} className="kpi-card rounded-2xl p-4 flex items-start gap-3" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: k.iconBg }}>
-                  <svg className="w-5 h-5" style={{ color: k.iconClr }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div key={k.label} className="kpi-card bg-card border border-border rounded-2xl p-4 flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${k.iconBg}`}>
+                  <svg className={`w-5 h-5 ${k.iconClr}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={k.icon} />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>{k.label} / {k.labelAr}</p>
-                  <p className="text-2xl font-black" style={{ color: k.valClr }}>{k.value}</p>
-                  <p className="text-xs" style={{ color: "oklch(0.50 0.010 145)" }}>{k.sub}</p>
+                  <p className="text-xs text-muted-foreground">{k.label} / {k.labelAr}</p>
+                  <p className={`text-2xl font-black ${k.valClr}`}>{k.value}</p>
+                  <p className="text-xs text-muted-foreground">{k.sub}</p>
                   {(k.delta1 || k.delta2) && (
                     <div className="flex gap-1 mt-1.5 flex-wrap">{k.delta1}{k.delta2}</div>
                   )}
@@ -532,25 +531,25 @@ export default function BODashboard({ user }: Props) {
               {
                 label: "Tonnage jour",
                 v: KG(tonnageToday),
-                clr: "oklch(0.80 0.18 72)",
+                clr: "text-amber-600",
                 sub: <Delta current={tonnageToday} previous={tonnageYday} label="vs J-1" />,
                 sub2: <Delta current={tonnageToday} previous={tonnageLastWkDay} label="vs S-1" />,
               },
               {
                 label: "Visites jour",
                 v: String(visitesToday),
-                clr: "oklch(0.70 0.18 210)",
+                clr: "text-blue-600",
                 sub: <Delta current={visitesToday} previous={visitesYday} label="vs J-1" />,
                 sub2: <Delta current={visitesToday} previous={visitesLastWk} label="vs S-1" />,
               },
-              { label: "Retours (kg/j)",  v: KG(totalRetourKgToday), clr: "oklch(0.65 0.22 27)", sub: null, sub2: null },
-              { label: "Taux retour",     v: `${tauxRetour}%`, clr: tauxRetour > 10 ? "oklch(0.65 0.22 27)" : tauxRetour > 5 ? "oklch(0.80 0.18 72)" : "oklch(0.72 0.18 148)", sub: null, sub2: null },
-              { label: "Cmds en attente", v: String(cmdsEnAttente), clr: "oklch(0.75 0.18 55)", sub: null, sub2: null },
-              { label: "Stock faible",    v: String(stockFaible), clr: stockFaible > 0 ? "oklch(0.65 0.22 27)" : "oklch(0.65 0.18 148)", sub: null, sub2: null },
+              { label: "Retours (kg/j)",  v: KG(totalRetourKgToday), clr: "text-red-600", sub: null, sub2: null },
+              { label: "Taux retour",     v: `${tauxRetour}%`, clr: tauxRetour > 10 ? "text-red-600" : tauxRetour > 5 ? "text-amber-600" : "text-emerald-600", sub: null, sub2: null },
+              { label: "Cmds en attente", v: String(cmdsEnAttente), clr: "text-yellow-600", sub: null, sub2: null },
+              { label: "Stock faible",    v: String(stockFaible), clr: stockFaible > 0 ? "text-red-600" : "text-emerald-600", sub: null, sub2: null },
             ].map(k => (
-              <div key={k.label} className="rounded-xl p-3" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-                <p className="text-[11px] mb-1 truncate" style={{ color: "oklch(0.52 0.010 145)" }}>{k.label}</p>
-                <p className="text-xl font-black" style={{ color: k.clr }}>{k.v}</p>
+              <div key={k.label} className="bg-card border border-border rounded-xl p-3">
+                <p className="text-[11px] mb-1 truncate text-muted-foreground">{k.label}</p>
+                <p className={`text-xl font-black ${k.clr}`}>{k.v}</p>
                 {(k.sub || k.sub2) && <div className="flex gap-1 mt-1 flex-wrap">{k.sub}{k.sub2}</div>}
               </div>
             ))}
@@ -558,32 +557,32 @@ export default function BODashboard({ user }: Props) {
 
           {/* Alert stock */}
           {stockFaible > 0 && (
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl" style={{ background: "oklch(0.13 0.030 27)", border: "1px solid oklch(0.28 0.10 27)" }}>
-              <svg className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "oklch(0.72 0.20 27)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
+              <svg className="w-5 h-5 shrink-0 mt-0.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
-                <p className="text-sm font-bold" style={{ color: "oklch(0.82 0.14 27)" }}>Alerte stock faible / تنبيه مخزون</p>
-                <p className="text-xs" style={{ color: "oklch(0.65 0.12 27)" }}>{stockFaible} article(s) sous 50 kg — Passez des commandes fournisseur.</p>
+                <p className="text-sm font-bold text-red-800">Alerte stock faible / تنبيه مخزون</p>
+                <p className="text-xs text-red-600">{stockFaible} article(s) sous 50 kg — Passez des commandes fournisseur.</p>
               </div>
             </div>
           )}
 
           {/* ── Tournees du Jour ───────────────────────────────── */}
           {visitesTodayList.length > 0 && (
-            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-              <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
+            <div className="rounded-2xl overflow-hidden bg-card border border-border">
+              <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2 border-b border-border">
                 <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 shrink-0" style={{ color: "oklch(0.65 0.18 210)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 shrink-0 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                   </svg>
-                  <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Tournées du Jour / جولات اليوم</h3>
+                  <h3 className="text-sm font-bold text-foreground">Tournées du Jour / جولات اليوم</h3>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-black px-2 py-0.5 rounded-lg" style={{ background: "oklch(0.16 0.04 148)", color: "oklch(0.72 0.18 148)" }}>
+                  <span className="text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700">
                     {tauxConversionJ}% conversion
                   </span>
-                  <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>
+                  <span className="text-xs text-muted-foreground">
                     {visitesTodayList.length} visite(s) · {visitesTodayCommandes} commande(s)
                   </span>
                 </div>
@@ -591,34 +590,32 @@ export default function BODashboard({ user }: Props) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr style={{ background: "oklch(0.10 0.008 145)", borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
-                      <th className="text-left px-4 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Prévendeur</th>
-                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Visites</th>
-                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Commandes</th>
-                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Sans cmd</th>
-                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.52 0.010 145)" }}>Taux</th>
+                    <tr className="bg-muted/50 border-b border-border">
+                      <th className="text-left px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévendeur</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Visites</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Commandes</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Sans cmd</th>
+                      <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Taux</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border">
                     {pvTourneesArr.map((pv, i) => {
                       const taux = pv.visites > 0 ? Math.round((pv.commandes / pv.visites) * 100) : 0
                       return (
-                        <tr key={pv.nom + i} style={{ borderBottom: i < pvTourneesArr.length - 1 ? "1px solid oklch(0.16 0.010 145)" : "none" }}>
+                        <tr key={pv.nom + i}>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: "oklch(0.48 0.18 250)" }}>
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0 bg-indigo-600">
                                 {pv.nom[0]?.toUpperCase()}
                               </div>
-                              <span className="text-xs font-medium" style={{ color: "oklch(0.88 0.006 100)" }}>{pv.nom}</span>
+                              <span className="text-xs font-medium text-foreground">{pv.nom}</span>
                             </div>
                           </td>
-                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>{pv.visites}</td>
-                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.72 0.18 148)" }}>{pv.commandes}</td>
-                          <td className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: "oklch(0.65 0.22 27)" }}>{pv.visites - pv.commandes}</td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold text-foreground">{pv.visites}</td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold text-emerald-600">{pv.commandes}</td>
+                          <td className="text-center px-3 py-2.5 text-xs font-bold text-red-600">{pv.visites - pv.commandes}</td>
                           <td className="text-center px-3 py-2.5">
-                            <span className="text-xs font-black" style={{
-                              color: taux >= 70 ? "oklch(0.72 0.18 148)" : taux >= 40 ? "oklch(0.80 0.18 72)" : "oklch(0.65 0.22 27)"
-                            }}>
+                            <span className={`text-xs font-black ${taux >= 70 ? "text-emerald-600" : taux >= 40 ? "text-amber-600" : "text-red-600"}`}>
                               {taux}%
                             </span>
                           </td>
@@ -633,43 +630,41 @@ export default function BODashboard({ user }: Props) {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top 10 clients CA */}
-            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
-                <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Top 10 clients / أفضل الزبائن</h3>
-                <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>CA total</span>
+            <div className="rounded-2xl overflow-hidden bg-card border border-border">
+              <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+                <h3 className="text-sm font-bold text-foreground">Top 10 clients / أفضل الزبائن</h3>
+                <span className="text-xs text-muted-foreground">CA total</span>
               </div>
               {top10Clients.length === 0
-                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "oklch(0.52 0.010 145)" }}>Aucune commande</p>
-                : <div>
+                ? <p className="px-4 py-6 text-sm text-center text-muted-foreground">Aucune commande</p>
+                : <div className="divide-y divide-border">
                   {top10Clients.map(([id, c], i) => (
-                    <div key={id} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid oklch(0.16 0.010 145)" }}>
-                      <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ background: "oklch(0.18 0.040 148)", color: "oklch(0.65 0.18 148)" }}>{i + 1}</span>
+                    <div key={id} className="px-4 py-2.5 flex items-center gap-3 row-hover">
+                      <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0 bg-emerald-50 text-emerald-700">{i + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{c.nom}</p>
-                        <p className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>{c.cmds} cmd(s) · {KG(c.tonnage)}</p>
+                        <p className="text-sm font-semibold truncate text-foreground">{c.nom}</p>
+                        <p className="text-xs text-muted-foreground">{c.cmds} cmd(s) · {KG(c.tonnage)}</p>
                       </div>
-                      <span className="font-bold text-sm shrink-0" style={{ color: "oklch(0.72 0.18 148)" }}>{DH(c.ca)}</span>
+                      <span className="font-bold text-sm shrink-0 text-emerald-600">{DH(c.ca)}</span>
                     </div>
                   ))}
                 </div>}
             </div>
 
             {/* Top articles vendus */}
-            <div className="rounded-2xl overflow-hidden" style={{ background: "oklch(0.12 0.010 145)", border: "1px solid oklch(0.20 0.012 145)" }}>
-              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid oklch(0.18 0.012 145)" }}>
-                <h3 className="text-sm font-bold" style={{ color: "oklch(0.88 0.006 100)" }}>Top articles vendus / الأكثر مبيعاً</h3>
-                <span className="text-xs" style={{ color: "oklch(0.52 0.010 145)" }}>Toute periode</span>
+            <div className="rounded-2xl overflow-hidden bg-card border border-border">
+              <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+                <h3 className="text-sm font-bold text-foreground">Top articles vendus / الأكثر مبيعاً</h3>
+                <span className="text-xs text-muted-foreground">Toute periode</span>
               </div>
               {artChartData.length === 0
-                ? <p className="px-4 py-6 text-sm text-center" style={{ color: "oklch(0.52 0.010 145)" }}>Aucune commande</p>
-                : <div>
+                ? <p className="px-4 py-6 text-sm text-center text-muted-foreground">Aucune commande</p>
+                : <div className="divide-y divide-border">
                   {artChartData.slice(0, 8).map((a, i) => (
-                    <div key={a.name} className="px-4 py-2.5 flex items-center gap-3 row-hover" style={{ borderBottom: "1px solid oklch(0.16 0.010 145)" }}>
-                      <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ background: "oklch(0.18 0.040 72)", color: "oklch(0.75 0.18 72)" }}>{i + 1}</span>
-                      <p className="flex-1 text-sm font-semibold truncate" style={{ color: "oklch(0.88 0.006 100)" }}>{a.name}</p>
-                      <span className="font-bold text-sm shrink-0" style={{ color: "oklch(0.80 0.18 72)" }}>{KG(a.kg)}</span>
+                    <div key={a.name} className="px-4 py-2.5 flex items-center gap-3 row-hover">
+                      <span className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0 bg-amber-50 text-amber-700">{i + 1}</span>
+                      <p className="flex-1 text-sm font-semibold truncate text-foreground">{a.name}</p>
+                      <span className="font-bold text-sm shrink-0 text-amber-600">{KG(a.kg)}</span>
                     </div>
                   ))}
                 </div>}

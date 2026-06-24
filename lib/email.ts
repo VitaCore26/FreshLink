@@ -220,25 +220,22 @@ function bodyToHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/\n/g, "<br>")
 
+  // ⚠️ Styles 100% INLINE (pas de <style> dans <head>) : de nombreux clients
+  // email (Outlook, passerelles d'entreprise) suppriment les balises <style>
+  // au filtrage — la couleur de texte blanc du header ET son fond dégradé
+  // disparaissaient ENSEMBLE, sauf que ça ne se voit que si l'un survit sans
+  // l'autre. Le style inline garantit que fond + texte restent toujours liés.
   return `<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><style>
-  body{font-family:Arial,sans-serif;font-size:14px;color:#1e293b;line-height:1.6;margin:0;padding:20px;background:#f8fafc}
-  .card{background:#fff;border-radius:12px;padding:24px 28px;max-width:600px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .header{background:linear-gradient(135deg,#1a4f2a,#2d7a46);color:#fff;padding:16px 24px;border-radius:10px;margin-bottom:20px}
-  .header h1{margin:0;font-size:18px;font-weight:800}
-  .header p{margin:4px 0 0;font-size:12px;opacity:.8}
-  pre{background:#f1f5f9;border-radius:8px;padding:16px;font-size:13px;overflow-x:auto;white-space:pre-wrap;border:1px solid #e2e8f0}
-  .footer{text-align:center;margin-top:20px;font-size:11px;color:#94a3b8}
-</style></head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>🌿 FreshLink Pro</h1>
-      <p>Vita Fresh — Distribution Fruits &amp; Légumes</p>
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;font-size:14px;color:#1e293b;line-height:1.6;margin:0;padding:20px;background:#f8fafc">
+  <div style="background:#fff;border-radius:12px;padding:24px 28px;max-width:600px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <div style="background:linear-gradient(135deg,#1a4f2a,#2d7a46);color:#fff;padding:16px 24px;border-radius:10px;margin-bottom:20px">
+      <h1 style="margin:0;font-size:18px;font-weight:800;color:#fff">🌿 FreshLink Pro</h1>
+      <p style="margin:4px 0 0;font-size:12px;color:#fff;opacity:.85">Vita Fresh — Distribution Fruits &amp; Légumes</p>
     </div>
-    <pre>${escaped}</pre>
-    <div class="footer">⚡ Powered by Vita tech · FreshLink Pro</div>
+    <pre style="background:#f1f5f9;border-radius:8px;padding:16px;font-size:13px;overflow-x:auto;white-space:pre-wrap;border:1px solid #e2e8f0;color:#1e293b">${escaped}</pre>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:#94a3b8">⚡ Powered by Vita tech · FreshLink Pro</div>
   </div>
 </body>
 </html>`
