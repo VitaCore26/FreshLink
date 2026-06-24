@@ -1601,7 +1601,7 @@ export const ROLE_COLORS: Record<UserRole, string> = {
   magasinier: "bg-amber-600",
   dispatcheur: "bg-rose-600",
   livreur: "bg-yellow-600",
-  acheteur: "bg-lime-600",
+  acheteur: "bg-lime-700",
   ctrl_achat: "bg-sky-700",
   ctrl_prep: "bg-violet-700",
   cash_man: "bg-emerald-600",
