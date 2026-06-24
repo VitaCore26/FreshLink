@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
+import { verifyShopAdminPassword, shopAdminConfigured } from "@/lib/shopAdminPwd"
 
 // ══════════════════════════════════════════════════════════════════
 // /api/ext/news — Actualités de la boutique (persistées en Supabase)
 //   GET            → { ok, items }            (public — le site les lit)
 //   POST { items, password } → publie         (mot de passe admin requis)
 // Stocké dans fl_notices, ligne id = "site_news", payload = { items }.
-// Mot de passe vérifié côté serveur : env SHOP_ADMIN_PASSWORD (jamais en clair
-// dans le code). Si l'env n'est pas définie, la publication est refusée.
+// Mot de passe vérifié côté serveur via lib/shopAdminPwd (hash Supabase
+// modifiable + fallback env SHOP_ADMIN_PASSWORD). Sans aucune source → refus.
 // ══════════════════════════════════════════════════════════════════
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
 const SB_SRV = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY) ?? ""
-const ADMIN_PWD = process.env.SHOP_ADMIN_PASSWORD ?? ""
 
 function cors(origin: string | null): HeadersInit {
   return {
@@ -45,11 +45,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "JSON invalide" }, { status: 400, headers: cors(origin) })
   }
 
-  // Authentification admin (mot de passe serveur)
-  if (!ADMIN_PWD) {
-    return NextResponse.json({ ok: false, error: "Publication désactivée : variable SHOP_ADMIN_PASSWORD non configurée sur Vercel." }, { status: 403, headers: cors(origin) })
+  // Authentification admin (hash Supabase modifiable + fallback env)
+  if (!(await shopAdminConfigured())) {
+    return NextResponse.json({ ok: false, error: "Publication désactivée : aucun mot de passe admin configuré (SHOP_ADMIN_PASSWORD sur Vercel)." }, { status: 403, headers: cors(origin) })
   }
-  if ((body.password ?? "") !== ADMIN_PWD) {
+  if (!(await verifyShopAdminPassword(body.password ?? ""))) {
     return NextResponse.json({ ok: false, error: "Mot de passe admin invalide." }, { status: 401, headers: cors(origin) })
   }
   if (!Array.isArray(body.items)) {
