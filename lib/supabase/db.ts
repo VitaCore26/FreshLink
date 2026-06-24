@@ -79,14 +79,17 @@ export async function deleteUser(id: string) {
 }
 
 export async function fetchUsers(): Promise<User[]> {
+  // ⚠️ Passe par /api/sync-read (service-role) et NON le client anon : fl_users
+  // est verrouillé en lecture pour l'anon (RLS), donc une lecture anon renvoie
+  // un tableau VIDE — indistinguable d'une table réellement vide — et aurait
+  // sinon effacé silencieusement tout le cache local via le "remplace toujours"
+  // ci-dessous. Le service-role lit réellement la table, donc [] ici signifie
+  // vraiment "vide" (ex. après réinitialisation), pas "accès refusé".
   try {
-    const { data, error } = await sbRead().from("fl_users").select("id, payload")
-    if (error) throw error
-    if (data) {
-      // Remplace toujours (même liste vide) : une connexion réussie qui renvoie
-      // 0 ligne signifie "Supabase est vide" (ex. apres reinitialisation), pas
-      // "hors-ligne" — dans ce cas le cache local doit aussi se vider.
-      const users = (data as { id: string; payload: unknown }[]).map(r => fromRow<User>(r))
+    const res = await fetch("/api/sync-read?table=fl_users", { cache: "no-store" })
+    const json = await res.json() as { ok: boolean; data?: { id: string; payload: unknown }[] }
+    if (json.ok && json.data) {
+      const users = json.data.map(r => fromRow<User>(r))
       store.saveUsers(users)
       return users
     }
