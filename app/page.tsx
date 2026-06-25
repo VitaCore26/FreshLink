@@ -59,7 +59,17 @@ export default function App() {
       import("@/lib/supabase/db").then(({ syncFromSupabase, hydrateConfigs }) => {
         syncFromSupabase().then(({ ok, tables }) => {
           console.log(`[FreshLink] Sync login — ${tables.length} tables chargées depuis Supabase`)
-          if (ok) window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
+          if (ok) {
+            // Ré-hydrate la session avec la fiche serveur fraîche. Sans ça, roles/
+            // activeRole/secteur restent figés sur la copie localStorage d'avant-sync :
+            // un compte multi-rôle (ex. ["prevendeur","acheteur"]) n'affiche alors PAS
+            // le sélecteur de rôle → impossible de switcher acheteur ↔ prévendeur.
+            try {
+              const fresh = store.getUsers().find(u => u.id === loggedUser.id)
+              if (fresh) { store.setSession(fresh); setUser(fresh) }
+            } catch { /* noop */ }
+            window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
+          }
         }).catch(() => {/* offline OK */})
         // Configs process/workflow/alertes/emails (cross-device)
         hydrateConfigs().catch(() => {/* offline OK */})

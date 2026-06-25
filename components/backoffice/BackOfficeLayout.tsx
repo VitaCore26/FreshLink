@@ -401,16 +401,17 @@ const NAV_ITEM_MAP: Record<string, NavItem> =
   Object.fromEntries(NAV_GROUPS_RAW.flatMap(g => g.items).map(i => [i.id, i]))
 
 const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
-  { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "messagerie", "recap", "rapport_livraison"] },
+  { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "recap", "rapport_livraison"] },
+  { label: "Communication",               labelAr: "التواصل",              ids: ["messagerie", "whatsapp", "feedback"] },
   { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
   { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
   { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
   { label: "Prix, Marge & Concurrence",   labelAr: "الأسعار والهامش والمنافسة", ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
-  { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics", "whatsapp"] },
+  { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics"] },
   { label: "Clients & Comptes Web",       labelAr: "الزبائن والحسابات",    ids: ["comptes_externes", "demandes_comptes"] },
   { label: "Logistique & Transport",      labelAr: "اللوجستيك والنقل",     ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
   { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
-  { label: "Ressources Humaines",         labelAr: "الموارد البشرية",      ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia", "feedback"] },
+  { label: "Ressources Humaines",         labelAr: "الموارد البشرية",      ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia"] },
   { label: "Administration & Système",    labelAr: "الإدارة والنظام",      ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets"] },
 ]
 
