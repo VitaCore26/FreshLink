@@ -11,11 +11,17 @@ interface Props {
 type Phase = "checking" | "requesting_perms" | "fake_gps" | "denied_perms" | "ok"
 type PermStep = "idle" | "requesting" | "confirm_retry"
 
-const FAKE_GPS_THRESHOLD_MS = 50   // positions arriving faster than 50ms apart = suspicious
-const GPS_ACCURACY_LIMIT    = 200  // accuracy > 200m on mobile = possibly mocked
-
 // Known emulator / fake GPS provider package names sent in some browsers
 const SUSPICIOUS_PROVIDERS = ["mock", "fused-mock", "test", "fake", "emulator"]
+
+// iOS Safari ne permet PAS de simuler le GPS (aucune API mock sans jailbreak), et
+// son watchPosition renvoie des positions identiques très rapprochées → les
+// heuristiques de timing/précision y donnent des FAUX POSITIFS. On les saute sur iOS.
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false
+  const ua = navigator.userAgent || ""
+  return /iP(hone|ad|od)/.test(ua) || (navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1)
+}
 
 function LeafIcon() {
   return (
@@ -35,36 +41,31 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
   const detectFakeGPS = useCallback(() => {
     return new Promise<"ok" | "fake" | "unavailable">((resolve) => {
       if (!navigator.geolocation) { resolve("unavailable"); return }
+      // iOS : impossible de simuler le GPS via Safari → on n'applique aucune
+      // heuristique (sinon faux positif « GPS fictif » sur iPhone).
+      if (isIOS()) { resolve("ok"); return }
 
-      let lastTime = 0
       let sampleCount = 0
       const suspicious: boolean[] = []
 
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
           sampleCount++
-          const now = Date.now()
-          const delta = now - lastTime
+          // Seul signal FIABLE d'émulateur : précision EXACTEMENT 0 (le vrai GPS
+          // renvoie toujours une précision > 0). On a retiré le test de timing qui
+          // donnait des faux positifs (callbacks rapprochés légitimes sur mobile).
+          if (pos.coords.accuracy === 0) suspicious.push(true)
 
-          // Check 1: positions arriving impossibly fast
-          if (lastTime && delta < FAKE_GPS_THRESHOLD_MS) suspicious.push(true)
-
-          // Check 2: accuracy too perfect (< 1m) — emulators often return exactly 0 or 1
-          if (pos.coords.accuracy < 1) suspicious.push(true)
-
-          // Check 3: provider name in some Android browsers via experimentalAPI
+          // Nom de provider explicitement « mock/fake » (rare, Android dev mode).
           const extended = pos as GeolocationPosition & { provider?: string }
           if (extended.provider && SUSPICIOUS_PROVIDERS.some(p => extended.provider!.toLowerCase().includes(p))) {
             suspicious.push(true)
           }
 
-          lastTime = now
-
-          // After 3 samples decide
+          // Après 3 échantillons : « fake » seulement si signal FORT (≥ 2/3 suspects).
           if (sampleCount >= 3) {
             navigator.geolocation.clearWatch(watchId)
-            const fakeRatio = suspicious.length / sampleCount
-            resolve(fakeRatio > 0.5 ? "fake" : "ok")
+            resolve(suspicious.length >= 2 ? "fake" : "ok")
           }
         },
         () => resolve("unavailable"),
@@ -85,8 +86,9 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
     setDetail("")
 
     try {
-      // Camera permission
-      const camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      // Caméra (REQUISE) — contrainte simple { video: true } : facingMode strict
+      // échoue sur certains Android et bloquait l'accès à tort.
+      const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
       camStream.getTracks().forEach(t => t.stop())
     } catch {
       setPhase("denied_perms")
@@ -94,15 +96,12 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
       return
     }
 
+    // Micro (OPTIONNEL) — pour l'agent IA vocal uniquement. On le tente mais on ne
+    // bloque JAMAIS l'accès s'il est refusé/indisponible (cause de blocage Android).
     try {
-      // Mic permission
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       micStream.getTracks().forEach(t => t.stop())
-    } catch {
-      setPhase("denied_perms")
-      setDetail("microphone")
-      return
-    }
+    } catch { /* micro refusé → on continue quand même */ }
 
     // GPS fake detection
     if (!skipGps) {
@@ -123,25 +122,22 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
     async function init() {
       // Check if permissions already granted via Permissions API
       try {
-        const [camPerm, micPerm] = await Promise.all([
-          navigator.permissions.query({ name: "camera" as PermissionName }),
-          navigator.permissions.query({ name: "microphone" as PermissionName }),
-        ])
+        // On ne dépend QUE de la caméra (le micro est optionnel) — interroger
+        // « microphone » plante sur certains navigateurs Android et bloquait tout.
+        const camPerm = await navigator.permissions.query({ name: "camera" as PermissionName })
 
-        const allGranted = camPerm.state === "granted" && micPerm.state === "granted"
-
-        if (allGranted) {
-          // Permissions already granted — still check GPS fake
+        if (camPerm.state === "granted") {
+          // Caméra déjà accordée — on vérifie quand même le GPS fictif
           if (!skipGps) {
             const gpsResult = await detectFakeGPS()
             if (!mounted) return
             if (gpsResult === "fake") { setPhase("fake_gps"); return }
           }
           if (mounted) setPhase("ok")
-        } else if (camPerm.state === "denied" || micPerm.state === "denied") {
+        } else if (camPerm.state === "denied") {
           if (mounted) {
             setPhase("denied_perms")
-            setDetail(camPerm.state === "denied" ? "camera" : "microphone")
+            setDetail("camera")
           }
         } else {
           // Prompt state — show the request screen

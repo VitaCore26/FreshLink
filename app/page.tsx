@@ -75,9 +75,15 @@ export default function App() {
         hydrateConfigs().catch(() => {/* offline OK */})
       })
 
-      // ── Auto-push utilisateurs + articles → Supabase si admin ─────────────────
-      // Garantit que fl_users et fl_articles sont toujours à jour sans action manuelle
+      // ── Auto-push snapshot complet → Supabase : SEULEMENT l'appareil MAÎTRE ────
+      // Sinon un 2ᵉ appareil admin au cache périmé/vide écrase la base (« base vide
+      // / historique supprimé »). Les autres appareils restent en lecture seule.
       if (["super_super_admin", "super_admin", "admin"].includes(loggedUser.role)) {
+        import("@/lib/deviceFingerprint").then(async ({ isMasterDevice }) => {
+        if (!(await isMasterDevice())) {
+          console.log("[FreshLink] Appareil NON-maître → pas de push global (lecture seule, base protégée)")
+          return
+        }
         try {
           const allUsers = store.getUsers()
           if (allUsers.length > 3) {
@@ -110,6 +116,7 @@ export default function App() {
               .catch(() => {})
           }
         } catch { /* offline OK */ }
+        }).catch(() => {/* import/fp indisponible → on ne pousse pas */})
       }
     } catch (e: unknown) {
       console.error("Login error:", e)
