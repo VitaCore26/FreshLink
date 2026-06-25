@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { User } from "@/lib/store"
+import TurnUsageCard from "./TurnUsageCard"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface DeviceRequest {
@@ -338,6 +339,9 @@ export default function BODeviceAccess({ user }: Props) {
           <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${enforce ? "translate-x-8" : "translate-x-1"}`} />
         </button>
       </div>
+
+      {/* Suivi d'utilisation des appels (TURN Cloudflare) */}
+      <TurnUsageCard />
 
       {/* Message */}
       {msg && (
