@@ -54,13 +54,21 @@ export default function BODeviceAccess({ user }: Props) {
   const [editNotes,setEditNotes]= useState("")
   const [editTel,  setEditTel]  = useState("")
 
+  // ── Interrupteur global du contrôle d'accès appareils ───────────────────────
+  const [enforce,   setEnforce]   = useState(true)   // défaut : contrôle ACTIVÉ
+  const [savingCfg, setSavingCfg] = useState(false)
+
   // Lecture/écriture via l'API service_role (bypass RLS) — format JSONB {id, payload}
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const res  = await fetch("/api/sync-read?table=fl_site_access", { cache: "no-store" })
       const json = await res.json()
-      const list: DeviceRequest[] = (json?.ok ? (json.data ?? []) : [])
+      const raw: Array<{ id: string; payload?: Record<string, unknown> }> = json?.ok ? (json.data ?? []) : []
+      // Lit l'interrupteur global (id="__config") avant de filtrer les "__"
+      const cfg = raw.find(r => r.id === "__config")
+      setEnforce((cfg?.payload?.enforce as boolean | undefined) !== false)
+      const list: DeviceRequest[] = raw
         .filter((r: { id: string }) => !String(r.id).startsWith("__"))
         .map((r: { id: string; payload?: Record<string, unknown> }) => {
           const p = r.payload ?? {}
@@ -175,6 +183,35 @@ export default function BODeviceAccess({ user }: Props) {
     }
   }
 
+  // ── Activer / désactiver le contrôle d'accès global ─────────────────────────
+  async function toggleEnforce(next: boolean) {
+    if (next) {
+      const authorized = rows.filter(r => r.statut === "autorise").length
+      if (!confirm(
+        `Activer le contrôle d'accès ?\n\n` +
+        `✅ ${authorized} appareil(s) autorisé(s) garderont l'accès.\n` +
+        `🚫 Tous les autres appareils seront BLOQUÉS jusqu'à autorisation.\n\n` +
+        `Astuce : autorisez d'abord les appareils à garder (bouton « Autoriser ») avant d'activer.\n\nContinuer ?`
+      )) return
+    }
+    setSavingCfg(true)
+    const ok = await writeRow("__config", {
+      enforce: next,
+      updated_at: new Date().toISOString(),
+      updated_by: user.name ?? user.email ?? "admin",
+    })
+    setSavingCfg(false)
+    if (ok) {
+      setEnforce(next)
+      setMsg({ ok: true, text: next
+        ? "🔒 Contrôle d'accès ACTIVÉ — seuls les appareils autorisés passent."
+        : "🔓 Contrôle d'accès DÉSACTIVÉ — tous les appareils ont accès." })
+      setTimeout(() => setMsg(null), 5000)
+    } else {
+      setMsg({ ok: false, text: "Erreur lors de la mise à jour du contrôle." })
+    }
+  }
+
   if (!canAccess(user)) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -275,6 +312,30 @@ export default function BODeviceAccess({ user }: Props) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
           ) : "🔄"} Actualiser
+        </button>
+      </div>
+
+      {/* Interrupteur global du contrôle d'accès */}
+      <div className={`mb-5 rounded-2xl border p-4 flex items-center justify-between gap-4 flex-wrap ${enforce ? "border-green-200 bg-green-50/40" : "border-amber-300 bg-amber-50/60"}`}>
+        <div className="min-w-0">
+          <div className="font-bold text-gray-900 flex items-center gap-2 text-sm">
+            {enforce ? "🔒 Contrôle d'accès ACTIVÉ" : "🔓 Contrôle d'accès DÉSACTIVÉ"}
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5 max-w-md">
+            {enforce
+              ? "Seuls les appareils « Autorisé » ci-dessous peuvent ouvrir FreshLink Pro. Les autres sont bloqués."
+              : "Tous les appareils peuvent ouvrir FreshLink Pro (aucun blocage). Activez pour ne garder que les appareils autorisés."}
+          </p>
+        </div>
+        <button
+          onClick={() => toggleEnforce(!enforce)}
+          disabled={savingCfg}
+          role="switch"
+          aria-checked={enforce}
+          title={enforce ? "Désactiver le contrôle" : "Activer le contrôle"}
+          className={`relative inline-flex h-7 w-14 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enforce ? "bg-green-500" : "bg-gray-300"}`}
+        >
+          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${enforce ? "translate-x-8" : "translate-x-1"}`} />
         </button>
       </div>
 

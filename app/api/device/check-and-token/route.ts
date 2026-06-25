@@ -36,6 +36,26 @@ export async function POST(req: NextRequest) {
       return res
     }
 
+    // ── Interrupteur global du contrôle d'accès appareils ──────────────────────
+    // Stocké dans fl_site_access id="__config" payload.enforce. Par défaut ACTIVÉ
+    // (true) tant qu'aucune valeur n'existe → comportement historique préservé.
+    // Si DÉSACTIVÉ → tout appareil reçoit un cookie (aucun blocage).
+    try {
+      const cfgRes = await fetch(
+        `${supabaseUrl}/rest/v1/fl_site_access?id=eq.__config&select=payload`,
+        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, cache: "no-store" },
+      )
+      if (cfgRes.ok) {
+        const cfg = (await cfgRes.json()) as Array<{ payload?: { enforce?: boolean } }>
+        if (cfg?.[0]?.payload?.enforce === false) {
+          const token = signDeviceToken(fingerprint)
+          const res   = NextResponse.json({ approved: true, enforce: false })
+          res.cookies.set(DEVICE_COOKIE, token, cookieOpts())
+          return res
+        }
+      }
+    } catch { /* en cas d'erreur on retombe sur le contrôle normal (fail-closed) */ }
+
     // ── Vérifier dans Supabase (format JSONB {id, payload}, clé service_role) ──
     const sbRes = await fetch(
       `${supabaseUrl}/rest/v1/fl_site_access?id=eq.${encodeURIComponent(fingerprint)}&select=payload`,
