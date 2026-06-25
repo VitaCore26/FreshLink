@@ -207,6 +207,12 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
               style={{ background: "oklch(0.54 0.22 27)", color: "#fff" }}>
               Reessayer
             </button>
+            {/* Échappatoire : un faux positif GPS (Android) ne doit jamais bloquer. */}
+            <button onClick={() => setPhase("ok")}
+              className="w-full py-2 text-xs underline transition-all hover:opacity-80"
+              style={{ color: "oklch(0.50 0.010 145)" }}>
+              Continuer quand même →
+            </button>
           </div>
         </div>
       </div>
