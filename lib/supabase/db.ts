@@ -439,6 +439,26 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
   const tables: string[] = []
   const errors: string[] = []
 
+  // ── Reset global intentionnel ? (fl_notices __db_reset {at}) ───────────────
+  // Le garde anti-perte préserve le local quand le distant est vide. MAIS un vrai
+  // « Tout effacer » DOIT vider les autres appareils (sinon les anciennes données
+  // « reviennent »). On détecte donc un reset plus récent que celui déjà vu : dans
+  // ce cas SEULEMENT on autorise le vidage local. Les vides transitoires (RLS /
+  // réseau) n'ont pas de marqueur → local préservé.
+  let resetActive = false
+  try {
+    const res = await fetch("/api/sync-read?table=fl_notices", { cache: "no-store" })
+    const j = await res.json()
+    const at = (j?.data ?? []).find((r: { id: string }) => r.id === "__db_reset")?.payload?.at as string | undefined
+    if (at) {
+      const seen = typeof localStorage !== "undefined" ? localStorage.getItem("fl_db_reset_seen") : null
+      if (!seen || new Date(at).getTime() > new Date(seen).getTime()) {
+        resetActive = true
+        try { localStorage.setItem("fl_db_reset_seen", at) } catch { /* noop */ }
+      }
+    }
+  } catch { /* pas de marqueur → garde anti-perte normal */ }
+
   const ERP_TABLE_MAP: [string, (items: unknown[]) => void, () => unknown[]][] = [
     ["fl_users",            (d) => store.saveUsers(d as User[]),                  () => store.getUsers()],
     ["fl_clients",          (d) => store.saveClients(d as Client[]),              () => store.getClients()],
@@ -474,7 +494,9 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
           // appareils gardent leur cache jusqu'à un effacement explicite.)
           let localCount = 0
           try { localCount = getLocal().length } catch { /* ignore */ }
-          if (items.length === 0 && localCount > 0) {
+          // Distant vide + local plein : on préserve le local… SAUF si un reset
+          // global récent a été détecté (alors on honore le vidage volontaire).
+          if (items.length === 0 && localCount > 0 && !resetActive) {
             console.warn(`[sync] ${table}: distant vide ignoré — ${localCount} ligne(s) locale(s) préservée(s)`)
             return
           }

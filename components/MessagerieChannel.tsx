@@ -9,6 +9,7 @@ import { store, type User, type Message, type MessageGroup } from "@/lib/store"
 import { upsertMessage, fetchMessages } from "@/lib/supabase/db"
 import { createClient } from "@/lib/supabase/client"
 import type { RealtimeChannel } from "@supabase/supabase-js"
+import { beep, notify, isHidden } from "@/lib/notify"
 
 const AUDIENCES: { key: string; label: string; roles: string[] }[] = [
   { key: "tous",         label: "Tous",         roles: [] },
@@ -88,11 +89,28 @@ export default function MessagerieChannel({ user, compact = false }: { user: Use
   useEffect(() => {
     const sb = createClient()
     const ch = sb.channel("fl-messages", { config: { broadcast: { self: false } } })
+    const isForMe = (m: Message): boolean => {
+      if (m.senderId === user.id) return false
+      if (m.toUserId) return m.toUserId === user.id
+      if (m.groupId) return store.getMessageGroups().some(g => g.id === m.groupId && g.memberIds.includes(user.id))
+      return !m.audience || m.audience.length === 0 || m.audience.includes(String(user.role))
+    }
     ch.on("broadcast", { event: "msg" }, ({ payload }) => {
       const m = payload as Message
       if (!m || !m.id) return
       const all = store.getMessages()
-      if (!all.some(x => x.id === m.id)) { all.push(m); store.saveMessages(all) }
+      const isNew = !all.some(x => x.id === m.id)
+      if (isNew) { all.push(m); store.saveMessages(all) }
+      computeMsgs()
+      if (isNew && isForMe(m)) {
+        beep(760, 160, 0.18)                                    // bip à la réception
+        if (isHidden()) notify(`💬 ${m.senderName}`, m.text.slice(0, 120), "fl-msg")
+      }
+    })
+    ch.on("broadcast", { event: "del" }, ({ payload }) => {
+      const id = (payload as { id?: string })?.id
+      if (!id) return
+      store.saveMessages(store.getMessages().filter(x => x.id !== id))
       computeMsgs()
     })
     ch.on("broadcast", { event: "groups" }, ({ payload }) => {
@@ -163,6 +181,19 @@ export default function MessagerieChannel({ user, compact = false }: { user: Use
     try { await upsertMessage(m) } catch { /* sync best-effort */ }
     chanRef.current?.send({ type: "broadcast", event: "msg", payload: m })  // temps réel
     setSending(false)
+  }
+
+  const isAdmin = ["super_super_admin", "super_admin", "admin"].includes(String(user.role))
+  const deleteMsg = async (id: string) => {
+    if (!confirm("Supprimer ce message ?")) return
+    store.saveMessages(store.getMessages().filter(m => m.id !== id)); computeMsgs()
+    try {
+      await fetch("/api/sync-write", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_messages", deletes: [id] }),
+      })
+    } catch { /* sync best-effort */ }
+    chanRef.current?.send({ type: "broadcast", event: "del", payload: { id } })   // retire chez les autres
   }
 
   const canSend = mode === "equipe" || (mode === "direct" && !!peerId) || (mode === "group" && !!groupId)
@@ -274,7 +305,12 @@ export default function MessagerieChannel({ user, compact = false }: { user: Use
                 {!mine && <span className="block text-[11px] font-bold text-slate-500 mb-0.5">{m.senderName} · {String(m.role)}</span>}
                 <span className="whitespace-pre-wrap break-words">{m.text}</span>
               </div>
-              <span className="text-[10px] text-slate-400 mt-0.5 px-1">{relTime(m.createdAt)}</span>
+              <span className="text-[10px] text-slate-400 mt-0.5 px-1 flex items-center gap-2">
+                {relTime(m.createdAt)}
+                {(mine || isAdmin) && (
+                  <button onClick={() => void deleteMsg(m.id)} className="text-slate-400 hover:text-red-500 transition-colors" title="Supprimer ce message">🗑</button>
+                )}
+              </span>
             </div>
           )
         })}

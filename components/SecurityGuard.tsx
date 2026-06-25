@@ -112,16 +112,11 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
       micStream.getTracks().forEach(t => t.stop())
     } catch { /* micro refusé → on continue quand même */ }
 
-    // GPS fake detection
-    if (!skipGps) {
-      const gpsResult = await detectFakeGPS()
-      if (gpsResult === "fake") {
-        setPhase("fake_gps")
-        return
-      }
-    }
-
+    // App accessible IMMÉDIATEMENT après l'autorisation caméra/micro — la détection
+    // GPS fictif tourne EN ARRIÈRE-PLAN (n'enferme pas l'utilisateur et ne le fait
+    // pas attendre 10 s ; bascule en fake_gps uniquement si réellement avéré).
     setPhase("ok")
+    if (!skipGps) detectFakeGPS().then(r => { if (r === "fake") setPhase("fake_gps") }).catch(() => {})
   }, [skipGps, detectFakeGPS])
 
   // ── Initial check ───────────────────────────────────────────────────────────
@@ -136,13 +131,9 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
         const camPerm = await navigator.permissions.query({ name: "camera" as PermissionName })
 
         if (camPerm.state === "granted") {
-          // Caméra déjà accordée — on vérifie quand même le GPS fictif
-          if (!skipGps) {
-            const gpsResult = await detectFakeGPS()
-            if (!mounted) return
-            if (gpsResult === "fake") { setPhase("fake_gps"); return }
-          }
+          // Caméra déjà accordée → on ouvre TOUT DE SUITE ; GPS fictif en arrière-plan.
           if (mounted) setPhase("ok")
+          if (!skipGps) detectFakeGPS().then(r => { if (mounted && r === "fake") setPhase("fake_gps") }).catch(() => {})
         } else if (camPerm.state === "denied") {
           if (mounted) {
             setPhase("denied_perms")

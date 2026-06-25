@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 import type { User } from "@/lib/store"
+import { ring, notify } from "@/lib/notify"
 
 type Phase = "idle" | "calling" | "incoming" | "connected"
 type Signal = { kind: "offer" | "answer" | "ice" | "hangup"; to: string; from: { id: string; name: string }; data?: unknown }
@@ -228,6 +229,14 @@ export default function CallCenter({ user }: { user: User }) {
     if (phase !== "connected") return
     const iv = setInterval(() => setSecs(s => { secsRef.current = s + 1; return s + 1 }), 1000)
     return () => clearInterval(iv)
+  }, [phase])
+
+  // Sonnerie + notification sur appel ENTRANT (s'arrête dès qu'on décroche/raccroche).
+  useEffect(() => {
+    if (phase !== "incoming") return
+    notify("📞 Appel entrant", `${peerRef.current?.name ?? "Quelqu'un"} vous appelle`, "fl-call")
+    const stop = ring()
+    return () => stop()
   }, [phase])
 
   const mmss = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`

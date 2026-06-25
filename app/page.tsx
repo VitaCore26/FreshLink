@@ -63,6 +63,9 @@ export default function App() {
     try {
       store.setSession(loggedUser)
       setUser(loggedUser)
+      // Geste utilisateur (login) → débloque le son + demande la permission de notifier
+      // (sonnerie d'appel, bip message, notifications navigateur).
+      import("@/lib/notify").then(({ requestNotifyPermission, unlockAudio }) => { unlockAudio(); void requestNotifyPermission() }).catch(() => {})
       if (forceView) {
         setView(forceView)
       } else {

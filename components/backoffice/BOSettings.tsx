@@ -631,6 +631,17 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
           body: JSON.stringify({ table: "fl_users", deletes: ["u_jawad_root"] }),
         })
       } catch {}
+      // 2b-bis. MARQUEUR DE RESET GLOBAL → les AUTRES appareils videront leur cache
+      //         local au prochain pull (sinon leurs anciennes données « reviennent »).
+      //         Cet appareil-ci a déjà le cache vidé → on note le reset comme « vu ».
+      try {
+        const resetAt = new Date().toISOString()
+        await fetch("/api/sync-write", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "fl_notices", upserts: [{ id: "__db_reset", payload: { at: resetAt }, updated_at: resetAt }] }),
+        })
+        try { localStorage.setItem("fl_db_reset_seen", resetAt) } catch {}
+      } catch {}
       // 2c. Pousser un marqueur dans fl_articles pour indiquer que le catalogue
       //     a été vidé explicitement (évite le fallback vers ERP_DEFAULT_ARTICLES)
       try {
