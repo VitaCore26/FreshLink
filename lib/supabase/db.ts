@@ -422,35 +422,45 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
   const tables: string[] = []
   const errors: string[] = []
 
-  const ERP_TABLE_MAP: [string, (items: unknown[]) => void][] = [
-    ["fl_users",            (d) => store.saveUsers(d as User[])],
-    ["fl_clients",          (d) => store.saveClients(d as Client[])],
-    ["fl_articles",         (d) => store.saveArticles(d as Article[])],
-    ["fl_fournisseurs",     (d) => store.saveFournisseurs(d as Fournisseur[])],
-    ["fl_commandes",        (d) => store.saveCommandes(d as Commande[])],
-    ["fl_bons_achat",       (d) => store.saveBonsAchat(d as BonAchat[])],
-    ["fl_purchase_orders",  (d) => store.savePurchaseOrders(d as PurchaseOrder[])],
-    ["fl_receptions",       (d) => store.saveReceptions(d as Reception[])],
-    ["fl_bons_livraison",   (d) => store.saveBonsLivraison(d as BonLivraison[])],
-    ["fl_retours",          (d) => store.saveRetours(d as Retour[])],
-    ["fl_trips",            (d) => store.saveTrips(d as Trip[])],
-    ["fl_bons_preparation", (d) => store.saveBonsPreparation(d as BonPreparation[])],
-    ["fl_messages",         (d) => store.saveMessages(d as Message[])],
-    ["fl_notices",          (d) => store.saveNotices(d as Notice[])],
+  const ERP_TABLE_MAP: [string, (items: unknown[]) => void, () => unknown[]][] = [
+    ["fl_users",            (d) => store.saveUsers(d as User[]),                  () => store.getUsers()],
+    ["fl_clients",          (d) => store.saveClients(d as Client[]),              () => store.getClients()],
+    ["fl_articles",         (d) => store.saveArticles(d as Article[]),            () => store.getArticles()],
+    ["fl_fournisseurs",     (d) => store.saveFournisseurs(d as Fournisseur[]),    () => store.getFournisseurs()],
+    ["fl_commandes",        (d) => store.saveCommandes(d as Commande[]),          () => store.getCommandes()],
+    ["fl_bons_achat",       (d) => store.saveBonsAchat(d as BonAchat[]),          () => store.getBonsAchat()],
+    ["fl_purchase_orders",  (d) => store.savePurchaseOrders(d as PurchaseOrder[]),() => store.getPurchaseOrders()],
+    ["fl_receptions",       (d) => store.saveReceptions(d as Reception[]),        () => store.getReceptions()],
+    ["fl_bons_livraison",   (d) => store.saveBonsLivraison(d as BonLivraison[]),  () => store.getBonsLivraison()],
+    ["fl_retours",          (d) => store.saveRetours(d as Retour[]),              () => store.getRetours()],
+    ["fl_trips",            (d) => store.saveTrips(d as Trip[]),                  () => store.getTrips()],
+    ["fl_bons_preparation", (d) => store.saveBonsPreparation(d as BonPreparation[]),() => store.getBonsPreparation()],
+    ["fl_messages",         (d) => store.saveMessages(d as Message[]),            () => store.getMessages()],
+    ["fl_notices",          (d) => store.saveNotices(d as Notice[]),              () => store.getNotices()],
   ]
 
   // Requêtes parallèles — toutes les tables en même temps (x10 plus rapide)
   await Promise.all(
-    ERP_TABLE_MAP.map(async ([table, save]) => {
+    ERP_TABLE_MAP.map(async ([table, save, getLocal]) => {
       try {
         const { data, error } = await sbRead().from(table as "fl_clients").select("id, payload").limit(5000)
         if (error) { errors.push(`${table}: ${error.message}`); return }
-        // Remplace TOUJOURS le cache local par le résultat distant (même vide) :
-        // une table vidée par "Réinitialiser les données" doit aussi se vider en
-        // local sur cet appareil. Seule une vraie erreur réseau (catch ci-dessous)
-        // doit préserver le cache local existant.
         if (data && Array.isArray(data)) {
           const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<unknown>(r))
+          // ⛔ ANTI-PERTE DE DONNÉES (cause des "base vide / historique disparu") :
+          // on ne REMPLACE JAMAIS un cache local NON VIDE par un résultat distant
+          // VIDE. Un distant vide arrive aussi quand la lecture anon est filtrée par
+          // RLS, lors d'un blip réseau, ou pour des données encore jamais montées
+          // sur Supabase (appareil hors-ligne). Dans ces cas on PRÉSERVE le local —
+          // le write-through / l'auto-push le repoussera. (Le reset "Tout effacer"
+          // vide Supabase ET le local de l'appareil qui l'exécute ; les autres
+          // appareils gardent leur cache jusqu'à un effacement explicite.)
+          let localCount = 0
+          try { localCount = getLocal().length } catch { /* ignore */ }
+          if (items.length === 0 && localCount > 0) {
+            console.warn(`[sync] ${table}: distant vide ignoré — ${localCount} ligne(s) locale(s) préservée(s)`)
+            return
+          }
           suppressAutoSync(() => save(items))
           tables.push(table)
         }
