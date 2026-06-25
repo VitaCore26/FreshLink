@@ -238,14 +238,20 @@ export default function MobileLogistique({ user }: Props) {
       ? (allTrips.find(t => t.statut === "en_cours") ?? allTrips.find(t => t.statut === "planifié") ?? myTrip)
       : myTrip
     setActiveTrip(trip ?? null)
-    // Only load commandes relevant to this user's trip
+    // Charge UNIQUEMENT les commandes pertinentes pour cet utilisateur.
     const allCommandes = store.getCommandes()
     if (trip) {
-      setCommandes(allCommandes.filter(c => trip.commandeIds.includes(c.id) || c.statut === "en_attente" || c.statut === "valide"))
+      if (isLogistiqueAdmin) {
+        // Admin/logistique : commandes du trip + toutes celles en attente/validées.
+        setCommandes(allCommandes.filter(c => trip.commandeIds.includes(c.id) || c.statut === "en_attente" || c.statut === "valide"))
+      } else {
+        // LIVREUR : SEULEMENT les commandes affectées à SON trip — jamais la totalité.
+        setCommandes(allCommandes.filter(c => trip.commandeIds.includes(c.id)))
+      }
     } else if (isLogistiqueAdmin) {
       setCommandes(allCommandes)
     } else {
-      // Livreur with no trip: show nothing (their commandes will appear once dispatched)
+      // Livreur sans trip : rien (ses commandes apparaîtront une fois dispatchées).
       setCommandes([])
     }
     setTrips(allTrips)
@@ -277,8 +283,9 @@ export default function MobileLogistique({ user }: Props) {
         iconAnchor: [11, 11],
       })
 
-      // Ordonne le circuit : séquence du trip si dispo, sinon par heure de livraison
-      const withGps = store.getCommandes().filter(c => c.gpsLat && c.gpsLng)
+      // Ordonne le circuit : séquence du trip si dispo, sinon par heure de livraison.
+      // ⚠️ On part de `commandes` (déjà filtré au trip du livreur), PAS de toute la base.
+      const withGps = commandes.filter(c => c.gpsLat && c.gpsLng)
       const order = new Map((activeTrip?.commandeIds ?? []).map((id, i) => [id, i]))
       const ordered = [...withGps].sort((a, b) =>
         (order.has(a.id) || order.has(b.id))

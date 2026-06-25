@@ -59,6 +59,12 @@ export default function CallCenter({ user }: { user: User }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const secsRef = useRef(0)            // durée courante (pour le suivi quota TURN)
   const usedTurnRef = useRef(false)    // l'appel a-t-il servi le relais Cloudflare ?
+  const [note, setNote] = useState<string | null>(null)   // message d'état (hors ligne, micro…)
+  const onlineRef = useRef<Set<string>>(new Set())         // utilisateurs en ligne (présence)
+  const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flash = (msg: string) => { setNote(msg); setTimeout(() => setNote(null), 6000) }
+  const clearRing = () => { if (ringTimer.current) { clearTimeout(ringTimer.current); ringTimer.current = null } }
 
   const setPeerR = (p: { id: string; name: string } | null) => { peerRef.current = p; setPeer(p) }
   const send = (s: Signal) => { void chanRef.current?.send({ type: "broadcast", event: "signal", payload: s }) }
@@ -74,6 +80,7 @@ export default function CallCenter({ user }: { user: User }) {
       } catch { /* noop */ }
     }
     usedTurnRef.current = false; secsRef.current = 0
+    clearRing()
     try { pcRef.current?.close() } catch { /* noop */ }
     pcRef.current = null
     localRef.current?.getTracks().forEach(t => t.stop()); localRef.current = null
@@ -92,13 +99,24 @@ export default function CallCenter({ user }: { user: User }) {
   }
 
   const getMic = async () => {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true })
-    localRef.current = s
-    return s
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+      localRef.current = s
+      return s
+    } catch (err) {
+      throw new Error((err as DOMException)?.name === "NotAllowedError" ? "MIC_DENIED" : "MIC_FAIL")
+    }
   }
 
   const startCall = async (target: { id: string; name: string }) => {
     if (phaseRef.current !== "idle" || target.id === user.id) return
+    setNote(null)
+    // Présence : si on a la liste des connectés et que la cible n'y est pas,
+    // inutile d'appeler (elle ne sonnera pas tant que l'ERP n'est pas ouvert).
+    if (onlineRef.current.size > 0 && !onlineRef.current.has(target.id)) {
+      flash(`${target.name} est hors ligne — il doit ouvrir l'ERP pour recevoir l'appel.`)
+      return
+    }
     try {
       setPeerR(target); setPhaseR("calling")
       const pc = await newPC(target.id)
@@ -107,7 +125,17 @@ export default function CallCenter({ user }: { user: User }) {
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
       send({ kind: "offer", to: target.id, from: { id: user.id, name: user.name }, data: offer })
-    } catch { cleanup() }
+      // Sonnerie : 35 s sans réponse → on abandonne proprement (pas de "Appel en cours…" infini).
+      clearRing()
+      ringTimer.current = setTimeout(() => {
+        if (phaseRef.current === "calling") { flash(`Pas de réponse de ${target.name}.`); hangup() }
+      }, 35000)
+    } catch (e) {
+      flash((e as Error)?.message === "MIC_DENIED"
+        ? "Micro refusé — autorisez le micro pour passer un appel."
+        : "Impossible de démarrer l'appel.")
+      cleanup()
+    }
   }
 
   const accept = async () => {
@@ -122,7 +150,10 @@ export default function CallCenter({ user }: { user: User }) {
       await pc.setLocalDescription(answer)
       send({ kind: "answer", to: p.id, from: { id: user.id, name: user.name }, data: answer })
       setPhaseR("connected")
-    } catch { hangup() }
+    } catch (e) {
+      flash((e as Error)?.message === "MIC_DENIED" ? "Micro refusé — autorisez le micro." : "Échec de la connexion.")
+      hangup()
+    }
   }
 
   const hangup = () => { const p = peerRef.current; if (p) send({ kind: "hangup", to: p.id, from: { id: user.id, name: user.name } }); cleanup() }
@@ -138,6 +169,7 @@ export default function CallCenter({ user }: { user: User }) {
       pendingOffer.current = s.data as RTCSessionDescriptionInit
       setPeerR(s.from); setPhaseR("incoming")
     } else if (s.kind === "answer") {
+      clearRing()
       try { await pcRef.current?.setRemoteDescription(s.data as RTCSessionDescriptionInit) } catch { /* noop */ }
       setPhaseR("connected")
     } else if (s.kind === "ice") {
@@ -149,15 +181,22 @@ export default function CallCenter({ user }: { user: User }) {
   const handlerRef = useRef(handleSignal)
   handlerRef.current = handleSignal
 
-  // Abonnement à la signalisation
+  // Abonnement à la signalisation + PRÉSENCE (qui est en ligne / joignable)
   useEffect(() => {
     if (!user?.id) return
     const sb = createClient()
-    const ch = sb.channel("fl-calls", { config: { broadcast: { self: false } } })
+    const ch = sb.channel("fl-calls", { config: { broadcast: { self: false }, presence: { key: user.id } } })
     ch.on("broadcast", { event: "signal" }, ({ payload }) => {
       const s = payload as Signal
       if (s && s.to === user.id) void handlerRef.current(s)
-    }).subscribe()
+    })
+    ch.on("presence", { event: "sync" }, () => {
+      try { onlineRef.current = new Set(Object.keys(ch.presenceState())) } catch { /* noop */ }
+    })
+    ch.subscribe((status) => {
+      // On se déclare « en ligne » dès l'abonnement → les autres peuvent nous appeler.
+      if (status === "SUBSCRIBED") { void ch.track({ user_id: user.id, at: Date.now() }) }
+    })
     chanRef.current = ch
     return () => { void sb.removeChannel(ch); chanRef.current = null }
   }, [user?.id])
@@ -182,6 +221,13 @@ export default function CallCenter({ user }: { user: User }) {
   return (
     <>
       <audio ref={audioRef} autoPlay hidden />
+      {note && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: phase !== "idle" ? 96 : 16, zIndex: 10000, display: "flex", justifyContent: "center", padding: "0 12px", pointerEvents: "none" }}>
+          <div className="max-w-md w-full rounded-xl bg-slate-800 text-white text-sm px-4 py-3 shadow-2xl border border-slate-600 text-center">
+            {note}
+          </div>
+        </div>
+      )}
       {phase !== "idle" && (
         <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", justifyContent: "center", padding: "12px", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto" }} className="w-full max-w-md rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 px-5 py-4">
