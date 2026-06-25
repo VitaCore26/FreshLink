@@ -198,8 +198,8 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
       )}
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-24"
-        style={{ WebkitOverflowScrolling: "touch" }}>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
         {resolvedTab === "magasinier"    && <MobileMagasinier user={user} />}
         {resolvedTab === "achat"         && <MobileAchat user={user} />}
         {resolvedTab === "charges"       && <MobileChargesAcheteur user={user} />}

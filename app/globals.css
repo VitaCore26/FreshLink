@@ -134,6 +134,13 @@ img, video, iframe, canvas { max-width: 100%; }
 .pl-safe  { padding-left:   env(safe-area-inset-left); }
 .pr-safe  { padding-right:  env(safe-area-inset-right); }
 
+/* Header : descend sous l'encoche / Dynamic Island (était UNDEFINED → header collé en haut). */
+.pt-safe-top { padding-top: calc(env(safe-area-inset-top) + 0.75rem); }
+
+/* Barre de navigation basse : laisse la place à la barre gestuelle / home indicator,
+   sinon les boutons du bas sont MASQUÉS sous la zone système (classe était UNDEFINED). */
+.mobile-nav-safe { padding-bottom: env(safe-area-inset-bottom); }
+
 /* ── Scrollbar utilities ─────────────────────────────────────────────────────── */
 
 /* Hide scrollbar but keep scroll functionality */
