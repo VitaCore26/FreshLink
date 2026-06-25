@@ -406,6 +406,23 @@ export async function upsertMessage(m: Message) {
   await apiUpsert("fl_messages", m as unknown as Record<string, unknown>)
 }
 
+// Récupère les messages depuis Supabase et les FUSIONNE dans le cache local (par
+// id — jamais de wipe). Garantit la réception sans rechargement manuel (poll), en
+// complément du temps réel (broadcast). Renvoie la liste locale fusionnée.
+export async function fetchMessages(): Promise<Message[]> {
+  try {
+    const { data, error } = await sbRead().from("fl_messages").select("id, payload").limit(2000)
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const remote = (data as { id: string; payload: unknown }[]).map(r => fromRow<Message>(r))
+      const byId = new Map<string, Message>()
+      for (const x of store.getMessages()) byId.set(x.id, x)
+      for (const x of remote) byId.set(x.id, x)   // le distant prime à id égal
+      suppressAutoSync(() => store.saveMessages([...byId.values()]))
+    }
+  } catch { /* hors ligne — cache local */ }
+  return store.getMessages()
+}
+
 // ── NOTICES ───────────────────────────────────────────────────────────────────
 
 export async function upsertNotice(n: Notice) {

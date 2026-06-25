@@ -794,9 +794,20 @@ export interface Message {
   role: UserRole
   text: string
   createdAt: string
-  channel?: string        // fil de discussion ("general" par défaut)
+  channel?: string        // fil de discussion ("general" par défaut ; "dm:..." ; "group:...")
   audience?: string[]     // rôles destinataires ; vide/absent = tout le monde
+  toUserId?: string       // message DIRECT à une personne précise
+  groupId?: string        // message de GROUPE
   readBy?: string[]       // ids des utilisateurs ayant lu
+}
+
+// Groupe de discussion (messagerie) — synchronisé via fl_notices id="__msg_groups".
+export interface MessageGroup {
+  id: string
+  name: string
+  memberIds: string[]     // membres (le créateur inclus)
+  createdBy: string
+  createdAt: string
 }
 
 // ── Depot (multi-entrepot) ────────────────────────────────────────────────────
@@ -3079,6 +3090,8 @@ export const store = {
   getMessages: (): Message[] => getLS("fl_messages", []),
   saveMessages: (m: Message[]) => setLS("fl_messages", m),
   addMessage: (m: Message) => { const msgs = store.getMessages(); msgs.push(m); store.saveMessages(msgs) },
+  getMessageGroups: (): MessageGroup[] => getLS("fl_msg_groups", []),
+  saveMessageGroups: (g: MessageGroup[]) => setLS("fl_msg_groups", g),
 
   // --- Alert inactivity config ---
   // inactivityDays      : client sans aucune commande depuis N jours
