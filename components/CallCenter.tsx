@@ -19,26 +19,28 @@ import type { User } from "@/lib/store"
 type Phase = "idle" | "calling" | "incoming" | "connected"
 type Signal = { kind: "offer" | "answer" | "ice" | "hangup"; to: string; from: { id: string; name: string }; data?: unknown }
 
-function iceServers(): RTCIceServer[] {
-  const list: RTCIceServer[] = [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ]
-  const turn = process.env.NEXT_PUBLIC_TURN_URL
-  if (turn) {
-    list.push({ urls: turn, username: process.env.NEXT_PUBLIC_TURN_USER, credential: process.env.NEXT_PUBLIC_TURN_CRED })
-  } else {
-    // Fallback TURN public GRATUIT (OpenRelay/Metered) — identifiants PUBLICS,
-    // pas un secret. Rate-limité : suffit pour démarrer et faire passer les
-    // appels derrière la 4G / NAT symétrique. Pour la prod, fournir un TURN
-    // dédié via NEXT_PUBLIC_TURN_URL/_USER/_CRED (il prend alors le dessus).
-    list.push(
-      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-    )
-  }
-  return list
+// Repli STUN + TURN public gratuit (identifiants publics, pas un secret) si
+// /api/turn est indisponible ou si le quota mensuel Cloudflare est atteint.
+const STATIC_FALLBACK: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+]
+
+// Récupère des identifiants TURN Cloudflare éphémères via /api/turn (le token API
+// reste côté serveur). `usedTurn` = relais dédié servi → on comptabilisera l'appel.
+async function fetchIceServers(): Promise<{ servers: RTCIceServer[]; usedTurn: boolean }> {
+  try {
+    const r = await fetch("/api/turn", { method: "POST" })
+    if (r.ok) {
+      const j = await r.json()
+      const ice = Array.isArray(j.iceServers) ? (j.iceServers as RTCIceServer[]) : null
+      if (ice && ice.length) return { servers: ice, usedTurn: j.source === "cloudflare" }
+    }
+  } catch { /* repli ci-dessous */ }
+  return { servers: STATIC_FALLBACK, usedTurn: false }
 }
 
 export default function CallCenter({ user }: { user: User }) {
@@ -55,11 +57,23 @@ export default function CallCenter({ user }: { user: User }) {
   const pendingOffer = useRef<RTCSessionDescriptionInit | null>(null)
   const peerRef = useRef<{ id: string; name: string } | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const secsRef = useRef(0)            // durée courante (pour le suivi quota TURN)
+  const usedTurnRef = useRef(false)    // l'appel a-t-il servi le relais Cloudflare ?
 
   const setPeerR = (p: { id: string; name: string } | null) => { peerRef.current = p; setPeer(p) }
   const send = (s: Signal) => { void chanRef.current?.send({ type: "broadcast", event: "signal", payload: s }) }
 
   const cleanup = () => {
+    // Suivi quota : si l'appel a utilisé le relais Cloudflare, on remonte la durée.
+    if (usedTurnRef.current && secsRef.current > 0) {
+      try {
+        void fetch("/api/turn/usage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seconds: secsRef.current }),
+        })
+      } catch { /* noop */ }
+    }
+    usedTurnRef.current = false; secsRef.current = 0
     try { pcRef.current?.close() } catch { /* noop */ }
     pcRef.current = null
     localRef.current?.getTracks().forEach(t => t.stop()); localRef.current = null
@@ -67,8 +81,10 @@ export default function CallCenter({ user }: { user: User }) {
     setPhaseR("idle"); setPeerR(null); setMuted(false); setSecs(0)
   }
 
-  const newPC = (peerId: string) => {
-    const pc = new RTCPeerConnection({ iceServers: iceServers() })
+  const newPC = async (peerId: string) => {
+    const { servers, usedTurn } = await fetchIceServers()
+    usedTurnRef.current = usedTurn
+    const pc = new RTCPeerConnection({ iceServers: servers })
     pc.onicecandidate = e => { if (e.candidate) send({ kind: "ice", to: peerId, from: { id: user.id, name: user.name }, data: e.candidate.toJSON() }) }
     pc.ontrack = e => { if (audioRef.current) { audioRef.current.srcObject = e.streams[0]; void audioRef.current.play().catch(() => {}) } }
     pcRef.current = pc
@@ -85,7 +101,7 @@ export default function CallCenter({ user }: { user: User }) {
     if (phaseRef.current !== "idle" || target.id === user.id) return
     try {
       setPeerR(target); setPhaseR("calling")
-      const pc = newPC(target.id)
+      const pc = await newPC(target.id)
       const mic = await getMic()
       mic.getTracks().forEach(t => pc.addTrack(t, mic))
       const offer = await pc.createOffer()
@@ -98,7 +114,7 @@ export default function CallCenter({ user }: { user: User }) {
     const p = peerRef.current
     if (!p || !pendingOffer.current) return
     try {
-      const pc = newPC(p.id)
+      const pc = await newPC(p.id)
       const mic = await getMic()
       mic.getTracks().forEach(t => pc.addTrack(t, mic))
       await pc.setRemoteDescription(pendingOffer.current)
@@ -157,7 +173,7 @@ export default function CallCenter({ user }: { user: User }) {
   // Chrono appel connecté
   useEffect(() => {
     if (phase !== "connected") return
-    const iv = setInterval(() => setSecs(s => s + 1), 1000)
+    const iv = setInterval(() => setSecs(s => { secsRef.current = s + 1; return s + 1 }), 1000)
     return () => clearInterval(iv)
   }, [phase])
 
