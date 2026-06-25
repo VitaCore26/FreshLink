@@ -90,10 +90,19 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
       // échoue sur certains Android et bloquait l'accès à tort.
       const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
       camStream.getTracks().forEach(t => t.stop())
-    } catch {
-      setPhase("denied_perms")
-      setDetail("camera")
-      return
+    } catch (err) {
+      // On ne BLOQUE que sur un vrai refus (NotAllowedError/SecurityError).
+      // Caméra occupée par une autre app, absente ou instable (NotReadableError,
+      // NotFoundError, AbortError, OverconstrainedError) ≠ refus → on n'enferme
+      // PAS l'utilisateur (cause fréquente de blocage Android). Il pourra prendre
+      // ses photos plus tard ; le navigateur redemandera l'accès à ce moment-là.
+      const name = (err as DOMException)?.name
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setPhase("denied_perms")
+        setDetail("camera")
+        return
+      }
+      // sinon : on laisse passer.
     }
 
     // Micro (OPTIONNEL) — pour l'agent IA vocal uniquement. On le tente mais on ne
@@ -227,10 +236,10 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
               </p>
             </div>
             <div className="w-full rounded-xl p-4 text-left text-xs leading-relaxed space-y-1.5" style={{ background: "oklch(0.10 0.008 145)", color: "oklch(0.52 0.010 145)" }}>
-              <p className="font-semibold" style={{ color: "oklch(0.65 0.22 27)" }}>Activer les permissions :</p>
-              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>Android :</span> Parametres &gt; Applications &gt; Navigateur &gt; Autorisations</p>
-              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>iPhone :</span> Reglages &gt; Safari &gt; {detail === "camera" ? "Camera" : "Microphone"} &gt; Autoriser</p>
-              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>Chrome :</span> Icone cadenas URL &gt; Autorisations de site</p>
+              <p className="font-semibold" style={{ color: "oklch(0.65 0.22 27)" }}>Activer la caméra :</p>
+              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>Android (Chrome) :</span> touchez l&apos;icône 🔒 / ⓘ à gauche de l&apos;adresse → Autorisations → {detail === "camera" ? "Appareil photo" : "Micro"} → Autoriser, puis « Réessayer ».</p>
+              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>Si « Autoriser » est grisé :</span> Réglages Android → Applications → Chrome → Autorisations → {detail === "camera" ? "Appareil photo" : "Micro"}.</p>
+              <p><span className="font-medium" style={{ color: "oklch(0.75 0.12 100)" }}>iPhone :</span> Réglages → Safari → {detail === "camera" ? "Caméra" : "Micro"} → Autoriser.</p>
             </div>
             {/* Two clear choices */}
             <div className="w-full flex flex-col gap-2">
@@ -278,6 +287,16 @@ export default function SecurityGuard({ children, skipGps = false }: Props) {
                   </button>
                 </div>
               )}
+
+              {/* Échappatoire : ne jamais enfermer l'utilisateur. Il peut entrer
+                  et autoriser la caméra plus tard, au moment de prendre une photo. */}
+              <button
+                onClick={() => setPhase("ok")}
+                className="w-full py-2 text-xs underline mt-1 transition-all hover:opacity-80"
+                style={{ color: "oklch(0.50 0.010 145)" }}
+              >
+                Continuer sans la caméra pour le moment →
+              </button>
             </div>
           </div>
         </div>
