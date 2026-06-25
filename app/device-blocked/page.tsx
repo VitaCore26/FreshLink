@@ -90,8 +90,26 @@ function AccessGateContent() {
 
   // ── Charger état sauvegardé ────────────────────────────────────────────────
   useEffect(() => {
-    generateFingerprint().then(fp => {
+    generateFingerprint().then(async fp => {
       setFingerprint(fp)
+      // Vérification IMMÉDIATE à l'ouverture : si le contrôle d'accès est désactivé
+      // (ou si l'appareil est déjà autorisé), check-and-token pose le cookie tout de
+      // suite → on entre sans même voir le formulaire. Indispensable : le middleware
+      // redirige toujours ici un appareil sans cookie, même contrôle désactivé.
+      try {
+        const res  = await fetch("/api/device/check-and-token", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fingerprint: fp }),
+        })
+        const data = await res.json()
+        if (data.approved) {
+          localStorage.removeItem(STORAGE_KEY)
+          setStep("approved")
+          // Navigation dure → le middleware revoit la requête AVEC le nouveau cookie.
+          setTimeout(() => window.location.replace(fromPath), 500)
+          return
+        }
+      } catch { /* hors ligne → on retombe sur le flux normal ci-dessous */ }
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")
         if (saved?.fingerprint === fp && saved?.step === "waiting") {
