@@ -20,6 +20,8 @@ interface DeviceRequest {
   autorise_par: string | null
   autorise_at: string | null
   notes: string | null
+  last_seen: string | null
+  connections: string[]
 }
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ export default function BODeviceAccess({ user }: Props) {
   const [loading, setLoading] = useState(false)
   const [msg,     setMsg]     = useState<{ ok: boolean; text: string } | null>(null)
   const [search,  setSearch]  = useState("")
+  const [openHist, setOpenHist] = useState<string | null>(null)   // device dont l'historique est ouvert
 
   // ── Edit modal ─────────────────────────────────────────────────────────────
   const [editRow,  setEditRow]  = useState<DeviceRequest | null>(null)
@@ -88,10 +91,12 @@ export default function BODeviceAccess({ user }: Props) {
             autorise_par:   (p.autorise_par as string) ?? null,
             autorise_at:    (p.autorise_at as string) ?? null,
             notes:          (p.notes as string) ?? null,
+            last_seen:      (p.last_seen as string) ?? null,
+            connections:    Array.isArray(p.connections) ? (p.connections as string[]) : [],
           }
         })
         .sort((a: DeviceRequest, b: DeviceRequest) =>
-          new Date(b.first_visit_at || 0).getTime() - new Date(a.first_visit_at || 0).getTime())
+          new Date(b.last_seen || b.first_visit_at || 0).getTime() - new Date(a.last_seen || a.first_visit_at || 0).getTime())
       setRows(list)
     } catch { /* hors ligne */ }
     setLoading(false)
@@ -113,6 +118,7 @@ export default function BODeviceAccess({ user }: Props) {
       gps_lat: r.gps_lat, gps_lng: r.gps_lng, gps_precision: r.gps_precision,
       user_agent: r.user_agent, first_visit_at: r.first_visit_at,
       autorise_par: r.autorise_par, autorise_at: r.autorise_at, notes: r.notes,
+      last_seen: r.last_seen, connections: r.connections,
       updated_at: new Date().toISOString(), ...over,
     }
   }
@@ -444,10 +450,28 @@ export default function BODeviceAccess({ user }: Props) {
 
                     <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1 text-xs text-gray-500">
                       <span>🕒 Demande : {fmt(row.first_visit_at)}</span>
+                      {row.last_seen && <span>📶 Vu : {fmt(row.last_seen)}</span>}
                       {row.autorise_at && <span>✅ Autorisé : {fmt(row.autorise_at)}</span>}
                       {row.autorise_par && <span>👤 Par : {row.autorise_par}</span>}
                       <span className="font-mono truncate">🔑 {row.device_id.slice(0, 20)}...</span>
                     </div>
+
+                    {/* Historique de connexion */}
+                    {row.connections.length > 0 && (
+                      <div className="mt-2">
+                        <button onClick={() => setOpenHist(openHist === row.id ? null : row.id)}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+                          🕘 Historique de connexion ({row.connections.length}) {openHist === row.id ? "▲" : "▼"}
+                        </button>
+                        {openHist === row.id && (
+                          <div className="mt-1.5 max-h-40 overflow-y-auto rounded-lg bg-gray-50 border border-gray-100 p-2 flex flex-col gap-0.5">
+                            {[...row.connections].reverse().map((c, i) => (
+                              <span key={i} className="text-[11px] text-gray-500 font-mono">• {fmt(c)}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* GPS */}
                     {hasGps && (

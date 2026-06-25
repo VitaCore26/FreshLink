@@ -19,10 +19,11 @@ const STUN_ONLY = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflar
 
 function monthKey(): string { return `turn_usage_${new Date().toISOString().slice(0, 7)}` }
 
-type Usage = { calls: number; seconds: number; gb: number; updated_at?: string }
+type UserStat = { name: string; calls: number; seconds: number; gb: number }
+type Usage = { calls: number; seconds: number; gb: number; byUser?: Record<string, UserStat>; updated_at?: string }
 
 async function readUsage(): Promise<Usage> {
-  const empty: Usage = { calls: 0, seconds: 0, gb: 0 }
+  const empty: Usage = { calls: 0, seconds: 0, gb: 0, byUser: {} }
   if (!SB_SRV) return empty
   try {
     const r = await fetch(`${SB_URL}/rest/v1/fl_notices?id=eq.${monthKey()}&select=payload`, {
@@ -31,11 +32,33 @@ async function readUsage(): Promise<Usage> {
     if (!r.ok) return empty
     const rows = await r.json()
     const p = rows?.[0]?.payload
-    return p ? { calls: p.calls ?? 0, seconds: p.seconds ?? 0, gb: p.gb ?? 0 } : empty
+    return p ? { calls: p.calls ?? 0, seconds: p.seconds ?? 0, gb: p.gb ?? 0, byUser: p.byUser ?? {} } : empty
   } catch { return empty }
 }
 
-export async function POST() {
+// Liste des utilisateurs dont les appels sont DÉSACTIVÉS (fl_notices __calls_disabled).
+async function readDisabled(): Promise<string[]> {
+  if (!SB_SRV) return []
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/fl_notices?id=eq.__calls_disabled&select=payload`, {
+      headers: { apikey: SB_SRV, Authorization: `Bearer ${SB_SRV}` }, cache: "no-store",
+    })
+    if (!r.ok) return []
+    const rows = await r.json()
+    const ids = rows?.[0]?.payload?.userIds
+    return Array.isArray(ids) ? ids : []
+  } catch { return [] }
+}
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({} as { userId?: string }))
+  const userId = String(body.userId || "")
+
+  // Appels désactivés pour cet utilisateur → on refuse le relais (STUN seul).
+  if (userId && (await readDisabled()).includes(userId)) {
+    return NextResponse.json({ iceServers: STUN_ONLY, source: "disabled", disabled: true, cap_gb: CAP_GB })
+  }
+
   const usage  = await readUsage()
   const capped = (usage.gb ?? 0) >= CAP_GB
 
@@ -65,7 +88,7 @@ export async function POST() {
 }
 
 export async function GET() {
-  const usage = await readUsage()
+  const [usage, disabled] = await Promise.all([readUsage(), readDisabled()])
   const pct = CAP_GB > 0 ? Math.round((usage.gb / CAP_GB) * 1000) / 10 : 0
-  return NextResponse.json({ usage, cap_gb: CAP_GB, percent: pct, month: monthKey().replace("turn_usage_", "") })
+  return NextResponse.json({ usage, cap_gb: CAP_GB, percent: pct, month: monthKey().replace("turn_usage_", ""), disabled })
 }

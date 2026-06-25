@@ -45,6 +45,20 @@ export default function App() {
     }
   }, [])
 
+  // Battement appareil : à chaque ouverture (utilisateur connecté), on enregistre
+  // la connexion dans fl_site_access (historique affiché dans « Accès Appareils »).
+  useEffect(() => {
+    if (!user) return
+    import("@/lib/deviceFingerprint").then(async ({ getDeviceFingerprint }) => {
+      const fp = await getDeviceFingerprint()
+      if (!fp) return
+      fetch("/api/device/seen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fingerprint: fp, nom: user.name, userAgent: navigator.userAgent }),
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [user])
+
   const handleLogin = (loggedUser: User, forceView?: "mobile" | "backoffice") => {
     try {
       store.setSession(loggedUser)

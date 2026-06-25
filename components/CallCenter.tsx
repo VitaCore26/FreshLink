@@ -31,9 +31,9 @@ const STATIC_FALLBACK: RTCIceServer[] = [
 
 // Récupère des identifiants TURN Cloudflare éphémères via /api/turn (le token API
 // reste côté serveur). `usedTurn` = relais dédié servi → on comptabilisera l'appel.
-async function fetchIceServers(): Promise<{ servers: RTCIceServer[]; usedTurn: boolean }> {
+async function fetchIceServers(userId: string): Promise<{ servers: RTCIceServer[]; usedTurn: boolean }> {
   try {
-    const r = await fetch("/api/turn", { method: "POST" })
+    const r = await fetch("/api/turn", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
     if (r.ok) {
       const j = await r.json()
       const ice = Array.isArray(j.iceServers) ? (j.iceServers as RTCIceServer[]) : null
@@ -62,6 +62,17 @@ export default function CallCenter({ user }: { user: User }) {
   const [note, setNote] = useState<string | null>(null)   // message d'état (hors ligne, micro…)
   const onlineRef = useRef<Set<string>>(new Set())         // utilisateurs en ligne (présence)
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const disabledRef = useRef(false)                        // appels désactivés pour CET utilisateur ?
+
+  // Récupère l'état "appels désactivés" pour cet utilisateur (admin peut le couper).
+  useEffect(() => {
+    let on = true
+    fetch("/api/turn", { cache: "no-store" })
+      .then(r => r.json())
+      .then(j => { if (on) disabledRef.current = Array.isArray(j.disabled) && j.disabled.includes(user.id) })
+      .catch(() => {})
+    return () => { on = false }
+  }, [user.id])
 
   const flash = (msg: string) => { setNote(msg); setTimeout(() => setNote(null), 6000) }
   const clearRing = () => { if (ringTimer.current) { clearTimeout(ringTimer.current); ringTimer.current = null } }
@@ -75,7 +86,7 @@ export default function CallCenter({ user }: { user: User }) {
       try {
         void fetch("/api/turn/usage", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seconds: secsRef.current }),
+          body: JSON.stringify({ seconds: secsRef.current, userId: user.id, userName: user.name }),
         })
       } catch { /* noop */ }
     }
@@ -89,7 +100,7 @@ export default function CallCenter({ user }: { user: User }) {
   }
 
   const newPC = async (peerId: string) => {
-    const { servers, usedTurn } = await fetchIceServers()
+    const { servers, usedTurn } = await fetchIceServers(user.id)
     usedTurnRef.current = usedTurn
     const pc = new RTCPeerConnection({ iceServers: servers })
     pc.onicecandidate = e => { if (e.candidate) send({ kind: "ice", to: peerId, from: { id: user.id, name: user.name }, data: e.candidate.toJSON() }) }
@@ -111,6 +122,7 @@ export default function CallCenter({ user }: { user: User }) {
   const startCall = async (target: { id: string; name: string }) => {
     if (phaseRef.current !== "idle" || target.id === user.id) return
     setNote(null)
+    if (disabledRef.current) { flash("Vos appels ont été désactivés par l'administrateur."); return }
     // Présence : si on a la liste des connectés et que la cible n'y est pas,
     // inutile d'appeler (elle ne sonnera pas tant que l'ERP n'est pas ouvert).
     if (onlineRef.current.size > 0 && !onlineRef.current.has(target.id)) {
@@ -165,6 +177,8 @@ export default function CallCenter({ user }: { user: User }) {
 
   const handleSignal = async (s: Signal) => {
     if (s.kind === "offer") {
+      // Appels désactivés pour cet utilisateur → on refuse poliment (pas de sonnerie).
+      if (disabledRef.current) { send({ kind: "hangup", to: s.from.id, from: { id: user.id, name: user.name } }); return }
       if (phaseRef.current !== "idle") { send({ kind: "hangup", to: s.from.id, from: { id: user.id, name: user.name } }); return }
       pendingOffer.current = s.data as RTCSessionDescriptionInit
       setPeerR(s.from); setPhaseR("incoming")
