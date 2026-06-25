@@ -266,6 +266,7 @@ export default function BODemandesComptes({ user }: Props) {
     const role: User["role"] = selected.type === "client" ? "client" : selected.type === "livreur" ? "livreur" : "fournisseur"
     const newUser: User = {
       id: store.genId(), name: approveForm.nom.trim(), email: approveForm.email.trim(),
+      telephone: selected.telephone,
       password: approveForm.password.trim(),
       role,
       actif: true, accessType: selected.type === "livreur" ? "mobile" : "both",
@@ -295,7 +296,24 @@ export default function BODemandesComptes({ user }: Props) {
       }
       store.saveFournisseurs([...store.getFournisseurs(), fourn]); newUser.fournisseurId = fourn.id
     }
-    store.saveUsers([...store.getUsers(), newUser])
+    // Anti-doublon : si un compte existe déjà (même email, ou même nom + téléphone),
+    // on le MET À JOUR (réactive + nouveau mot de passe) plutôt que d'empiler un
+    // doublon — c'est l'origine des comptes multiples (4× Zouhaidi, 3× Bentaib…)
+    // qui font matcher le mauvais enregistrement au login.
+    const existingUsers = store.getUsers()
+    const emailKey = newUser.email?.trim().toLowerCase() ?? ""
+    const phoneKey = (selected.telephone ?? "").replace(/[\s\-.+]/g, "")
+    const nameKey  = newUser.name.trim().toLowerCase()
+    const dupIdx = existingUsers.findIndex(u =>
+      (!!emailKey && (u.email ?? "").trim().toLowerCase() === emailKey) ||
+      (!!phoneKey && (u.telephone ?? "").replace(/[\s\-.+]/g, "") === phoneKey && (u.name ?? "").trim().toLowerCase() === nameKey)
+    )
+    if (dupIdx >= 0) {
+      existingUsers[dupIdx] = { ...existingUsers[dupIdx], ...newUser, id: existingUsers[dupIdx].id }
+      store.saveUsers(existingUsers)
+    } else {
+      store.saveUsers([...existingUsers, newUser])
+    }
     await writeRequestStatut(selected.id, "approuve", { approvedBy: user.id, approvedAt: new Date().toISOString() })
     setRequests(prev => prev.map(r => r.id === selected.id ? { ...r, statut: "approuve" as const } : r))
     if (phone) {

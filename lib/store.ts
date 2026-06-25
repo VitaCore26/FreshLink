@@ -2324,10 +2324,17 @@ export const store = {
   // Returns { user, forcedView } where forcedView is set when a specific dual-password was matched
   login: (identifier: string, password: string): User | null => {
     const users = store.getUsers()
+    const id = identifier.trim().toLowerCase()
+    // Téléphone normalisé (sans espaces/tirets/points/+/préfixe 212) pour matcher
+    // « 0647… », « +212647… » et « 647… » indifféremment — l'UI demande « Numéro
+    // ou mot de passe » mais le login ne testait QUE email/nom → échec par numéro.
+    const normPhone = (v: string) => v.replace(/[\s\-.+]/g, "").replace(/^212/, "0").replace(/^00212/, "0")
+    const idPhone = normPhone(id)
     return users.find(u => {
       const idMatch =
-        (u.email ?? "").toLowerCase() === identifier.toLowerCase() ||
-        (u.name ?? "").toLowerCase() === identifier.toLowerCase()
+        (u.email ?? "").toLowerCase() === id ||
+        (u.name ?? "").toLowerCase() === id ||
+        (!!u.telephone && idPhone.length >= 8 && normPhone((u.telephone ?? "").toLowerCase()) === idPhone)
       if (!idMatch || !u.actif) return false
       // Check all password variants
       return (

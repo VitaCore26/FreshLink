@@ -97,6 +97,18 @@ export default function App() {
             }).then(() => console.log("[FreshLink] ✅ Auto-sync fl_articles → Supabase"))
               .catch(() => {})
           }
+          // Clients : poussés comme fl_users/fl_articles — sinon les clients créés
+          // au back-office restent en localStorage et n'arrivent jamais sur fl_clients,
+          // donc le prévendeur mobile (qui lit Supabase) voit une liste vide.
+          const allClients = store.getClients()
+          if (allClients.length > 0) {
+            const upserts = allClients.map(c => { const { id, ...payload } = c; return { id, payload, updated_at: new Date().toISOString() } })
+            fetch("/api/sync-write", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ table: "fl_clients", upserts }),
+            }).then(() => console.log(`[FreshLink] ✅ Auto-sync ${allClients.length} fl_clients → Supabase`))
+              .catch(() => {})
+          }
         } catch { /* offline OK */ }
       }
     } catch (e: unknown) {
