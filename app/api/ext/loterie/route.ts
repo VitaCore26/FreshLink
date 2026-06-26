@@ -89,7 +89,9 @@ export async function GET(req: NextRequest) {
     .filter(s => s.maxGagnants == null || s.gagnants < s.maxGagnants)        // quota non atteint
 
   return NextResponse.json({
-    active: cfg.active !== false && rewards.length > 0,
+    // OPT-IN : la roue ne s'affiche que si l'admin l'a explicitement activée
+    // (fl_notices __loterie_config { active:true }). Par défaut → dormante.
+    active: cfg.active === true && rewards.length > 0,
     seuilCible: Number(cfg.seuilCible) || 5000,
     rewards,
   }, { headers: cors(origin) })
