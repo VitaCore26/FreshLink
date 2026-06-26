@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { store, type User } from "@/lib/store"
-import { loadZonesConfig, saveZonesConfig, TEAM_LEADS, type ZonesConfig, type ZoneCfg } from "@/lib/commercial/zones"
+import { store, type User, type Client } from "@/lib/store"
+import { loadZonesConfig, saveZonesConfig, resolveAffectation, TEAM_LEADS, type ZonesConfig, type ZoneCfg } from "@/lib/commercial/zones"
 
 export default function BOZonesSecteurs({ user }: { user: User }) {
   const [cfg, setCfg]       = useState<ZonesConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
+  const [applying, setApplying] = useState(false)
   const [msg, setMsg]         = useState<{ ok: boolean; text: string } | null>(null)
   const [newSecteur, setNewSecteur] = useState<Record<string, string>>({})
 
@@ -60,6 +61,31 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
     flash(ok, ok ? "✅ Zones & secteurs enregistrés." : "Erreur lors de l'enregistrement.")
   }
 
+  // Applique la config à TOUS les clients : chaque client est rattaché au prévendeur
+  // de SON secteur (+ sa zone) → le prévendeur voit aussitôt ses clients sur mobile.
+  const appliquerAuxClients = async () => {
+    if (!cfg) return
+    setApplying(true)
+    await saveZonesConfig(cfg)                       // s'assure que la config est sauvée d'abord
+    const changed: Client[] = []
+    const updated = store.getClients().map(c => {
+      if (!c.secteur) return c
+      const aff = resolveAffectation(cfg, c.secteur)
+      if (aff.prevendeurId && c.prevendeurId !== aff.prevendeurId) {
+        const nc = { ...c, prevendeurId: aff.prevendeurId, zone: aff.zoneId ?? c.zone }
+        changed.push(nc); return nc
+      }
+      return c
+    })
+    if (changed.length) {
+      store.saveClients(updated)
+      const { upsertClient } = await import("@/lib/supabase/db")
+      for (const c of changed) { try { await upsertClient(c) } catch { /* sync best-effort */ } }
+    }
+    setApplying(false)
+    flash(true, `✅ ${changed.length} client(s) rattaché(s) à leur prévendeur selon le secteur.`)
+  }
+
   if (loading || !cfg) return <div className="p-8 text-center text-sm text-muted-foreground">Chargement des zones…</div>
   if (!canEdit) return <div className="p-8 text-center text-sm text-muted-foreground">🔒 Réservé aux responsables.</div>
 
@@ -74,10 +100,17 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
           <h2 className="text-xl font-black text-foreground flex items-center gap-2">🗺️ Zones &amp; Secteurs</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Programmez les secteurs de chaque zone, le Team Lead, et le prévendeur (1 par secteur).</p>
         </div>
-        <button onClick={save} disabled={saving}
-          className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
-          {saving ? "…" : "💾 Enregistrer"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={appliquerAuxClients} disabled={applying || saving}
+            className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold disabled:opacity-50"
+            title="Rattache chaque client au prévendeur de son secteur">
+            {applying ? "…" : "👥 Appliquer aux clients"}
+          </button>
+          <button onClick={save} disabled={saving || applying}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
+            {saving ? "…" : "💾 Enregistrer"}
+          </button>
+        </div>
       </div>
 
       {msg && (
