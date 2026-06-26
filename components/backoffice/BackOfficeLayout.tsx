@@ -72,6 +72,7 @@ const BOUsers                = dynamic(() => import("./BOUsers"),               
 const BOSettings             = dynamic(() => import("./BOSettings"),             { ssr: false, loading: L("Chargement parametres...") })
 const BOFinance              = dynamic(() => import("./BOFinance"),              { ssr: false, loading: L("Chargement finance...") })
 const BOArticles             = dynamic(() => import("./BOArticles"),             { ssr: false, loading: L("Chargement articles...") })
+const BOGestionPA            = dynamic(() => import("./BOGestionPA"),            { ssr: false, loading: L("Chargement PA...") })
 const BOWhatsApp             = dynamic(() => import("./BOWhatsApp"),             { ssr: false, loading: L("Chargement WhatsApp...") })
 const BOAffectationCommerciale = dynamic(() => import("./BOAffectationCommerciale"), { ssr: false, loading: L("Chargement affectation...") })
 const BOZonesSecteurs        = dynamic(() => import("./BOZonesSecteurs"),          { ssr: false, loading: L("Chargement zones...") })
@@ -169,7 +170,7 @@ export type Tab =
   | "commandes_web"
   | "commandes_unifiees"
   | "alertes_clients"
-  | "moteur_commercial" | "gifts_v3" | "loterie" | "pa_historique" | "cutoffs_v3" | "feedbacks_v3"
+  | "moteur_commercial" | "gifts_v3" | "loterie" | "pa_historique" | "gestion_pa" | "cutoffs_v3" | "feedbacks_v3"
   | "messagerie"
 
 interface NavItem {
@@ -269,6 +270,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
       { id: "reception",         label: "Reception Achat",        labelAr: "الاستلام",           permKey: "canViewAchat", icon: <Icon d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /> },
       { id: "sourcing",          label: "Sourcing Marche",        labelAr: "تحديد المصادر",      permKey: "canViewAchat", icon: <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /> },
       { id: "pa_historique",     label: "PA Historique",          labelAr: "تاريخ سعر الشراء",   permKey: "canViewAchat", icon: <Icon d="M3 3v18h18M7 14l3-3 3 3 5-5" /> },
+      { id: "gestion_pa",        label: "Gestion des PA",         labelAr: "إدارة سعر الشراء",   permKey: "canViewAchat", icon: <Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 11v-1m9-5a9 9 0 11-18 0 9 9 0 0118 0z" /> },
       { id: "rapport_marche",    label: "Rapport Marché",         labelAr: "تقرير السوق",        permKey: "canViewAchat", icon: <Icon d="M8 7h12m0 0l-4-4m4 4l-4 4M4 7h.01M4 12h.01M4 17h.01M8 12h12M8 17h12" /> },
       { id: "pricing",           label: "Releve de Prix",         labelAr: "رصد الأسعار",        permKey: "canViewAchat", icon: <Icon d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /> },
       { id: "analyse_achat",     label: "Analyse Achat",          labelAr: "تحليل المشتريات",    permKey: "canViewAchat", icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
@@ -407,7 +409,7 @@ const NAV_ITEM_MAP: Record<string, NavItem> =
 const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
   { label: "Vue d'ensemble",              labelAr: "نظرة عامة",            ids: ["dashboard", "recap", "rapport_livraison"] },
   { label: "Communication",               labelAr: "التواصل",              ids: ["messagerie", "whatsapp", "feedback"] },
-  { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
+  { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "gestion_pa", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
   { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
   { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "zones_secteurs", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
   { label: "Prix, Marge & Concurrence",   labelAr: "الأسعار والهامش والمنافسة", ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
@@ -450,6 +452,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   marketplace:       (u) => <BOMarketplace user={u} />,
   moteur_commercial: (_u) => <BOMoteurCommercialV3 />,
   pa_historique:     (_u) => <BOPaHistoriqueV3 />,
+  gestion_pa:        (u)  => <BOGestionPA user={u} />,
   gifts_v3:          (_u) => <BOGiftsV3 />,
   loterie:           (u)  => <BOLoterie user={u} />,
   cutoffs_v3:        (u)  => <BOCutoffsV3 currentUserId={u.id} />,
