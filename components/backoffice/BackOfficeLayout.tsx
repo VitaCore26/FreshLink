@@ -74,6 +74,7 @@ const BOFinance              = dynamic(() => import("./BOFinance"),             
 const BOArticles             = dynamic(() => import("./BOArticles"),             { ssr: false, loading: L("Chargement articles...") })
 const BOWhatsApp             = dynamic(() => import("./BOWhatsApp"),             { ssr: false, loading: L("Chargement WhatsApp...") })
 const BOAffectationCommerciale = dynamic(() => import("./BOAffectationCommerciale"), { ssr: false, loading: L("Chargement affectation...") })
+const BOZonesSecteurs        = dynamic(() => import("./BOZonesSecteurs"),          { ssr: false, loading: L("Chargement zones...") })
 const BOGoogleSheets         = dynamic(() => import("./BOGoogleSheets"),         { ssr: false, loading: L("Chargement Google Sheets...") })
 const BOComptesExternes      = dynamic(() => import("./BOComptesExternes"),      { ssr: false, loading: L("Chargement comptes...") })
 const BOProspection          = dynamic(() => import("./BOProspection"),          { ssr: false, loading: L("Chargement prospection...") })
@@ -139,7 +140,7 @@ const BOPaHistoriqueV3       = dynamic(() => import("./BOPaHistorique"),        
 
 export type Tab =
   | "dashboard" | "achat" | "reception" | "po"
-  | "commercial" | "affectation" | "dispatch"
+  | "commercial" | "affectation" | "zones_secteurs" | "dispatch"
   | "stock" | "retour" | "cash"
   | "recap" | "rapport_livraison" | "preparation"
   | "fournisseurs" | "articles"
@@ -281,6 +282,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
       { id: "commandes_unifiees", label: "Commandes",              labelAr: "الطلبيات",          permKey: "canViewCommercial", icon: <Icon d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /> },
       { id: "alertes_clients",    label: "Alertes Articles Clients",labelAr: "تنبيهات أصناف الزبائن", permKey: "canViewCommercial", icon: <Icon d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /> },
       { id: "affectation",        label: "Affectation Commerciale",labelAr: "التوزيع التجاري",   permKey: "canViewCommercial", icon: <Icon d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /> },
+      { id: "zones_secteurs",     label: "Zones & Secteurs",       labelAr: "المناطق والقطاعات", permKey: "canViewCommercial", icon: <Icon d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" /> },
       { id: "category_pricing",   label: "Tarifs par Categorie",   labelAr: "أسعار الفئات",      permKey: "canViewCommercial", icon: <Icon d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
       { id: "documents",          label: "Devis & Contrats CHR",   labelAr: "العروض والعقود",    permKey: "canViewCommercial", icon: <Icon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
       { id: "prospection",        label: "Prospection IA",         labelAr: "الاستهداف الذكي",  permKey: "canViewCommercial", icon: <Icon d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /> },
@@ -405,7 +407,7 @@ const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
   { label: "Communication",               labelAr: "التواصل",              ids: ["messagerie", "whatsapp", "feedback"] },
   { label: "Achats & Approvisionnement",  labelAr: "المشتريات والتموين",   ids: ["achat", "po", "reception", "fournisseurs", "credit_fournisseur", "sourcing", "pa_historique", "rapport_marche", "analyse_achat", "analyse_reception", "temps_achat"] },
   { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
-  { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
+  { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "zones_secteurs", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
   { label: "Prix, Marge & Concurrence",   labelAr: "الأسعار والهامش والمنافسة", ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
   { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics"] },
   { label: "Clients & Comptes Web",       labelAr: "الزبائن والحسابات",    ids: ["comptes_externes", "demandes_comptes"] },
@@ -428,6 +430,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   po:                (_u) => <BOPurchaseOrders />,
   commercial:        (u) => <BOCommercial user={u} />,
   affectation:       (u) => <BOAffectationCommerciale user={u} />,
+  zones_secteurs:    (u) => <BOZonesSecteurs user={u} />,
   dispatch:          (u) => <BODispatch user={u} />,
   fournisseurs:      (u) => <BOFournisseurs user={u} />,
   preparation:       (u) => <BOBonPreparation user={u} />,
