@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await sb
       .from(table)
       .select("id, payload")
-      .limit(2000)
+      .limit(20000)   // toutes les lectures passent désormais ici (RLS bloque l'anon)
 
     if (error) {
       return NextResponse.json({ ok: false, error: `${error.message} (code: ${error.code})` }, { status: 500 })

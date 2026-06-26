@@ -15,7 +15,6 @@
 // Les lectures utilisent le client anon (lecture seule, RLS permissive).
 // ============================================================
 
-import { createClient } from "@/lib/supabase/client"
 import { store } from "@/lib/store"
 import { suppressAutoSync } from "./autoSync"
 import type {
@@ -36,7 +35,17 @@ function fromRow<T>(row: { id: string; payload: unknown }): T {
   return row as unknown as T
 }
 
-function sbRead() { return createClient() }
+// Lecture cross-device via le SERVICE-ROLE (/api/sync-read, protégé par device-guard).
+// Les politiques RLS bloquent l'anon → les lectures directes renvoyaient 0 ligne
+// (clients/users/commandes invisibles). On passe par l'endpoint service-role.
+async function readRows(table: string): Promise<{ data: { id: string; payload: unknown }[] | null; error: string | null }> {
+  try {
+    const res = await fetch(`/api/sync-read?table=${encodeURIComponent(table)}`, { cache: "no-store" })
+    const j = await res.json()
+    if (!j?.ok) return { data: null, error: j?.error || `read ${table} failed` }
+    return { data: Array.isArray(j.data) ? j.data : [], error: null }
+  } catch (e) { return { data: null, error: String(e) } }
+}
 
 // Route all writes through /api/sync-write (service role key bypasses RLS)
 async function apiUpsert(table: string, item: Record<string, unknown>): Promise<void> {
@@ -114,7 +123,7 @@ export async function deleteClient(id: string) {
 
 export async function fetchClients(): Promise<{ clients: Client[]; source: "supabase" | "local" }> {
   try {
-    const { data, error } = await sbRead().from("fl_clients").select("id, payload")
+    const { data, error } = await readRows("fl_clients")
     if (error) throw error
     // Connexion OK — remplace toujours le cache local, même si la table est
     // vide (ex. apres "Réinitialiser les données" : la vacuité doit se propager).
@@ -176,7 +185,7 @@ export async function fetchArticles(): Promise<Article[]> {
   } catch { /* offline / hors app */ }
   // Repli : client anon (si l'API est inaccessible mais la RLS ouverte)
   try {
-    const { data, error } = await sbRead().from("fl_articles").select("id, payload")
+    const { data, error } = await readRows("fl_articles")
     if (!error && data) {
       const articles = (data as { id: string; payload: unknown }[]).map(r => fromRow<Article>(r))
       suppressAutoSync(() => store.saveArticles(articles))
@@ -198,7 +207,7 @@ export async function upsertFournisseur(f: Fournisseur) {
 
 export async function fetchFournisseurs(): Promise<Fournisseur[]> {
   try {
-    const { data, error } = await sbRead().from("fl_fournisseurs").select("id, payload")
+    const { data, error } = await readRows("fl_fournisseurs")
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Fournisseur>(r))
@@ -226,7 +235,7 @@ export async function deleteCommande(id: string) {
 
 export async function fetchCommandes(dateFilter?: string): Promise<Commande[]> {
   try {
-    const { data, error } = await sbRead().from("fl_commandes").select("id, payload")
+    const { data, error } = await readRows("fl_commandes")
     if (error) throw error
     if (data) {
       const remote = (data as { id: string; payload: unknown }[]).map(r => fromRow<Commande>(r))
@@ -269,7 +278,7 @@ export async function upsertTrip(t: Trip) {
 
 export async function fetchTrips(): Promise<Trip[]> {
   try {
-    const { data, error } = await sbRead().from("fl_trips").select("id, payload")
+    const { data, error } = await readRows("fl_trips")
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Trip>(r))
@@ -292,7 +301,7 @@ export async function upsertBonLivraison(b: BonLivraison) {
 
 export async function fetchBonsLivraison(): Promise<BonLivraison[]> {
   try {
-    const { data, error } = await sbRead().from("fl_bons_livraison").select("id, payload")
+    const { data, error } = await readRows("fl_bons_livraison")
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<BonLivraison>(r))
@@ -315,7 +324,7 @@ export async function upsertRetour(r: Retour) {
 
 export async function fetchRetours(): Promise<Retour[]> {
   try {
-    const { data, error } = await sbRead().from("fl_retours").select("id, payload")
+    const { data, error } = await readRows("fl_retours")
     if (error) throw error
     if (data) {
       const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<Retour>(r))
@@ -411,7 +420,7 @@ export async function upsertMessage(m: Message) {
 // complément du temps réel (broadcast). Renvoie la liste locale fusionnée.
 export async function fetchMessages(): Promise<Message[]> {
   try {
-    const { data, error } = await sbRead().from("fl_messages").select("id, payload").limit(2000)
+    const { data, error } = await readRows("fl_messages")
     if (!error && Array.isArray(data) && data.length > 0) {
       const remote = (data as { id: string; payload: unknown }[]).map(r => fromRow<Message>(r))
       const byId = new Map<string, Message>()
@@ -480,8 +489,8 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
   await Promise.all(
     ERP_TABLE_MAP.map(async ([table, save, getLocal]) => {
       try {
-        const { data, error } = await sbRead().from(table as "fl_clients").select("id, payload").limit(5000)
-        if (error) { errors.push(`${table}: ${error.message}`); return }
+        const { data, error } = await readRows(table)
+        if (error) { errors.push(`${table}: ${error}`); return }
         if (data && Array.isArray(data)) {
           const items = (data as { id: string; payload: unknown }[]).map(r => fromRow<unknown>(r))
           // ⛔ ANTI-PERTE DE DONNÉES (cause des "base vide / historique disparu") :
