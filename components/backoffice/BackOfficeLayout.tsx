@@ -75,6 +75,7 @@ const BOArticles             = dynamic(() => import("./BOArticles"),            
 const BOWhatsApp             = dynamic(() => import("./BOWhatsApp"),             { ssr: false, loading: L("Chargement WhatsApp...") })
 const BOAffectationCommerciale = dynamic(() => import("./BOAffectationCommerciale"), { ssr: false, loading: L("Chargement affectation...") })
 const BOZonesSecteurs        = dynamic(() => import("./BOZonesSecteurs"),          { ssr: false, loading: L("Chargement zones...") })
+const BOLoterie              = dynamic(() => import("./BOLoterie"),                { ssr: false, loading: L("Chargement loterie...") })
 const BOGoogleSheets         = dynamic(() => import("./BOGoogleSheets"),         { ssr: false, loading: L("Chargement Google Sheets...") })
 const BOComptesExternes      = dynamic(() => import("./BOComptesExternes"),      { ssr: false, loading: L("Chargement comptes...") })
 const BOProspection          = dynamic(() => import("./BOProspection"),          { ssr: false, loading: L("Chargement prospection...") })
@@ -168,7 +169,7 @@ export type Tab =
   | "commandes_web"
   | "commandes_unifiees"
   | "alertes_clients"
-  | "moteur_commercial" | "gifts_v3" | "pa_historique" | "cutoffs_v3" | "feedbacks_v3"
+  | "moteur_commercial" | "gifts_v3" | "loterie" | "pa_historique" | "cutoffs_v3" | "feedbacks_v3"
   | "messagerie"
 
 interface NavItem {
@@ -310,6 +311,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
       { id: "shop_analytics",     label: "Compteur Boutique",      labelAr: "عداد المتجر",        permKey: "canViewExternal", icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
       { id: "moteur_commercial",  label: "Moteur commercial",      labelAr: "محرك تجاري",       permKey: "canViewCommercial", icon: <Icon d="M9 7h6m0 0v6m0-6l-6 6" /> },
       { id: "gifts_v3",           label: "Cadeaux incentives",     labelAr: "هدايا تحفيزية",    permKey: "canViewCommercial", icon: <Icon d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" /> },
+      { id: "loterie",            label: "Loterie / Roue",         labelAr: "العجلة والقرعة",    permKey: "canViewCommercial", icon: <Icon d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 0v10l6 4" /> },
     ],
   },
   // ── 5. STOCK & CATALOGUE ─────────────────────────────────────────────────
@@ -409,7 +411,7 @@ const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
   { label: "Stock & Catalogue",           labelAr: "المخزون والفهرس",      ids: ["articles", "stock", "shelf_life", "forecast", "caisses_vides"] },
   { label: "Commercial & Ventes",         labelAr: "التجاري والمبيعات",    ids: ["commandes_unifiees", "affectation", "zones_secteurs", "alertes_clients", "documents", "prospection", "moteur_commercial"] },
   { label: "Prix, Marge & Concurrence",   labelAr: "الأسعار والهامش والمنافسة", ids: ["pricing", "category_pricing", "pricing_concurrent", "intelligence_prix", "concurrence"] },
-  { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "shop_analytics"] },
+  { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "loterie", "shop_analytics"] },
   { label: "Clients & Comptes Web",       labelAr: "الزبائن والحسابات",    ids: ["comptes_externes", "demandes_comptes"] },
   { label: "Logistique & Transport",      labelAr: "اللوجستيك والنقل",     ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
   { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
@@ -449,6 +451,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   moteur_commercial: (_u) => <BOMoteurCommercialV3 />,
   pa_historique:     (_u) => <BOPaHistoriqueV3 />,
   gifts_v3:          (_u) => <BOGiftsV3 />,
+  loterie:           (u)  => <BOLoterie user={u} />,
   cutoffs_v3:        (u)  => <BOCutoffsV3 currentUserId={u.id} />,
   feedbacks_v3:      (u) => <FeedbackPanel user={u} />,
   commandes_web:       (u) => <BOCommandesUnifiees user={u} />,

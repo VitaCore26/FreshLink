@@ -6,12 +6,12 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 export interface ZoneCfg { id: string; label: string; teamLeadId: string; secteurs: string[] }
-export interface ZonesConfig { zones: ZoneCfg[]; secteurPrevendeur: Record<string, string> }
+export interface ZonesConfig { zones: ZoneCfg[]; secteurPrevendeur: Record<string, string>; allSecteurs: string[] }
 
-// Team Leads codés en dur (pour l'instant) : zizi & ia.
+// Team Leads codés en dur : zizi & jariri (id "ia" conservé pour compat).
 export const TEAM_LEADS: { id: string; name: string }[] = [
   { id: "zizi", name: "Zizi" },
-  { id: "ia",   name: "IA" },
+  { id: "ia",   name: "Jariri" },
 ]
 
 export const DEFAULT_ZONES_CONFIG: ZonesConfig = {
@@ -21,6 +21,7 @@ export const DEFAULT_ZONES_CONFIG: ZonesConfig = {
     { id: "casaSud",    label: "Casa Sud",    teamLeadId: "ia",   secteurs: [] },
   ],
   secteurPrevendeur: {},
+  allSecteurs: [],   // pool maître des secteurs (géré à part)
 }
 
 const NOTICE_ID = "__zones_config"
@@ -32,7 +33,11 @@ export async function loadZonesConfig(): Promise<ZonesConfig> {
     const row = (j?.data ?? []).find((r: { id: string }) => r.id === NOTICE_ID)
     const cfg = row?.payload as ZonesConfig | undefined
     if (cfg && Array.isArray(cfg.zones) && cfg.zones.length) {
-      return { zones: cfg.zones, secteurPrevendeur: cfg.secteurPrevendeur ?? {} }
+      // Pool maître : explicite, sinon dérivé de l'union des secteurs des zones (compat).
+      const allSecteurs = Array.isArray(cfg.allSecteurs)
+        ? cfg.allSecteurs
+        : [...new Set(cfg.zones.flatMap(z => z.secteurs))]
+      return { zones: cfg.zones, secteurPrevendeur: cfg.secteurPrevendeur ?? {}, allSecteurs }
     }
   } catch { /* hors ligne → défaut */ }
   return DEFAULT_ZONES_CONFIG
