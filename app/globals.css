@@ -41,14 +41,14 @@
   --primary-foreground: 0 0% 9%;
   --secondary: 0 0% 14.9%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 14.9%;
-  --muted-foreground: 0 0% 63.9%;
-  --accent: 0 0% 14.9%;
+  --muted: 0 0% 16%;
+  --muted-foreground: 0 0% 72%;       /* contraste renforcé (était 63.9%) */
+  --accent: 0 0% 16%;
   --accent-foreground: 0 0% 98%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 14.9%;
-  --input: 0 0% 14.9%;
+  --border: 0 0% 28%;                 /* bordures VISIBLES sur fond sombre (était 14.9%) */
+  --input: 0 0% 30%;                  /* contour des champs visible */
   --ring: 0 0% 83.1%;
   --chart-1: 220 70% 50%;
   --chart-2: 160 60% 45%;
@@ -242,16 +242,34 @@ img, video, iframe, canvas { max-width: 100%; }
 .dark .text-slate-500,
 .dark .text-gray-600,
 .dark .text-gray-500,
-.dark .text-neutral-500    { color: #b4b4b4 !important; }
+.dark .text-neutral-600,
+.dark .text-neutral-500    { color: #cfcfcf !important; }   /* gris ultra-clair (était #b4b4b4) */
 .dark .text-slate-400,
-.dark .text-gray-400       { color: #8a8a8a !important; }
+.dark .text-gray-400,
+.dark .text-neutral-400    { color: #ababab !important; }   /* lisible (était #8a8a8a) */
+.dark .text-slate-300,
+.dark .text-gray-300       { color: #c4c4c4 !important; }   /* placeholders/secondaire — ne reste pas blanc cassé invisible */
 
-/* Bordures */
+/* Bordures — VISIBLES sur fond sombre (le bug : elles se fondaient dans le fond) */
 .dark .border-slate-200,
+.dark .border-slate-300,
 .dark .border-slate-100,
 .dark .border-gray-200,
+.dark .border-gray-300,
 .dark .border-gray-100,
-.dark .border-neutral-200  { border-color: #333 !important; }
+.dark .border-neutral-200,
+.dark .border               { border-color: #404040 !important; }
+
+/* Séparateurs de lignes (tables / listes) — invisibles sinon */
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200  > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-100  > :not([hidden]) ~ :not([hidden]) { border-color: #383838 !important; }
+
+/* Lignes de tableau : texte clair par défaut + survol lisible */
+.dark table { color: #e6e6e6; }
+.dark thead th { color: #f5f5f5 !important; }
+.dark tbody tr:hover { background-color: #242424 !important; }
 
 /* Surfaces translucides claires → sombres */
 .dark .bg-white\/80,
