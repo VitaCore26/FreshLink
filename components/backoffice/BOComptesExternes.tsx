@@ -2,8 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { store, type User, type Client } from "@/lib/store"
+import { loadZonesConfig, resolveAffectation } from "@/lib/commercial/zones"
 
 interface Props { user: User }
+
+// Auto-affectation : si le secteur du client correspond à un secteur configuré
+// (Zones & Secteurs), on rattache automatiquement le prévendeur + team lead.
+async function avecAffectation<T extends { secteur?: string; prevendeurId?: string; teamLeadId?: string }>(data: T): Promise<T> {
+  if (!data.secteur?.trim()) return data
+  try {
+    const cfg = await loadZonesConfig()
+    const aff = resolveAffectation(cfg, data.secteur.trim())
+    if (aff.prevendeurId) return { ...data, prevendeurId: aff.prevendeurId, teamLeadId: aff.teamLeadId ?? data.teamLeadId }
+  } catch { /* config indisponible → pas d'auto-affectation */ }
+  return data
+}
 
 const ALLOWED_ROLES = ["super_super_admin", "super_admin", "admin", "resp_commercial", "resp_achat", "ctrl_achat", "team_leader"]
 
@@ -447,6 +460,7 @@ export default function BOComptesExternes({ user }: Props) {
   // ── Save new client (+ auto-create login si demandé) ─────────────────────────
   const handleAdd = async (data: Omit<Client, "id" | "createdBy" | "createdAt">) => {
     if (!data.nom.trim()) { flash(false, "Le nom est obligatoire."); return }
+    data = await avecAffectation(data)   // auto-rattachement prévendeur selon le secteur
     const clientId = await nextClientId()
     const fullClient = { ...data, id: clientId, createdBy: user.id, createdAt: new Date().toISOString() }
     store.addClient(fullClient)
@@ -461,6 +475,7 @@ export default function BOComptesExternes({ user }: Props) {
     const clientOk = await pushToSupabase("fl_clients", clientId, {
       nom: data.nom, telephone: data.telephone, email: data.email || null,
       adresse: data.adresse, secteur: data.secteur, zone: data.zone,
+      prevendeurId: data.prevendeurId ?? null, teamLeadId: data.teamLeadId ?? null,
       type: data.type, categorie: data.categorie, segment: data.categorie === "chr" ? "CHR" : data.categorie === "marchand" ? "Marchand" : "standard",
       chrRole: chrRole ?? null,
       taille: data.taille, rotation: data.rotation, ice: data.ice,
@@ -493,6 +508,7 @@ export default function BOComptesExternes({ user }: Props) {
   // ── Save edited client ───────────────────────────────────────────────────────
   const handleEdit = async (data: Omit<Client, "id" | "createdBy" | "createdAt">) => {
     if (!editId || !data.nom.trim()) { flash(false, "Le nom est obligatoire."); return }
+    data = await avecAffectation(data)   // auto-rattachement prévendeur selon le secteur
     const cid = editId
     store.updateClient(cid, data)
     setEditId(null)
@@ -506,6 +522,7 @@ export default function BOComptesExternes({ user }: Props) {
     const ok = await pushToSupabase("fl_clients", cid, {
       nom: data.nom, telephone: data.telephone, email: data.email || null,
       adresse: data.adresse, secteur: data.secteur, zone: data.zone,
+      prevendeurId: data.prevendeurId ?? null, teamLeadId: data.teamLeadId ?? null,
       type: data.type, categorie: data.categorie,
       segment: data.categorie === "chr" ? "CHR" : data.categorie === "marchand" ? "Marchand" : "standard",
       chrRole: chrRole ?? null,
