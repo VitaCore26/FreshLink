@@ -48,10 +48,12 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
   }
 
   // ── Affectation secteur → zone (1 secteur = 1 zone) ─────────────────────────
+  // Many-to-many : un secteur peut appartenir à PLUSIEURS zones (on ne le retire
+  // plus des autres zones quand on le coche ici).
   const toggleSecteurInZone = (zid: string, secteur: string) => update(c => {
     const z = c.zones.find(x => x.id === zid); if (!z) return c
     if (z.secteurs.includes(secteur)) z.secteurs = z.secteurs.filter(s => s !== secteur)
-    else { c.zones.forEach(zz => { zz.secteurs = zz.secteurs.filter(s => s !== secteur) }); z.secteurs.push(secteur) }
+    else z.secteurs.push(secteur)
     return c
   })
 
@@ -154,7 +156,7 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
                       <label key={s} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
                         <input type="checkbox" checked={inThis} onChange={() => toggleSecteurInZone(z.id, s)} className="accent-emerald-600 w-4 h-4" />
                         <span className="text-foreground">{s}</span>
-                        {!inThis && other && <span className="text-[10px] text-amber-600">({other})</span>}
+                        {!inThis && other && <span className="text-[10px] text-amber-600">aussi: {other}</span>}
                       </label>
                     )
                   })}
@@ -178,7 +180,7 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
         ))}
       </div>
 
-      <p className="mt-4 text-[11px] text-muted-foreground">Un secteur n&apos;appartient qu&apos;à une zone et n&apos;a qu&apos;un seul prévendeur ; un prévendeur peut couvrir plusieurs secteurs.</p>
+      <p className="mt-4 text-[11px] text-muted-foreground">Une zone regroupe plusieurs secteurs ; un secteur peut appartenir à plusieurs zones (many-to-many) ; chaque secteur a un seul prévendeur, un prévendeur peut couvrir plusieurs secteurs.</p>
     </div>
   )
 }

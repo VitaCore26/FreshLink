@@ -518,6 +518,17 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
     })
   )
 
+  // ── Garde anti-fantôme : signale les commandes liées à un prévendeur absent ──
+  try {
+    const userIds = new Set(store.getUsers().map(u => u.id))
+    const orphans = store.getCommandes().filter(c => c.commercialId && !userIds.has(c.commercialId))
+    if (orphans.length) {
+      console.warn(`[sync] ⚠️ ${orphans.length} commande(s) liée(s) à un prévendeur INEXISTANT (fantôme) :`,
+        orphans.slice(0, 15).map(c => `${c.id}→${c.commercialId}`))
+      errors.push(`⚠️ ${orphans.length} commande(s) à prévendeur fantôme`)
+    }
+  } catch { /* audit best-effort */ }
+
   window.dispatchEvent(new CustomEvent("fl_store_updated"))
   return { ok: errors.length === 0, tables, errors }
 }
