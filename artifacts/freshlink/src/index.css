@@ -71,3 +71,7 @@ body {
 body, * {
   font-family: var(--font-sans, Inter), var(--font-arabic, "Noto Sans Arabic", "Amiri", "Cairo"), system-ui, sans-serif;
 }
+
+.font-arabic {
+  font-family: "Noto Sans Arabic", "Amiri", "Cairo", Arial, sans-serif;
+}

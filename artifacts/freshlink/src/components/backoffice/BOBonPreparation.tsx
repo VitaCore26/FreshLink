@@ -175,7 +175,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
     ${bon.lignes.map((l, i) => `
     <tr>
       <td style="color:#9ca3af;font-size:8pt">${i + 1}</td>
-      <td class="bold">${l.articleNom}</td>
+      <td class="bold">${l.articleNom}${(l as Record<string,unknown>).articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:9pt;font-weight:400;color:#6b7280;direction:rtl;display:block">${(l as Record<string,unknown>).articleNomAr}</span>` : ""}</td>
       <td class="r bold" style="color:#166534">${l.qteCommandee.toFixed(1)}</td>
       <td class="r" style="color:#6b7280">${l.unite}</td>
       <td class="r"><span class="sign-box"></span>&nbsp;${l.unite}</td>
@@ -379,8 +379,84 @@ export default function BOBonPreparation({ user }: Props) {
 
   const effectiveNom = nomManual && nom.trim() ? nom.trim() : autoNom
 
+  const buildLignesForClient = (clientId: string): LignePreparation[] => {
+    const cmdsForSel = getCmdsForSelection()
+    const clientCmds = cmdsForSel.filter(c => c.clientId === clientId)
+    const map = new Map<string, LignePreparation>()
+    for (const cmd of clientCmds) {
+      for (const ligne of cmd.lignes) {
+        const existing = map.get(ligne.articleId)
+        const art = articles.find(a => a.id === ligne.articleId)
+        if (existing) {
+          existing.qteCommandee += ligne.quantite
+          existing.qtesParClient[clientId] = (existing.qtesParClient[clientId] || 0) + ligne.quantite
+        } else {
+          map.set(ligne.articleId, {
+            articleId: ligne.articleId,
+            articleNom: ligne.articleNom,
+            unite: ligne.unite ?? art?.unite ?? "kg",
+            qtesParClient: { [clientId]: ligne.quantite },
+            qteCommandee: ligne.quantite,
+            qtePrepared: 0,
+            valide: false,
+          })
+        }
+      }
+    }
+    return Array.from(map.values())
+  }
+
   const handleCreate = () => {
     if (!effectiveNom.trim()) return
+
+    // ── Multi-client : un bon distinct par client ────────────────────────────
+    if (selectedClients.length > 1) {
+      const cmdsForSel = getCmdsForSelection()
+      const bonsCreated: BonPreparation[] = []
+
+      for (const cid of selectedClients) {
+        const clientInfo = clientsAvailable.find(c => c.id === cid)
+        const clientCmds = cmdsForSel.filter(c => c.clientId === cid)
+        if (clientCmds.length === 0) continue
+        const clientLignes = buildLignesForClient(cid)
+        if (clientLignes.length === 0) continue
+
+        const ci = buildClientsInfo(clientCmds)
+        const bonNom = `${effectiveNom} — ${clientInfo?.nom ?? cid}`
+        const bon: BonPreparation = {
+          id: store.genId(),
+          nom: bonNom,
+          date: store.today(),
+          mode,
+          type,
+          format,
+          tripId: tripId || undefined,
+          clientIds: [cid],
+          clientsInfo: ci,
+          sequenceMode,
+          lignes: clientLignes,
+          statut: format === "numerique" ? "en_cours" : "brouillon",
+          createdBy: user.id,
+        }
+        store.addBonPreparation(bon)
+        bonsCreated.push(bon)
+      }
+
+      if (bonsCreated.length === 0) { alert("Aucune commande à préparer."); return }
+      refresh()
+      setShowNew(false)
+      setNom(""); setNomManual(false); setMode("par_article"); setType("stockage"); setFormat("papier")
+      setTripId(""); setSelectedClients([])
+      if (format === "papier") {
+        bonsCreated.forEach((bon, i) => setTimeout(() => openPrintPrep(bon, commandes), 350 * (i + 1)))
+      } else {
+        const b = store.getBonsPreparation().find(bp => bp.id === bonsCreated[0].id)
+        if (b) setViewing(b)
+      }
+      return
+    }
+
+    // ── Client unique ou global : comportement original ───────────────────────
     const lignes = buildLignes()
     if (lignes.length === 0) { alert("Aucune commande à préparer."); return }
     const cmdsForSel = getCmdsForSelection()

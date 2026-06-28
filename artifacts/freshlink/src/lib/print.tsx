@@ -624,11 +624,12 @@ export interface PrintBLOpts {
 }
 
 interface BOBLLigne {
-  articleNom:  string
-  unite:       string
-  qteLivree:   number
-  prixUnit:    number
-  totalLigne:  number
+  articleNom:   string
+  articleNomAr?: string
+  unite:        string
+  qteLivree:    number
+  prixUnit:     number
+  totalLigne:   number
 }
 interface BOBonLivraison {
   id:                    string
@@ -723,7 +724,7 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
     <th class="r">Qté livrée</th><th class="r">Prix U. HT</th><th class="r">Total HT</th>
   </tr></thead>
   <tbody>
-  ${bl.lignes.map(l => `<tr><td class="bold">${l.articleNom}</td><td>${l.unite??"kg"}</td>
+  ${bl.lignes.map(l => `<tr><td class="bold">${l.articleNom}${l.articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:11px;font-weight:400;color:#555;direction:rtl;display:block">${l.articleNomAr}</span>` : ""}</td><td>${l.unite??"kg"}</td>
     <td class="r">${l.qteLivree}</td><td class="r">${fmtDH(l.prixUnit)}</td>
     <td class="r bold">${fmtDH(l.totalLigne)}</td></tr>`).join("")}
   </tbody>

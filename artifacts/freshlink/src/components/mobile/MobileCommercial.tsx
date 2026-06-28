@@ -250,7 +250,7 @@ export default function MobileCommercial({ user }: Props) {
         const qtyUM = inUMMode ? Number(l.quantite) : undefined
         const qtyBase = inUMMode ? Number(l.quantite) * (art.colisageParUM ?? 1) : Number(l.quantite)
         return {
-          articleId: l.articleId, articleNom: art.nom, unite: art.unite,
+          articleId: l.articleId, articleNom: art.nom, articleNomAr: art.nomAr ?? "", unite: art.unite,
           um: art.um, colisageParUM: art.colisageParUM, quantiteUM: qtyUM,
           quantite: qtyBase, prixUnitaire: pv, prixVente: pv,
           prixUM: inUMMode && art.colisageParUM ? pv * art.colisageParUM : undefined,
@@ -484,8 +484,9 @@ export default function MobileCommercial({ user }: Props) {
         const art = articles.find(a => a.id === value)
         if (art) {
           updated[i].prixVente = store.computePV(art).toString()
-          updated[i].uniteMode = "base"   // reset to base unit on article change
-          updated[i].quantite = ""
+          const selArt = articles.find(a => a.id === value)
+          updated[i].uniteMode = (selArt?.um) ? selArt.um : "base"
+          updated[i].quantite = "1"
         }
       }
       return updated
@@ -516,6 +517,7 @@ export default function MobileCommercial({ user }: Props) {
       return {
         articleId: l.articleId,
         articleNom: art.nom,
+        articleNomAr: art.nomAr ?? "",
         unite: art.unite,
         // UM fields
         um: art.um,
@@ -1236,10 +1238,10 @@ export default function MobileCommercial({ user }: Props) {
                         const emptyIdx = prev.findIndex(l => !l.articleId)
                         if (emptyIdx >= 0) {
                           const updated = [...prev]
-                          updated[emptyIdx] = { ...updated[emptyIdx], articleId: a.id, prixVente: String(pv), uniteMode: "base", quantite: "" }
+                          updated[emptyIdx] = { ...updated[emptyIdx], articleId: a.id, prixVente: String(pv), uniteMode: a.um ?? "base", quantite: "1" }
                           return updated
                         }
-                        return [...prev, { articleId: a.id, quantite: "", prixVente: String(pv), uniteMode: "base" }]
+                        return [...prev, { articleId: a.id, quantite: "1", prixVente: String(pv), uniteMode: a.um ?? "base" }]
                       }
                       // décocher : retirer la ligne ; garder au moins une ligne vide
                       const next = prev.filter(l => l.articleId !== a.id)
@@ -1253,6 +1255,7 @@ export default function MobileCommercial({ user }: Props) {
                   onError={e => { e.currentTarget.src = "https://placehold.co/40x40/e2e8f0/64748b?text=Art" }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-foreground truncate">{a.nom}</p>
+                  {a.nomAr && <p className="text-xs text-muted-foreground font-arabic" dir="rtl" lang="ar">{a.nomAr}</p>}
                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                     {(() => {
                       const vs = store.getVirtualStock(a.id)
@@ -1584,6 +1587,7 @@ export default function MobileCommercial({ user }: Props) {
                 <div key={art.id} className="flex items-center justify-between bg-white rounded-xl border border-amber-200 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-semibold text-foreground">{art.nom}</p>
+                    {art.nomAr && <p className="text-xs text-muted-foreground font-arabic" dir="rtl" lang="ar">{art.nomAr}</p>}
                     <p className="text-xs text-muted-foreground">
                       Derniere commande : {clientHabits[art.id]?.lastDate ?? "—"}
                       {" "}· {clientHabits[art.id]?.count}x commande(s)
@@ -1932,7 +1936,7 @@ export default function MobileCommercial({ user }: Props) {
                     <div className="flex flex-col gap-1">
                       {lignesCmd.map((l, i) => (
                         <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-foreground">{l.articleNom}</span>
+                          <span className="text-foreground">{l.articleNom}{(l as Record<string,unknown>).articleNomAr ? <span className="block text-[10px] text-muted-foreground font-arabic" dir="rtl" lang="ar">{String((l as Record<string,unknown>).articleNomAr)}</span> : null}</span>
                           <span className="font-semibold text-muted-foreground">
                             {l.quantiteUM ? `${l.quantiteUM} ${l.um} = ` : ""}{l.quantite} {l.unite} · {(Number(l.total) || 0).toLocaleString("fr-MA")} DH
                           </span>

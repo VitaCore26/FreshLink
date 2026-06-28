@@ -20,6 +20,7 @@ export type BLLigne = {
   id: string
   articleId: string
   articleNom: string
+  articleNomAr?: string
   unite: string
   qteCommande: number
   qteLivree: number
@@ -108,13 +109,14 @@ function normalizeLigne(l: Record<string, unknown>): BLLigne {
   const qteCommande = Number(l.qteCommande ?? l.quantite ?? qteLivree) || 0
   const totalLigne  = Number(l.totalLigne ?? l.total ?? qteLivree * prixUnit) || 0
   return {
-    id:          String(l.id ?? genId()),
-    articleId:   String(l.articleId ?? ""),
-    articleNom:  String(l.articleNom ?? l.nom ?? "Article"),
-    unite:       String(l.unite ?? "kg"),
+    id:           String(l.id ?? genId()),
+    articleId:    String(l.articleId ?? ""),
+    articleNom:   String(l.articleNom ?? l.nom ?? "Article"),
+    articleNomAr: l.articleNomAr ? String(l.articleNomAr) : undefined,
+    unite:        String(l.unite ?? "kg"),
     qteCommande, qteLivree, prixUnit, totalLigne,
-    noteQC:      l.noteQC ? String(l.noteQC) : undefined,
-    qcOk:        l.qcOk !== false,
+    noteQC:       l.noteQC ? String(l.noteQC) : undefined,
+    qcOk:         l.qcOk !== false,
   }
 }
 
@@ -210,6 +212,16 @@ function BLEditor({
   const [clients] = useState(() => store.getClients())
   const [users] = useState(() => store.getUsers())
   const livreurs = users.filter(u => u.role === "livreur")
+
+  // ── P5a: filter clients to prep/trip if BL is linked to a prep bon ──────────
+  const prepBonId = (bl as Record<string, unknown>).prepId as string | undefined
+  const filteredClients = prepBonId
+    ? (() => {
+        const bon = store.getBonsPreparation().find(b => b.id === prepBonId)
+        const prepClientIds = new Set(bon?.clientIds ?? [])
+        return prepClientIds.size > 0 ? clients.filter(c => prepClientIds.has(c.id)) : clients
+      })()
+    : clients
 
   // ── Auto-fill client fields when a client is selected ──────────────────────
   const autoFillClient = (clientNom: string) => {
@@ -380,8 +392,11 @@ function BLEditor({
                 placeholder="Nom du client..."
                 className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               <datalist id="clients-list">
-                {clients.map(c => <option key={c.id} value={c.nom} />)}
+                {filteredClients.map(c => <option key={c.id} value={c.nom} />)}
               </datalist>
+              {prepBonId && filteredClients.length < clients.length && (
+                <p className="text-[10px] text-blue-600 mt-0.5">Filtrés : {filteredClients.length} client(s) du bon de préparation</p>
+              )}
               {/* Auto-fill confirmation */}
               {form.clientId && (
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -636,6 +651,9 @@ function BLEditor({
                           onChange={e => updateLigne(l.id, "articleNom", e.target.value)}
                           placeholder="Nom article..."
                           className="w-full min-w-[140px] px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-white" />
+                        {l.articleNomAr && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-arabic" dir="rtl" lang="ar">{l.articleNomAr}</p>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <select value={l.unite} onChange={e => updateLigne(l.id, "unite", e.target.value)}
@@ -963,7 +981,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
             const cl = c.lignes.find(x => x.articleId === l.articleId); return cl ? cl.prixVente ?? cl.prixUnitaire ?? p : p
           }, 0)
           const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-          return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+          return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
         })
         const totalHT = lignes.reduce((s, l) => s + l.totalLigne, 0)
         const bl: BonLivraison = {
@@ -992,7 +1010,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
               .map(l => {
                 const prixUnit = clientCmds.reduce((p, c) => { const cl = c.lignes.find(x => x.articleId === l.articleId); return cl ? cl.prixVente ?? cl.prixUnitaire ?? p : p }, 0)
                 const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-                return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+                return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
               })
           } else {
             // All lignes for this client
@@ -1000,7 +1018,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
             blLignes = (bon.lignes ?? []).map(l => {
               const prixUnit = clientCmd?.lignes.find(x => x.articleId === l.articleId)?.prixVente ?? 0
               const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-              return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+              return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
             })
           }
           if (blLignes.length === 0) continue
