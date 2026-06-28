@@ -38,6 +38,11 @@ router.post("/check-and-token", async (req: Request, res: Response) => {
       return;
     }
 
+    if (!process.env.DEVICE_SECRET) {
+      res.status(503).json({ error: "DEVICE_SECRET non configuré" });
+      return;
+    }
+
     if (!SB_URL || !SB_SRV) {
       const token = signDeviceToken(fingerprint);
       res.cookie(DEVICE_COOKIE, token, cookieOpts());

@@ -14,14 +14,7 @@ const SB_SERVER_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.service_role ||
   process.env.SUPABASE_SERVICE_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
   "";
-
-const FALLBACK_USERS = [
-  { id: "VFU00001", name: "Jawad", email: "jawad@vita-fresh.ma", telephone: "0647333456", password: "Medghaly@22", role: "super_super_admin", actif: true },
-  { id: "VFU00002", name: "Super Admin", email: "admin@freshlink.ma", password: "admin2024", role: "super_admin", actif: true },
-  { id: "VFU00003", name: "Directeur", email: "directeur@freshlink.ma", password: "admin1234", role: "admin", actif: true },
-];
 
 function normalizePhone(raw: string) {
   const d = raw.replace(/[\s\-\.\(\)\+]/g, "");
@@ -33,6 +26,7 @@ function normalizePhone(raw: string) {
 }
 
 async function getAllUsers(): Promise<Record<string, unknown>[]> {
+  if (!SB_SERVER_KEY) return [];
   try {
     const res = await fetch(`${SB_URL}/rest/v1/fl_users?select=id,payload&limit=1000`, {
       headers: { apikey: SB_SERVER_KEY, Authorization: `Bearer ${SB_SERVER_KEY}` },
@@ -57,14 +51,22 @@ router.post("/", async (req: Request, res: Response) => {
   const origin = req.headers.origin ?? "*";
   res.setHeader("Access-Control-Allow-Origin", origin);
 
+  if (!SB_SERVER_KEY) {
+    res.status(503).json({ ok: false, error: "Service non disponible" });
+    return;
+  }
+
   const { phone, email, password } = req.body as { phone?: string; email?: string; password?: string };
   if (!password || (!phone && !email)) {
     res.status(400).json({ ok: false, error: "Identifiant et mot de passe requis" });
     return;
   }
 
-  let users = await getAllUsers();
-  if (users.length === 0) users = FALLBACK_USERS as unknown as Record<string, unknown>[];
+  const users = await getAllUsers();
+  if (users.length === 0) {
+    res.status(503).json({ ok: false, error: "Service utilisateurs indisponible" });
+    return;
+  }
 
   let found: Record<string, unknown> | undefined;
 
@@ -92,6 +94,11 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   const stored = String(found.password ?? "");
+  if (!stored) {
+    res.status(401).json({ ok: false, error: "Authentification non configurée" });
+    return;
+  }
+
   const match =
     stored.startsWith("$2") ? await bcrypt.compare(password, stored) : stored === password;
 
