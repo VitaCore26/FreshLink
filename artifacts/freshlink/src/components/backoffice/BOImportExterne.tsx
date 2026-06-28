@@ -1,34 +1,41 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface DbSource {
-  id:    string
-  label: string
-  color: string
-  url:   string
-  key:   string
-  tables: string[]
+  id:       string
+  label:    string
+  color:    string
+  url:      string
+  anonKey:  string
+  email:    string
+  password: string
+  tables:   string[]
 }
 
-type LoadState = "idle" | "loading" | "ok" | "error"
+type LoadState  = "idle" | "loading" | "ok" | "error"
+type AuthState  = "idle" | "signing" | "ok" | "error"
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const SOURCES: DbSource[] = [
   {
-    id:    "gestflux",
-    label: "GestFlux",
-    color: "blue",
-    url:   import.meta.env.VITE_GESTFLUX_URL ?? "",
-    key:   import.meta.env.VITE_GESTFLUX_ANON_KEY ?? "",
-    tables: ["products", "categories", "suppliers", "users"],
+    id:       "gestflux",
+    label:    "GestFlux",
+    color:    "blue",
+    url:      import.meta.env.VITE_GESTFLUX_URL ?? "https://dngqklliynfoqkalttpu.supabase.co",
+    anonKey:  import.meta.env.VITE_GESTFLUX_ANON_KEY ?? "",
+    email:    "hamza@alephcapital.io",
+    password: "comptable1",
+    tables:   ["products", "categories", "suppliers", "users", "orders", "stock"],
   },
   {
-    id:    "iziry",
-    label: "Iziry",
-    color: "violet",
-    url:   import.meta.env.VITE_IZIRY_URL ?? "",
-    key:   import.meta.env.VITE_IZIRY_ANON_KEY ?? "",
-    tables: ["commandes", "factures", "articles", "depots", "clients", "profiles"],
+    id:       "iziry",
+    label:    "Iziry",
+    color:    "violet",
+    url:      import.meta.env.VITE_IZIRY_URL ?? "https://gmbvrjxteoxbiyternfz.supabase.co",
+    anonKey:  import.meta.env.VITE_IZIRY_ANON_KEY ?? "",
+    email:    "hamza@iziry.local",
+    password: "123456",
+    tables:   ["commandes", "factures", "articles", "depots", "clients", "profiles", "livraisons"],
   },
 ]
 
@@ -39,70 +46,84 @@ const COLOR: Record<string, Record<string, string>> = {
 
 const PAGE_SIZE = 50
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Auth helper ────────────────────────────────────────────────────────────────
+async function signIn(src: DbSource): Promise<string | null> {
+  try {
+    const res = await fetch(`${src.url}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "apikey": src.anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: src.email, password: src.password }),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    return json.access_token ?? null
+  } catch {
+    return null
+  }
+}
+
+// ── Data helpers ───────────────────────────────────────────────────────────────
+function makeHeaders(src: DbSource, token: string | null) {
+  const bearer = token ?? src.anonKey
+  return {
+    "apikey":        src.anonKey,
+    "Authorization": `Bearer ${bearer}`,
+    "Accept":        "application/json",
+    "Prefer":        "count=exact",
+  }
+}
+
 async function fetchTable(
   src: DbSource,
+  token: string | null,
   table: string,
   page: number,
   search: string,
 ): Promise<{ rows: Record<string, unknown>[]; count: number; error?: string }> {
   const offset = page * PAGE_SIZE
-  const params = new URLSearchParams({
-    limit: String(PAGE_SIZE),
-    offset: String(offset),
-  })
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
   if (search.trim()) {
-    // Use full-text search via Supabase filter on common text fields
-    params.set("or", `(nom.ilike.*${search}*,nom_fr.ilike.*${search}*,ref.ilike.*${search}*)`)
+    params.set("or", `(nom.ilike.*${search}*,nom_fr.ilike.*${search}*,ref.ilike.*${search}*,raison_sociale.ilike.*${search}*,code.ilike.*${search}*)`)
   }
   try {
-    const res = await fetch(`${src.url}/rest/v1/${table}?${params}`, {
-      headers: {
-        "apikey": src.key,
-        "Authorization": `Bearer ${src.key}`,
-        "Accept": "application/json",
-        "Prefer": "count=exact",
-      },
-    })
+    const res = await fetch(`${src.url}/rest/v1/${table}?${params}`, { headers: makeHeaders(src, token) })
     if (!res.ok) {
       const text = await res.text()
-      return { rows: [], count: 0, error: `${res.status} — ${text.slice(0, 200)}` }
+      return { rows: [], count: 0, error: `${res.status} — ${text.slice(0, 300)}` }
     }
     const rows = await res.json() as Record<string, unknown>[]
-    const countHdr = res.headers.get("content-range")
-    const count = countHdr ? parseInt(countHdr.split("/")[1] ?? "0") : rows.length
+    const hdr   = res.headers.get("content-range")
+    const count = hdr ? parseInt(hdr.split("/")[1] ?? "0") : rows.length
     return { rows, count }
   } catch (e: unknown) {
     return { rows: [], count: 0, error: String(e) }
   }
 }
 
-async function pingTable(src: DbSource, table: string): Promise<boolean> {
+async function pingTable(src: DbSource, token: string | null, table: string): Promise<boolean> {
   try {
-    const res = await fetch(`${src.url}/rest/v1/${table}?limit=1`, {
-      headers: { "apikey": src.key, "Authorization": `Bearer ${src.key}` },
-    })
+    const res = await fetch(`${src.url}/rest/v1/${table}?limit=1`, { headers: makeHeaders(src, token) })
     return res.ok
   } catch {
     return false
   }
 }
 
+// ── Cell formatting ────────────────────────────────────────────────────────────
 function fmtVal(v: unknown): string {
   if (v === null || v === undefined) return "—"
-  if (typeof v === "boolean") return v ? "✓" : "✗"
-  if (typeof v === "object") return JSON.stringify(v).slice(0, 80)
+  if (typeof v === "boolean")        return v ? "✓" : "✗"
+  if (typeof v === "object")         return JSON.stringify(v).slice(0, 80)
   return String(v)
 }
-
 function isBool(v: unknown): boolean { return typeof v === "boolean" }
 function isNum(v: unknown): boolean  { return typeof v === "number" }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function BOImportExterne() {
   const [activeSource, setActiveSource] = useState<DbSource>(SOURCES[0])
-  const [activeTable, setActiveTable]   = useState<string | null>(null)
-  const [tableStatus, setTableStatus]   = useState<Record<string, boolean>>({})
+  const [activeTable,  setActiveTable]  = useState<string | null>(null)
+  const [tableStatus,  setTableStatus]  = useState<Record<string, boolean>>({})
 
   const [rows,   setRows]   = useState<Record<string, unknown>[]>([])
   const [count,  setCount]  = useState(0)
@@ -111,23 +132,44 @@ export default function BOImportExterne() {
   const [load,   setLoad]   = useState<LoadState>("idle")
   const [error,  setError]  = useState<string | null>(null)
 
+  // Auth tokens per source id
+  const [authState,  setAuthState]  = useState<Record<string, AuthState>>({})
+  const [authTokens, setAuthTokens] = useState<Record<string, string | null>>({})
+
+  const tokensRef = useRef<Record<string, string | null>>({})
+
   const cols = rows.length > 0 ? Object.keys(rows[0]) : []
 
-  // Ping all tables when source changes
+  // ── Auto sign-in for all sources on mount ───────────────────────────────────
   useEffect(() => {
+    SOURCES.forEach(src => {
+      setAuthState(prev => ({ ...prev, [src.id]: "signing" }))
+      signIn(src).then(token => {
+        tokensRef.current[src.id] = token
+        setAuthTokens(prev => ({ ...prev, [src.id]: token }))
+        setAuthState(prev => ({ ...prev, [src.id]: token ? "ok" : "error" }))
+      })
+    })
+  }, [])
+
+  // ── Ping tables when source or token changes ────────────────────────────────
+  useEffect(() => {
+    const src   = activeSource
+    const token = tokensRef.current[src.id] ?? null
     setActiveTable(null)
     setRows([]); setCount(0); setPage(0); setSearch(""); setError(null); setLoad("idle")
-    const src = activeSource
-    Promise.all(src.tables.map(async t => ({ t, ok: await pingTable(src, t) }))).then(results => {
+    setTableStatus({})
+    Promise.all(src.tables.map(async t => ({ t, ok: await pingTable(src, token, t) }))).then(results => {
       const status: Record<string, boolean> = {}
       results.forEach(({ t, ok }) => { status[t] = ok })
       setTableStatus(status)
     })
-  }, [activeSource])
+  }, [activeSource, authTokens])   // re-ping when token arrives
 
   const loadTable = useCallback(async (src: DbSource, table: string, pg: number, q: string) => {
+    const token = tokensRef.current[src.id] ?? null
     setLoad("loading"); setError(null)
-    const res = await fetchTable(src, table, pg, q)
+    const res = await fetchTable(src, token, table, pg, q)
     if (res.error) { setError(res.error); setLoad("error"); return }
     setRows(res.rows); setCount(res.count); setLoad("ok")
   }, [])
@@ -149,6 +191,15 @@ export default function BOImportExterne() {
 
   const totalPages = Math.ceil(count / PAGE_SIZE)
 
+  // Auth badge per source
+  const AuthBadge = ({ srcId }: { srcId: string }) => {
+    const st = authState[srcId]
+    if (st === "signing") return <span className="text-[9px] text-amber-500 font-semibold animate-pulse">Connexion…</span>
+    if (st === "ok")      return <span className="text-[9px] text-emerald-600 font-semibold">● Connecté</span>
+    if (st === "error")   return <span className="text-[9px] text-red-500 font-semibold">✗ Erreur auth</span>
+    return null
+  }
+
   return (
     <div className="flex h-full min-h-[calc(100vh-120px)] bg-slate-50">
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
@@ -159,7 +210,7 @@ export default function BOImportExterne() {
         </div>
 
         {SOURCES.map(src => {
-          const c = COLOR[src.color]
+          const c          = COLOR[src.color]
           const accessible = src.tables.filter(t => tableStatus[t] === true)
           const isSrcActive = activeSource.id === src.id
           return (
@@ -172,6 +223,7 @@ export default function BOImportExterne() {
                 <div className="flex-1 min-w-0">
                   <p className={`text-xs font-bold ${isSrcActive ? "text-slate-800" : "text-slate-600"}`}>{src.label}</p>
                   <p className="text-[10px] text-slate-400 truncate">{src.url.replace("https://", "").split(".")[0]}.supabase.co</p>
+                  <AuthBadge srcId={src.id} />
                 </div>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${c.badge}`}>{accessible.length}/{src.tables.length}</span>
               </button>
@@ -180,7 +232,7 @@ export default function BOImportExterne() {
               {isSrcActive && (
                 <div className="pb-1">
                   {src.tables.map(t => {
-                    const ok = tableStatus[t]
+                    const ok      = tableStatus[t]
                     const isActive = activeTable === t && activeSource.id === src.id
                     return (
                       <button
@@ -199,7 +251,11 @@ export default function BOImportExterne() {
                   })}
                   {/* Custom table input */}
                   <div className="px-3 pt-2 pb-1">
-                    <form onSubmit={e => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem("t") as HTMLInputElement).value.trim(); if (v) selectTable(v) }}>
+                    <form onSubmit={e => {
+                      e.preventDefault()
+                      const v = (e.currentTarget.elements.namedItem("t") as HTMLInputElement).value.trim()
+                      if (v) { selectTable(v); (e.currentTarget.elements.namedItem("t") as HTMLInputElement).value = "" }
+                    }}>
                       <input name="t" placeholder="Autre table…" className="w-full px-2.5 py-1.5 text-[11px] border border-dashed border-slate-300 rounded-lg focus:outline-none focus:border-slate-400 bg-transparent placeholder:text-slate-400" />
                     </form>
                   </div>
@@ -212,7 +268,7 @@ export default function BOImportExterne() {
         {/* Legend */}
         <div className="mt-auto px-4 py-3 border-t border-slate-100 text-[10px] text-slate-400 space-y-1">
           <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Table accessible</div>
-          <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-300" /> RLS bloquée (anon)</div>
+          <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-300" /> RLS bloquée</div>
           <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-300" /> Vérification…</div>
         </div>
       </aside>
@@ -235,6 +291,8 @@ export default function BOImportExterne() {
                 <div key={src.id} className="text-xs px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600">
                   <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${COLOR[src.color].dot}`} />
                   {src.label}
+                  {authState[src.id] === "ok" && <span className="ml-1.5 text-emerald-500">✓</span>}
+                  {authState[src.id] === "signing" && <span className="ml-1.5 text-amber-400 animate-pulse">…</span>}
                 </div>
               ))}
             </div>
@@ -248,6 +306,11 @@ export default function BOImportExterne() {
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${COLOR[activeSource.color].badge}`}>{activeSource.label}</span>
                   <h3 className="text-sm font-bold text-slate-800">{activeTable}</h3>
                   {load === "ok" && <span className="text-[11px] text-slate-500">{count.toLocaleString("fr")} ligne{count > 1 ? "s" : ""}</span>}
+                  {authState[activeSource.id] === "ok" && (
+                    <span className="text-[9px] text-emerald-600 font-semibold px-1.5 py-0.5 bg-emerald-50 rounded-full border border-emerald-200">
+                      ● {activeSource.email}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] text-slate-400 mt-0.5 truncate">{activeSource.url}/rest/v1/{activeTable}</p>
               </div>
@@ -290,8 +353,7 @@ export default function BOImportExterne() {
                 <div className="p-6">
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                     <p className="text-sm font-bold text-red-700 mb-1">Erreur de lecture</p>
-                    <p className="text-xs text-red-600 font-mono whitespace-pre-wrap">{error}</p>
-                    <p className="text-xs text-red-500 mt-2">La table n'est peut-être pas accessible avec la clé anon (RLS bloquée).</p>
+                    <p className="text-xs text-red-600 font-mono whitespace-pre-wrap break-all">{error}</p>
                   </div>
                 </div>
               )}
