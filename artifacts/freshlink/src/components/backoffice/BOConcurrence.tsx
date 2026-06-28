@@ -12,6 +12,7 @@
 import { useState, useMemo, useRef, useEffect } from "react"
 import { store, type User } from "@/lib/store"
 import BOImportConcurrence from "./BOImportConcurrence"
+import BOComparatifExterne from "./BOComparatifExterne"
 
 // ─── Modèles ────────────────────────────────────────────────────────────────
 interface CompetitorEntry {
@@ -106,7 +107,7 @@ function download(filename: string, content: string) {
 }
 
 // ─── Composant ──────────────────────────────────────────────────────────────
-type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux" | "import"
+type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux" | "import" | "comparatif_ext"
 
 export default function BOConcurrence({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>("prix")
@@ -407,6 +408,7 @@ export default function BOConcurrence({ user }: { user: User }) {
           ["flux", "Flux & trajectoires"],
           ["dashboard", "Performance commerciale"],
           ["import", "📥 Import Excel"],
+          ["comparatif_ext", "🔗 Comparatif Données Externes"],
         ] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === k ? "bg-slate-900 text-white" : "bg-white text-slate-600 border border-slate-200"}`}>
@@ -671,6 +673,8 @@ export default function BOConcurrence({ user }: { user: User }) {
 
       {/* ── IMPORT EXCEL ───────────────────────────────────────────────────── */}
       {tab === "import" && <BOImportConcurrence />}
+
+      {tab === "comparatif_ext" && <BOComparatifExterne user={user} />}
     </div>
   )
 }
