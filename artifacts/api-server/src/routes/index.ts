@@ -6,6 +6,7 @@ import syncReadRouter from "./syncRead.js";
 import syncWriteRouter from "./syncWrite.js";
 import extAuthRouter from "./ext/auth.js";
 import extNotificationsRouter from "./ext/notifications.js";
+import extDbProxyRouter from "./ext/dbProxy.js";
 import portalTrackingRouter from "./portal/tracking.js";
 
 const router: IRouter = Router();
@@ -18,6 +19,7 @@ router.use("/sync-read", syncReadRouter);
 router.use("/sync-write", syncWriteRouter);
 router.use("/ext/auth", extAuthRouter);
 router.use("/ext/notifications", extNotificationsRouter);
+router.use("/ext/db-login", extDbProxyRouter);
 router.use("/portal/tracking", portalTrackingRouter);
 
 export default router;

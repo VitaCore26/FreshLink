@@ -46,16 +46,16 @@ const COLOR: Record<string, Record<string, string>> = {
 
 const PAGE_SIZE = 50
 
-// ── Auth helper ────────────────────────────────────────────────────────────────
+// ── Auth helper — via api-server proxy to avoid CORS on Supabase auth ──────────
 async function signIn(src: DbSource): Promise<string | null> {
   try {
-    const res = await fetch(`${src.url}/auth/v1/token?grant_type=password`, {
+    const res = await fetch("/api/ext/db-login", {
       method: "POST",
-      headers: { "apikey": src.anonKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: src.email, password: src.password }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: src.id, email: src.email, password: src.password }),
     })
     if (!res.ok) return null
-    const json = await res.json()
+    const json = await res.json() as { ok: boolean; access_token?: string }
     return json.access_token ?? null
   } catch {
     return null
