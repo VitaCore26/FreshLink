@@ -130,6 +130,7 @@ const BOExternalLinks        = React.lazy(() => import("./BOExternalLinks"))
 const BODeviceAccess         = React.lazy(() => import("./BODeviceAccess"))
 const BOCommandesUnifiees    = React.lazy(() => import("./BOCommandesUnifiees"))
 const BOAlertesClients       = React.lazy(() => import("./BOAlertesClients"))
+const BOImportExterne        = React.lazy(() => import("./BOImportExterne"))
 // ── Modules V3 (moteur commercial, cadeaux, cutoffs, feedbacks, PA) ──
 const BOCutoffsV3            = React.lazy(() => import("./BOCutoffs"))
 const BOGiftsV3              = React.lazy(() => import("./BOGifts"))
@@ -171,6 +172,7 @@ export type Tab =
   | "commandes_unifiees"
   | "alertes_clients"
   | "moteur_commercial" | "gifts_v3" | "loterie" | "pa_historique" | "gestion_pa" | "cutoffs_v3" | "feedbacks_v3"
+  | "import_externe"
   | "messagerie"
 
 interface NavItem {
@@ -392,6 +394,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
           </svg>
         ),
       },
+      { id: "import_externe",    label: "Import Bases Externes", labelAr: "استيراد قواعد البيانات", permKey: "canViewDatabase", icon: <Icon d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4M15 3l2 2-2 2M9 3L7 5l2 2" /> },
     ],
   },
 ]
@@ -418,7 +421,7 @@ const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
   { label: "Logistique & Transport",      labelAr: "اللوجستيك والنقل",     ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
   { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
   { label: "Ressources Humaines",         labelAr: "الموارد البشرية",      ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia"] },
-  { label: "Administration & Système",    labelAr: "الإدارة والنظام",      ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets"] },
+  { label: "Administration & Système",    labelAr: "الإدارة والنظام",      ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets", "import_externe"] },
 ]
 
 const NAV_GROUPS: NavGroup[] = NAV_GROUP_DEF.map(g => ({
@@ -511,6 +514,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   sourcing:              (u)  => <BOSourcing user={u} />,
   pricing:               (u)  => <BOPricing  user={u} />,
   device_access:         (u)  => <BODeviceAccess user={u} />,
+  import_externe:        (_u) => <BOImportExterne />,
 }
 
 // ─────────────────────────────────────────────────────────────
