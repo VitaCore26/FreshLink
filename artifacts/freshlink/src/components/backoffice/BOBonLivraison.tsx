@@ -210,6 +210,7 @@ function BLEditor({
   })
   const [lignes, setLignes] = useState<BLLigne[]>(bl.lignes ?? [])
   const [clients] = useState(() => store.getClients())
+  const [articles] = useState(() => store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr")))
   const [users] = useState(() => store.getUsers())
   const livreurs = users.filter(u => u.role === "livreur")
 
@@ -224,8 +225,8 @@ function BLEditor({
     : clients
 
   // ── Auto-fill client fields when a client is selected ──────────────────────
-  const autoFillClient = (clientNom: string) => {
-    const c = clients.find(c => c.nom === clientNom)
+  const autoFillClient = (clientId: string) => {
+    const c = clients.find(c => c.id === clientId)
     if (!c) return
     setForm(f => ({
       ...f,
@@ -237,9 +238,27 @@ function BLEditor({
       clientCreditSolde:       f.clientCreditSolde   ?? c.creditSolde,
       clientCreditAutorise:    f.clientCreditAutorise ?? c.creditAutorise,
       clientDelaiRecouvrement: f.clientDelaiRecouvrement || (c.delaiRecouvrement ?? ""),
-      // Extra auto fields
       clientTelephone: (f as {clientTelephone?: string}).clientTelephone || c.telephone || "",
     } as typeof f))
+  }
+
+  // ── Auto-fill article fields when an article is selected in a ligne ─────────
+  const selectArticleLigne = (ligneId: string, artId: string) => {
+    const art = articles.find(a => a.id === artId)
+    setLignes(prev => prev.map(l => {
+      if (l.id !== ligneId) return l
+      if (!art) return { ...l, articleId: "", articleNom: "", articleNomAr: undefined }
+      const prixUnit = l.prixUnit || store.computePV(art) || 0
+      return {
+        ...l,
+        articleId:    art.id,
+        articleNom:   art.nom,
+        articleNomAr: art.nomAr ?? undefined,
+        unite:        art.unite ?? l.unite,
+        prixUnit,
+        totalLigne:   (l.qteLivree ?? 0) * prixUnit,
+      }
+    }))
   }
 
   // ── Import depuis BonPreparation validé ────────────────────────────────────
@@ -383,21 +402,21 @@ function BLEditor({
             {/* Client */}
             <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-2">
               <label className="text-xs font-semibold text-slate-600">Client *</label>
-              <input list="clients-list" value={form.clientNom ?? ""}
+              <select
+                value={form.clientId ?? ""}
                 onChange={e => {
-                  const matched = clients.find(c => c.nom === e.target.value)
-                  if (matched) { autoFillClient(matched.nom) }
-                  else setForm(f => ({ ...f, clientNom: e.target.value, clientId: "" }))
+                  if (e.target.value) autoFillClient(e.target.value)
+                  else setForm(f => ({ ...f, clientId: "", clientNom: "" }))
                 }}
-                placeholder="Nom du client..."
-                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              <datalist id="clients-list">
-                {filteredClients.map(c => <option key={c.id} value={c.nom} />)}
-              </datalist>
+                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                <option value="">— Choisir un client —</option>
+                {filteredClients.slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr")).map(c => (
+                  <option key={c.id} value={c.id}>{c.nom}</option>
+                ))}
+              </select>
               {prepBonId && filteredClients.length < clients.length && (
                 <p className="text-[10px] text-blue-600 mt-0.5">Filtrés : {filteredClients.length} client(s) du bon de préparation</p>
               )}
-              {/* Auto-fill confirmation */}
               {form.clientId && (
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <svg className="w-3 h-3 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -647,10 +666,15 @@ function BLEditor({
                   {lignes.map(l => (
                     <tr key={l.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-2">
-                        <input value={l.articleNom}
-                          onChange={e => updateLigne(l.id, "articleNom", e.target.value)}
-                          placeholder="Nom article..."
-                          className="w-full min-w-[140px] px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-white" />
+                        <select
+                          value={l.articleId || ""}
+                          onChange={e => selectArticleLigne(l.id, e.target.value)}
+                          className="w-full min-w-[160px] px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-white">
+                          <option value="">— Article —</option>
+                          {articles.map(a => (
+                            <option key={a.id} value={a.id}>{a.nom}</option>
+                          ))}
+                        </select>
                         {l.articleNomAr && (
                           <p className="text-[10px] text-slate-500 mt-0.5 font-arabic" dir="rtl" lang="ar">{l.articleNomAr}</p>
                         )}

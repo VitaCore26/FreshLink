@@ -205,6 +205,7 @@ export default function MobileAchat({ user }: Props) {
   // Spécialisation acheteur : familles assignées à cet acheteur (filtre par défaut)
   const specialites = useMemo(() => (user.specialitesAchat ?? []).filter(Boolean), [user.specialitesAchat])
   const [showAllFamilies, setShowAllFamilies] = useState(false)
+  const [openFamilies, setOpenFamilies] = useState<Set<string>>(new Set())
 
   // Global rotation: times each article was purchased across all achats
   const globalRotation = useMemo(() => {
@@ -943,9 +944,9 @@ export default function MobileAchat({ user }: Props) {
             </button>
           )}
           {([
-            { key: "nom",      label: "Alphabetique" },
-            { key: "stock",    label: "Stock faible" },
-            { key: "rotation", label: "Plus commande" },
+            { key: "nom",      label: "A→Z" },
+            { key: "stock",    label: "Stock" },
+            { key: "rotation", label: "Rotation" },
           ] as { key: "nom" | "stock" | "rotation"; label: string }[]).map(s => (
             <button key={s.key} onClick={() => setArtSort(s.key)}
               className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${artSort === s.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
@@ -954,28 +955,33 @@ export default function MobileAchat({ user }: Props) {
           ))}
         </div>
 
-        {/* Checkbox list */}
-        <div className="max-h-64 overflow-y-auto divide-y divide-border">
-          {filteredArticles.length === 0 ? (
+        {/* Accordion par famille */}
+        {(() => {
+          if (filteredArticles.length === 0) return (
             <div className="py-8 flex flex-col items-center gap-2 text-center">
-              <p className="text-sm text-muted-foreground">Aucun article trouve</p>
-              <button onClick={() => setArtSearch("")} className="text-xs text-primary underline">Effacer</button>
+              <p className="text-sm text-muted-foreground">Aucun article trouvé</p>
+              <button onClick={() => setArtSearch("")} className="text-xs text-primary underline">Effacer la recherche</button>
             </div>
-          ) : filteredArticles.map(a => {
+          )
+          const grouped: Map<string, typeof filteredArticles> = new Map()
+          for (const a of filteredArticles) {
+            const fam = a.famille?.trim() || "Autres"
+            if (!grouped.has(fam)) grouped.set(fam, [])
+            grouped.get(fam)!.push(a)
+          }
+          const families = [...grouped.keys()].sort((a, b) => a.localeCompare(b, "fr"))
+          const ArticleRow = ({ a }: { a: typeof filteredArticles[0] }) => {
             const inCart = lignes.some(l => l.articleId === a.id)
             const rotCount = globalRotation[a.id] ?? 0
             return (
-              <label key={a.id}
-                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${inCart ? "bg-primary/5" : "hover:bg-muted/50"}`}>
+              <label
+                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-border last:border-0 ${inCart ? "bg-primary/5" : "hover:bg-muted/50"}`}>
                 <input type="checkbox" checked={inCart}
                   onChange={e => {
                     if (e.target.checked) {
                       const emptyIdx = lignes.findIndex(l => !l.articleId)
-                      if (emptyIdx >= 0) {
-                        updateLigne(emptyIdx, { articleId: a.id })
-                      } else {
-                        setLignes(prev => [...prev, { ...EMPTY_LIGNE(), articleId: a.id, prixAchat: String(a.prixAchat) }])
-                      }
+                      if (emptyIdx >= 0) updateLigne(emptyIdx, { articleId: a.id })
+                      else setLignes(prev => [...prev, { ...EMPTY_LIGNE(), articleId: a.id, prixAchat: String(a.prixAchat) }])
                     } else {
                       const idx = lignes.findIndex(l => l.articleId === a.id)
                       if (idx >= 0) {
@@ -986,25 +992,58 @@ export default function MobileAchat({ user }: Props) {
                   }}
                   className="w-4 h-4 rounded accent-primary shrink-0" />
                 <img src={a.photo || "https://placehold.co/40x40/e2e8f0/64748b?text=Art"}
-                  alt={`${a.nom} produit achat article`}
-                  className="w-10 h-10 rounded-xl object-cover border border-border shrink-0"
+                  alt={a.nom}
+                  className="w-9 h-9 rounded-lg object-cover border border-border shrink-0"
                   onError={e => { e.currentTarget.src = "https://placehold.co/40x40/e2e8f0/64748b?text=Art" }} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-foreground truncate">{a.nom}</p>
+                  <p className="text-xs font-bold text-foreground truncate">{a.nom}</p>
+                  {a.nomAr && <p className="text-[10px] text-muted-foreground font-arabic" dir="rtl" lang="ar">{a.nomAr}</p>}
                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${a.stockDisponible > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
-                      {a.stockDisponible > 0 ? `${a.stockDisponible} ${a.unite}` : "Rupture stock"}
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${a.stockDisponible > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                      {a.stockDisponible > 0 ? `${a.stockDisponible} ${a.unite}` : "Rupture"}
                     </span>
-                    {rotCount > 0 && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-blue-100 text-blue-700">{rotCount} achat(s)</span>
-                    )}
+                    {rotCount > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700">{rotCount}×</span>}
                   </div>
                 </div>
-                <span className="text-sm font-bold text-primary shrink-0">{a.prixAchat} DH</span>
+                <span className="text-xs font-bold text-primary shrink-0">{a.prixAchat} DH</span>
               </label>
             )
-          })}
-        </div>
+          }
+          return (
+            <div className="max-h-80 overflow-y-auto divide-y divide-border">
+              {families.map(fam => {
+                const arts = grouped.get(fam)!
+                const selectedInFam = arts.filter(a => lignes.some(l => l.articleId === a.id)).length
+                const isOpen = openFamilies.has(fam)
+                return (
+                  <div key={fam}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenFamilies(prev => {
+                        const next = new Set(prev)
+                        if (next.has(fam)) next.delete(fam)
+                        else next.add(fam)
+                        return next
+                      })}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/60 hover:bg-muted transition-colors text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-foreground uppercase tracking-wide">{fam}</span>
+                        <span className="text-[10px] text-muted-foreground">({arts.length})</span>
+                        {selectedInFam > 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">{selectedInFam} ✓</span>
+                        )}
+                      </div>
+                      <svg className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isOpen && arts.map(a => <ArticleRow key={a.id} a={a} />)}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Articles lines detail */}
