@@ -46,6 +46,11 @@ interface IzArticle {
 
 type SyncStatus = "idle" | "loading" | "ok" | "error"
 
+// ── Mapping types ──────────────────────────────────────────────────────────────
+type MappingStatus = "approved" | "rejected"
+interface MappingEntry { flNorm: string; flNom: string; status: MappingStatus }
+type MappingStore = Record<string, MappingEntry>   // key = "gf:norm" | "iz:norm"
+
 // ── Cache keys ────────────────────────────────────────────────────────────────
 const CACHE = {
   gfRecep:      "fl_ext_gf_reception",
@@ -57,6 +62,7 @@ const CACHE = {
   izClients:    "fl_ext_iz_clients",
   izArticles:   "fl_ext_iz_articles",
   lastSync:     "fl_ext_last_sync",
+  mapping:      "fl_ext_art_mapping",
 }
 
 function loadCache<T>(key: string): T[] {
@@ -156,7 +162,36 @@ function normName(s: unknown): string {
     .replace(/[\u0600-\u06ff]/g, " ").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()
 }
 
-type SubTab = "achats" | "commandes" | "livraisons" | "factures" | "articles"
+// Jaccard token similarity (0–1)
+function similarity(a: string, b: string): number {
+  const wa = new Set(a.split(" ").filter(Boolean))
+  const wb = new Set(b.split(" ").filter(Boolean))
+  if (wa.size === 0 && wb.size === 0) return 0
+  const common = [...wa].filter(w => wb.has(w)).length
+  const union = new Set([...wa, ...wb]).size
+  return union === 0 ? 0 : common / union
+}
+
+function topSuggestions(
+  sourceNorm: string,
+  flByNorm: Record<string, { pa: number; nom: string; unite: string }>,
+  n = 4
+): { flNorm: string; flNom: string; score: number }[] {
+  return Object.entries(flByNorm)
+    .map(([flNorm, v]) => ({ flNorm, flNom: v.nom, score: similarity(sourceNorm, flNorm) }))
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, n)
+}
+
+function loadMapping(): MappingStore {
+  try { return JSON.parse(localStorage.getItem(CACHE.mapping) ?? "{}") } catch { return {} }
+}
+function saveMapping(m: MappingStore) {
+  try { localStorage.setItem(CACHE.mapping, JSON.stringify(m)) } catch {}
+}
+
+type SubTab = "achats" | "commandes" | "livraisons" | "factures" | "articles" | "mapping"
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function BOComparatifExterne({ user: _user }: { user: User }) {
@@ -174,9 +209,19 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
   const [izClients,    setIzClients]    = useState<IzClient[]>(()       => loadCache(CACHE.izClients))
   const [izArticles,   setIzArticles]   = useState<IzArticle[]>(()      => loadCache(CACHE.izArticles))
 
+  const [mappings, setMappings] = useState<MappingStore>(() => loadMapping())
   const [search, setSearch] = useState("")
   const [dateFrom, setDateFrom] = useState("2026-04-01")
   const [dateTo,   setDateTo]   = useState("")
+
+  const setMapping = (key: string, entry: MappingEntry | null) => {
+    setMappings(prev => {
+      const next = { ...prev }
+      if (entry === null) { delete next[key] } else { next[key] = entry }
+      saveMapping(next)
+      return next
+    })
+  }
 
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(null), 6000) }
 
@@ -314,15 +359,20 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
     })
     return Object.entries(m).map(([k, v]) => {
       const gfProd  = gfProductById[v.produit_id]
-      const prixGf  = gfProd?.prix_achat ?? 0          // GestFlux PA
-      const prixIz  = izPrixByNorm[k] ?? 0             // Iziry avg prix facturé
-      const fl      = flByNorm[k]
-      const paFl    = fl?.pa ?? 0                       // Notre PA
+      const prixGf  = gfProd?.prix_achat ?? 0
+      const prixIz  = izPrixByNorm[k] ?? 0
+      // Apply approved mapping override
+      const mapEntry = mappings[`gf:${k}`]
+      const resolvedNorm = mapEntry?.status === "approved" ? mapEntry.flNorm : k
+      const fl      = flByNorm[resolvedNorm]
+      const paFl    = fl?.pa ?? 0
+      const nomFl   = mapEntry?.status === "approved" ? mapEntry.flNom : (fl?.nom ?? null)
+      const mapped  = mapEntry?.status === "approved"
       const diffGf  = prixGf > 0 && paFl > 0 ? ((paFl - prixGf) / prixGf) * 100 : null
       const diffIz  = prixIz > 0 && paFl > 0 ? ((paFl - prixIz) / prixIz) * 100 : null
-      return { ...v, prixGf, prixIz, paFl, nomFl: fl?.nom ?? null, diffGf, diffIz, normKey: k }
+      return { ...v, prixGf, prixIz, paFl, nomFl, diffGf, diffIz, normKey: k, mapped }
     }).sort((a, b) => b.qteGf - a.qteGf)
-  }, [gfFiltered, gfProductById, izPrixByNorm, flByNorm])
+  }, [gfFiltered, gfProductById, izPrixByNorm, flByNorm, mappings])
 
   // ── Iziry Commandes ───────────────────────────────────────────────────────
   const cmdFiltered = useMemo(() => {
@@ -379,11 +429,16 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
 
   const artComp = useMemo(() => {
     return artFiltered.map(a => {
-      const fl     = flByNorm[normName(a.libelle)]
-      const prixIz = izPrixByArticleId[a.id] ?? 0
-      return { ...a, paFl: fl?.pa ?? 0, nomFl: fl?.nom ?? null, prixIz }
+      const norm    = normName(a.libelle)
+      const mapEntry = mappings[`iz:${norm}`]
+      const resolvedNorm = mapEntry?.status === "approved" ? mapEntry.flNorm : norm
+      const fl      = flByNorm[resolvedNorm]
+      const prixIz  = izPrixByArticleId[a.id] ?? 0
+      const nomFl   = mapEntry?.status === "approved" ? mapEntry.flNom : (fl?.nom ?? null)
+      const mapped  = mapEntry?.status === "approved"
+      return { ...a, paFl: fl?.pa ?? 0, nomFl, prixIz, mapped, normKey: norm }
     })
-  }, [artFiltered, flByNorm, izPrixByArticleId])
+  }, [artFiltered, flByNorm, izPrixByArticleId, mappings])
 
   // ── UI helpers ────────────────────────────────────────────────────────────
   const diffBadge = (diff: number | null, tooltip?: string) => {
@@ -407,12 +462,16 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
   const prixCell = (p: number, color = "text-slate-700") =>
     p > 0 ? <span className={`font-mono font-bold ${color}`}>{fmt(p, 2)}</span> : <span className="text-slate-300">—</span>
 
+  const approvedCount  = Object.values(mappings).filter(m => m.status === "approved").length
+  const rejectedCount  = Object.values(mappings).filter(m => m.status === "rejected").length
+
   const TABS: [SubTab, string][] = [
     ["achats",      `🛒 Achats GestFlux (${gfRecep.length})`],
     ["commandes",   `📋 Commandes Iziry (${izCommandes.length})`],
     ["livraisons",  `🚚 BL Iziry (${izBL.length})`],
     ["factures",    `🧾 Factures Iziry (${izFact.length})`],
     ["articles",    `📦 Articles (${izArticles.length})`],
+    ["mapping",     `🔗 Mapping Articles${approvedCount > 0 ? ` (${approvedCount}✓)` : ""}`],
   ]
 
   return (
@@ -790,6 +849,236 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
           </div>
         </div>
       )}
+
+      {/* ── Mapping Articles ─────────────────────────────────────────────── */}
+      {subTab === "mapping" && (
+        <MappingTab
+          gfProducts={gfProducts}
+          izArticles={izArticles}
+          flByNorm={flByNorm}
+          mappings={mappings}
+          setMapping={setMapping}
+          approvedCount={approvedCount}
+          rejectedCount={rejectedCount}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── MappingTab component ───────────────────────────────────────────────────────
+interface MappingTabProps {
+  gfProducts: GfProduct[]
+  izArticles: IzArticle[]
+  flByNorm: Record<string, { pa: number; nom: string; unite: string }>
+  mappings: MappingStore
+  setMapping: (key: string, entry: MappingEntry | null) => void
+  approvedCount: number
+  rejectedCount: number
+}
+
+type MappingFilter = "all" | "unmatched" | "approved" | "rejected"
+
+function MappingTab({ gfProducts, izArticles, flByNorm, mappings, setMapping, approvedCount, rejectedCount }: MappingTabProps) {
+  const [filter, setFilter] = useState<MappingFilter>("unmatched")
+  const [mapSearch, setMapSearch] = useState("")
+  const [source, setSource] = useState<"both" | "gf" | "iz">("both")
+
+  // Build unified candidate list: { prefix, norm, label, ref }
+  const candidates = useMemo(() => {
+    const list: { key: string; prefix: "gf" | "iz"; norm: string; label: string; ref: string }[] = []
+    gfProducts.forEach(p => {
+      const n = normName(p.nom_fr || p.nom_ar || p.ref)
+      if (n) list.push({ key: `gf:${n}`, prefix: "gf", norm: n, label: p.nom_fr || p.nom_ar || p.ref, ref: p.ref })
+    })
+    izArticles.forEach(a => {
+      const n = normName(a.libelle)
+      if (n) list.push({ key: `iz:${n}`, prefix: "iz", norm: n, label: a.libelle, ref: a.reference })
+    })
+    // Deduplicate by key
+    const seen = new Set<string>()
+    return list.filter(c => { if (seen.has(c.key)) return false; seen.add(c.key); return true })
+  }, [gfProducts, izArticles])
+
+  const filtered = useMemo(() => {
+    return candidates.filter(c => {
+      if (source !== "both" && c.prefix !== source) return false
+      if (mapSearch && !c.norm.includes(normName(mapSearch)) && !c.label.toLowerCase().includes(mapSearch.toLowerCase())) return false
+      const entry = mappings[c.key]
+      const directMatch = !!flByNorm[c.norm]
+      if (filter === "unmatched") return !directMatch && entry?.status !== "approved"
+      if (filter === "approved")  return entry?.status === "approved"
+      if (filter === "rejected")  return entry?.status === "rejected"
+      return true  // "all"
+    })
+  }, [candidates, filter, source, mapSearch, mappings, flByNorm])
+
+  const unmatchedCount = useMemo(() =>
+    candidates.filter(c => !flByNorm[c.norm] && mappings[c.key]?.status !== "approved").length,
+  [candidates, flByNorm, mappings])
+
+  const FILTERS: [MappingFilter, string][] = [
+    ["unmatched", `⚠ Non matchés (${unmatchedCount})`],
+    ["approved",  `✓ Approuvés (${approvedCount})`],
+    ["rejected",  `✗ Ignorés (${rejectedCount})`],
+    ["all",       "Tous"],
+  ]
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Header */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-black text-slate-800">Mapping Articles GestFlux / Iziry → FreshLink</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Associez manuellement les articles non-détectés automatiquement.
+              Les mappings approuvés sont utilisés dans le comparatif 3-prix.
+            </p>
+          </div>
+          <div className="flex gap-2 items-center text-xs">
+            <span className="text-emerald-600 font-bold">{approvedCount} approuvés</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-red-500 font-bold">{rejectedCount} ignorés</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-amber-600 font-bold">{unmatchedCount} en attente</span>
+            {approvedCount + rejectedCount > 0 && (
+              <button onClick={() => { if (confirm("Réinitialiser tous les mappings ?")) { Object.keys(mappings).forEach(k => setMapping(k, null)) } }}
+                className="ml-2 px-2 py-1 rounded bg-red-50 text-red-500 text-[10px] font-bold hover:bg-red-100">
+                🗑 Reset tout
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex flex-wrap gap-3 mt-3">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 flex-1 min-w-[160px]">
+            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input value={mapSearch} onChange={e => setMapSearch(e.target.value)} placeholder="Filtrer article…"
+              className="text-xs bg-transparent focus:outline-none w-full text-slate-700 placeholder:text-slate-400" />
+          </div>
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-bold">
+            {(["both", "gf", "iz"] as const).map(s => (
+              <button key={s} onClick={() => setSource(s)}
+                className={`px-3 py-2 ${source === s ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
+                {s === "both" ? "GF + Iziry" : s === "gf" ? "GestFlux" : "Iziry"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Filter pills */}
+        <div className="flex gap-2 mt-3 flex-wrap">
+          {FILTERS.map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${filter === k ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex flex-col gap-2">
+        {filtered.length === 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">
+            {filter === "unmatched" ? "✓ Tous les articles sont matchés !" : "Aucun article dans cette catégorie."}
+          </div>
+        )}
+        {filtered.slice(0, 80).map(c => {
+          const entry = mappings[c.key]
+          const directMatch = flByNorm[c.norm]
+          const suggestions = topSuggestions(c.norm, flByNorm, 4)
+          const isApproved = entry?.status === "approved"
+          const isRejected = entry?.status === "rejected"
+
+          return (
+            <div key={c.key} className={`bg-white rounded-xl border p-4 transition-colors ${
+              isApproved ? "border-emerald-200 bg-emerald-50/30" :
+              isRejected ? "border-slate-100 opacity-60" :
+              directMatch ? "border-blue-100 bg-blue-50/20" :
+              "border-slate-200"
+            }`}>
+              {/* Article header */}
+              <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                    c.prefix === "gf" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                  }`}>{c.prefix === "gf" ? "GestFlux" : "Iziry"}</span>
+                  <span className="text-sm font-bold text-slate-800">{c.label}</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{c.ref}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {directMatch && !isApproved && (
+                    <span className="text-[11px] text-blue-600 font-semibold">
+                      ✓ Déjà matchée → <span className="font-bold">{directMatch.nom}</span>
+                    </span>
+                  )}
+                  {isApproved && (
+                    <span className="text-[11px] text-emerald-600 font-bold">
+                      ✓ Associé à : {entry.flNom}
+                    </span>
+                  )}
+                  {isRejected && <span className="text-[11px] text-slate-400 italic">Ignoré</span>}
+                  {(isApproved || isRejected) && (
+                    <button onClick={() => setMapping(c.key, null)}
+                      className="text-[10px] text-slate-400 hover:text-red-500 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-red-50">
+                      Annuler
+                    </button>
+                  )}
+                  {!isApproved && !isRejected && (
+                    <button onClick={() => setMapping(c.key, { flNorm: "", flNom: "", status: "rejected" })}
+                      className="text-[10px] text-slate-400 hover:text-red-500 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-red-50">
+                      ✗ Ignorer
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Suggestions */}
+              {!isApproved && !isRejected && !directMatch && (
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.length === 0 ? (
+                    <span className="text-[11px] text-slate-400 italic">Aucune suggestion disponible</span>
+                  ) : (
+                    <>
+                      <span className="text-[10px] text-slate-400 self-center">Suggestions :</span>
+                      {suggestions.map(s => (
+                        <button key={s.flNorm} onClick={() => setMapping(c.key, { flNorm: s.flNorm, flNom: s.flNom, status: "approved" })}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors group">
+                          <span className="text-xs font-semibold text-slate-700 group-hover:text-emerald-700">{s.flNom}</span>
+                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                            s.score > 0.6 ? "bg-emerald-100 text-emerald-700" :
+                            s.score > 0.3 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
+                          }`}>{Math.round(s.score * 100)}%</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+              {!isApproved && !isRejected && directMatch && suggestions.length > 1 && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <span className="text-[10px] text-slate-400 self-center">Autres suggestions :</span>
+                  {suggestions.filter(s => s.flNorm !== c.norm).slice(0, 3).map(s => (
+                    <button key={s.flNorm} onClick={() => setMapping(c.key, { flNorm: s.flNorm, flNom: s.flNom, status: "approved" })}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 hover:border-violet-300 hover:bg-violet-50 transition-colors group">
+                      <span className="text-xs font-semibold text-slate-700 group-hover:text-violet-700">{s.flNom}</span>
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-slate-100 text-slate-500">{Math.round(s.score * 100)}%</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {filtered.length > 80 && (
+          <p className="text-center text-xs text-slate-400 py-2">Affichage de 80 premiers sur {filtered.length}</p>
+        )}
+      </div>
     </div>
   )
 }
