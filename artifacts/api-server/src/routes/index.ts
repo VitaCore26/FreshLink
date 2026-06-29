@@ -25,6 +25,9 @@ import extCommandesRouter from "./ext/commandes.js";
 import extCutoffsRouter from "./ext/cutoffs.js";
 import extDemandeAccesRouter from "./ext/demandeAcces.js";
 import extDemandeCompteRouter from "./ext/demandeCompte.js";
+import extShopAdminAuthRouter from "./ext/shopAdminAuth.js";
+import extShopAdminPasswordRouter from "./ext/shopAdminPassword.js";
+import extWebIntegrationConfigRouter from "./ext/webIntegrationConfig.js";
 import portalTrackingRouter from "./portal/tracking.js";
 
 const router: IRouter = Router();
@@ -56,6 +59,9 @@ router.use("/ext/commandes", extCommandesRouter);
 router.use("/ext/cutoffs", extCutoffsRouter);
 router.use("/ext/demande-acces", extDemandeAccesRouter);
 router.use("/ext/demande-compte", extDemandeCompteRouter);
+router.use("/ext/shop-admin-auth", extShopAdminAuthRouter);
+router.use("/ext/shop-admin-password", extShopAdminPasswordRouter);
+router.use("/ext/web-integration-config", extWebIntegrationConfigRouter);
 router.use("/portal/tracking", portalTrackingRouter);
 
 export default router;

@@ -4,6 +4,7 @@ import { CATALOGUE_SEED } from "../../lib/ext/catalogueSeed.js";
 import { ERP_DEFAULT_ARTICLES } from "../../lib/ext/defaultArticles.js";
 import { getArticlePhoto } from "../../lib/ext/articlePhotos.js";
 import { darijaName } from "../../lib/ext/darijaNames.js";
+import { verifyApiKey } from "../../lib/ext/webIntegration.js";
 
 const router = Router();
 
@@ -33,6 +34,14 @@ router.use((req: Request, res: Response, next) => {
 
 // ── GET /ext/catalogue ────────────────────────────────────────────────────
 router.get("/", async (req: Request, res: Response) => {
+  // Le catalogue reste public par défaut (aucune clé requise pour le shop interne).
+  // Mais si un site externe envoie X-Api-Key (cf. BO → Intégration Site Web),
+  // on la valide réellement contre la clé enregistrée côté serveur.
+  const apiKey = req.headers["x-api-key"] as string | undefined;
+  if (apiKey && !(await verifyApiKey(apiKey))) {
+    res.status(401).json({ error: "Clé API invalide" });
+    return;
+  }
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
   // Prefer service role key (server-side only) to bypass RLS on fl_articles
   const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.service_role || process.env.SUPABASE_SERVICE_KEY)
