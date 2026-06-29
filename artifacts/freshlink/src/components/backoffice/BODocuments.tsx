@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { erpWrite } from "@/lib/supabase/erpWrite"
 import { store, type CompanyConfig } from "@/lib/store"
 import ComboBox, { type ComboItem } from "@/components/ui/ComboBox"
 
@@ -863,13 +864,13 @@ export default function BODocuments({ user }: { user: { id: string; name: string
     const reader = new FileReader()
     reader.onload = async () => {
       const dataUrl = reader.result as string
-      const { error } = await sb.from("fl_documents").update({
+      const { ok, error } = await erpWrite("fl_documents", docId, {
         piece_jointe: dataUrl,
         piece_jointe_nom: file.name,
         piece_jointe_type: file.type,
-      } as never).eq("id", docId)
-      if (error) {
-        setMsg({ ok: false, text: `Erreur upload: ${error.message}` })
+      })
+      if (!ok) {
+        setMsg({ ok: false, text: `Erreur upload: ${error}` })
       } else {
         setMsg({ ok: true, text: `Fichier "${file.name}" joint au document.` })
         await load()

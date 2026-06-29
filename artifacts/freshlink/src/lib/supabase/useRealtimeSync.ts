@@ -12,6 +12,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import { createClient } from "./client"
+import { erpWrite } from "./erpWrite"
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -347,9 +348,8 @@ export function useRealtimeSync(options?: {
       position_catalogue?: number
     }
   ) => {
-    const sb = createClient()
-    const { error } = await (sb as any).from("fl_articles").update({ ...data, updated_at: new Date().toISOString() }).eq("id", articleId)
-    if (error) { addError(`Mise à jour article: ${error.message}`); return false }
+    const { ok, error } = await erpWrite("fl_articles", articleId, { ...data, updated_at: new Date().toISOString() })
+    if (!ok) { addError(`Mise à jour article: ${error}`); return false }
     return true
   }, [addError])
 
@@ -358,9 +358,8 @@ export function useRealtimeSync(options?: {
     statut: Prospect["statut"],
     note?: string
   ) => {
-    const sb = createClient()
-    const { error } = await (sb as any).from("fl_prospects").update({ statut, note_interne: note, updated_at: new Date().toISOString() }).eq("id", prospectId)
-    if (error) { addError(`Mise à jour prospect: ${error.message}`); return false }
+    const { ok, error } = await erpWrite("fl_prospects", prospectId, { statut, note_interne: note, updated_at: new Date().toISOString() })
+    if (!ok) { addError(`Mise à jour prospect: ${error}`); return false }
     return true
   }, [addError])
 
@@ -369,16 +368,14 @@ export function useRealtimeSync(options?: {
     statut: string,
     note?: string
   ) => {
-    const sb = createClient()
-    const { error } = await (sb as any).from("fl_commandes_web").update({ statut, note_interne: note, updated_at: new Date().toISOString() }).eq("id", commandeId)
-    if (error) { addError(`Mise à jour commande: ${error.message}`); return false }
+    const { ok, error } = await erpWrite("fl_commandes_web", commandeId, { statut, note_interne: note, updated_at: new Date().toISOString() })
+    if (!ok) { addError(`Mise à jour commande: ${error}`); return false }
     return true
   }, [addError])
 
   const saveCompanyContacts = useCallback(async (contacts: Partial<CompanyContacts>) => {
-    const sb = createClient()
-    const { error } = await (sb as any).from("fl_company_contacts").upsert({ id: "main", ...contacts, updated_at: new Date().toISOString() })
-    if (error) { addError(`Contacts: ${error.message}`); return false }
+    const { ok, error } = await erpWrite("fl_company_contacts", "main", { ...contacts, updated_at: new Date().toISOString() }, { upsert: true })
+    if (!ok) { addError(`Contacts: ${error}`); return false }
     setState(s => ({ ...s, companyContacts: { ...(s.companyContacts ?? { id: "main" }), ...contacts } as CompanyContacts }))
     return true
   }, [addError])
@@ -403,12 +400,11 @@ export async function pushArticleStatusToWeb(
   promo_active?: boolean,
   promo_taux?: number
 ) {
-  const sb = createClient()
   const updates: Record<string, unknown> = { statut_web, updated_at: new Date().toISOString() }
   if (promo_active !== undefined) updates.promo_active = promo_active
   if (promo_taux !== undefined) updates.promo_taux = promo_taux
-  const { error } = await (sb as any).from("fl_articles").update(updates).eq("id", articleId)
-  return !error
+  const { ok } = await erpWrite("fl_articles", articleId, updates)
+  return ok
 }
 
 export async function getCompanyContactsPublic(): Promise<CompanyContacts | null> {
