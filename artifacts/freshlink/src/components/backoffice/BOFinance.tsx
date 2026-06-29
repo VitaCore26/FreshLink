@@ -944,7 +944,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
             let rhFixes = 0
             try {
               const cf = JSON.parse(localStorage.getItem("fl_charges_fixes") ?? "{}") as Record<string, unknown>
-              rhFixes = Object.values(cf).reduce((s: number, v) => s + (Number(v) || 0), 0)
+              rhFixes = (Object.values(cf) as unknown[]).reduce<number>((s, v) => s + (Number(v) || 0), 0)
             } catch { /* noop */ }
             return (
               <div className="flex flex-col gap-2">

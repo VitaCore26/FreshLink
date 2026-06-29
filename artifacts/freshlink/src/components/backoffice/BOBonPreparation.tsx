@@ -175,7 +175,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
     ${bon.lignes.map((l, i) => `
     <tr>
       <td style="color:#9ca3af;font-size:8pt">${i + 1}</td>
-      <td class="bold">${l.articleNom}${(l as Record<string,unknown>).articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:9pt;font-weight:400;color:#6b7280;direction:rtl;display:block">${(l as Record<string,unknown>).articleNomAr}</span>` : ""}</td>
+      <td class="bold">${l.articleNom}${(l as unknown as { articleNomAr?: string }).articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:9pt;font-weight:400;color:#6b7280;direction:rtl;display:block">${(l as unknown as { articleNomAr?: string }).articleNomAr}</span>` : ""}</td>
       <td class="r bold" style="color:#166534">${l.qteCommandee.toFixed(1)}</td>
       <td class="r" style="color:#6b7280">${l.unite}</td>
       <td class="r"><span class="sign-box"></span>&nbsp;${l.unite}</td>

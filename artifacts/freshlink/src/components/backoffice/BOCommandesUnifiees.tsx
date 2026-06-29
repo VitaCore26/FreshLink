@@ -157,12 +157,13 @@ export default function BOCommandesUnifiees({ user }: Props) {
     const client = store.getClients().find(c => c.id === noClientId)
     if (!client) { setMsg({ ok: false, text: "Choisissez un client." }); return }
     const articles = store.getArticles()
+    const toNum = (s: string) => Number(String(s).replace(",", ".").trim())
     const lignes: LigneCommande[] = noLignes
-      .filter(l => l.articleId && Number(l.quantite) > 0)
+      .filter(l => l.articleId && toNum(l.quantite) > 0)
       .map(l => {
         const art = articles.find(a => a.id === l.articleId)!
-        const pv = Number(l.prixVente) || store.computePV(art)
-        const q = Number(l.quantite) || 0
+        const pv = toNum(l.prixVente) || store.computePV(art)
+        const q = toNum(l.quantite) || 0
         return { articleId: art.id, articleNom: art.nom, unite: art.unite, quantite: q, prixUnitaire: pv, prixVente: pv, total: q * pv }
       })
     if (lignes.length === 0) { setMsg({ ok: false, text: "Ajoutez au moins une ligne valide." }); return }
@@ -469,13 +470,13 @@ export default function BOCommandesUnifiees({ user }: Props) {
                         onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, articleId: e.target.value, prixVente: e.target.value ? String(store.computePV(store.getArticles().find(a => a.id === e.target.value)!)) : "" } : x))}
                         className="flex-1 px-2 py-2 rounded-lg border border-slate-200 text-sm">
                         <option value="">— Article —</option>
-                        {store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom)).map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                        {store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom)).map(a => <option key={a.id} value={a.id}>{a.nom}{a.nomAr ? ` / ${a.nomAr}` : ""}</option>)}
                       </select>
-                      <input type="number" min="0" placeholder="Qté" value={l.quantite}
-                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, quantite: e.target.value } : x))}
+                      <input type="text" inputMode="decimal" placeholder="Qté" value={l.quantite}
+                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, quantite: e.target.value.replace(",", ".") } : x))}
                         className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm text-center" />
-                      <input type="number" min="0" step="0.01" placeholder="PV" value={l.prixVente}
-                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, prixVente: e.target.value } : x))}
+                      <input type="text" inputMode="decimal" placeholder="PV" value={l.prixVente}
+                        onChange={e => setNoLignes(prev => prev.map((x, j) => j === i ? { ...x, prixVente: e.target.value.replace(",", ".") } : x))}
                         className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm text-center" />
                       <span className="w-8 text-[10px] text-slate-400">{art?.unite}</span>
                       {noLignes.length > 1 && <button onClick={() => setNoLignes(prev => prev.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600">✕</button>}
