@@ -144,6 +144,8 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [filterSource, setFilterSource]   = useState("tous")
   const [filterZone, setFilterZone]       = useState("tous")
   const [filterCategorie, setFilterCategorie] = useState("tous")
+  const [filterDateDebut, setFilterDateDebut] = useState("")
+  const [filterDateFin, setFilterDateFin]     = useState("")
   const [selected, setSelected]           = useState<CmdUnifiee | null>(null)
   const [updating, setUpdating]           = useState(false)
   const [msg, setMsg]                     = useState<{ ok: boolean; text: string } | null>(null)
@@ -384,6 +386,8 @@ export default function BOCommandesUnifiees({ user }: Props) {
     if (filterStatut !== "tous" && c.statut !== filterStatut) return false
     if (filterZone !== "tous" && c.zone !== filterZone) return false
     if (filterCategorie !== "tous" && c.categorie !== filterCategorie) return false
+    if (filterDateDebut && c.date.slice(0, 10) < filterDateDebut) return false
+    if (filterDateFin && c.date.slice(0, 10) > filterDateFin) return false
     if (search.trim()) {
       const q = search.toLowerCase()
       return (
@@ -597,6 +601,22 @@ export default function BOCommandesUnifiees({ user }: Props) {
           ))}
         </select>
 
+        {/* Plage de dates */}
+        <input
+          type="date"
+          value={filterDateDebut}
+          onChange={e => setFilterDateDebut(e.target.value)}
+          title="Du"
+          className="px-3 py-2 rounded-xl border border-border text-sm bg-white text-slate-700"
+        />
+        <input
+          type="date"
+          value={filterDateFin}
+          onChange={e => setFilterDateFin(e.target.value)}
+          title="Au"
+          className="px-3 py-2 rounded-xl border border-border text-sm bg-white text-slate-700"
+        />
+
         {/* Recherche libre */}
         <input
           type="text"
@@ -606,9 +626,9 @@ export default function BOCommandesUnifiees({ user }: Props) {
           className="flex-1 min-w-44 px-3 py-2 rounded-xl border border-border text-sm bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-green-500"
         />
 
-        {(search || filterStatut !== "tous" || filterSource !== "tous" || filterZone !== "tous" || filterCategorie !== "tous") && (
+        {(search || filterStatut !== "tous" || filterSource !== "tous" || filterZone !== "tous" || filterCategorie !== "tous" || filterDateDebut || filterDateFin) && (
           <button
-            onClick={() => { setSearch(""); setFilterStatut("tous"); setFilterSource("tous"); setFilterZone("tous"); setFilterCategorie("tous") }}
+            onClick={() => { setSearch(""); setFilterStatut("tous"); setFilterSource("tous"); setFilterZone("tous"); setFilterCategorie("tous"); setFilterDateDebut(""); setFilterDateFin("") }}
             className="px-3 py-2 rounded-xl border border-border text-sm text-slate-500 hover:bg-slate-50"
           >
             ✕ Reset
