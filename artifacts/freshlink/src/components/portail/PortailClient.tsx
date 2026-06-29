@@ -1319,7 +1319,7 @@ function FactureModal({ invoice, client, onClose }: { invoice: Invoice; client: 
           </thead>
           <tbody>
             {(invoice.lignes ?? []).map((l, i) => {
-              const nomAr = store.getArticles().find(a => a.id === l.articleId)?.nomAr
+              const nomAr = store.getArticles().find(a => a.nom === l.articleNom)?.nomAr
               return (
               <tr key={i} className="border-b border-slate-100">
                 <td className="px-3 py-2">{l.articleNom}{nomAr ? <span className="block text-xs text-slate-400" dir="rtl">{nomAr}</span> : null}</td>

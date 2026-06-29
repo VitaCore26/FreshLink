@@ -1005,7 +1005,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
             const cl = c.lignes.find(x => x.articleId === l.articleId); return cl ? cl.prixVente ?? cl.prixUnitaire ?? p : p
           }, 0)
           const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-          return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+          return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as unknown as { articleNomAr?: string }).articleNomAr, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
         })
         const totalHT = lignes.reduce((s, l) => s + l.totalLigne, 0)
         const bl: BonLivraison = {
@@ -1034,7 +1034,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
               .map(l => {
                 const prixUnit = clientCmds.reduce((p, c) => { const cl = c.lignes.find(x => x.articleId === l.articleId); return cl ? cl.prixVente ?? cl.prixUnitaire ?? p : p }, 0)
                 const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-                return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+                return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as unknown as { articleNomAr?: string }).articleNomAr, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
               })
           } else {
             // All lignes for this client
@@ -1042,7 +1042,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
             blLignes = (bon.lignes ?? []).map(l => {
               const prixUnit = clientCmd?.lignes.find(x => x.articleId === l.articleId)?.prixVente ?? 0
               const qte = l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee
-              return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as Record<string,unknown>).articleNomAr as string | undefined, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
+              return { id: genId(), articleId: l.articleId, articleNom: l.articleNom, articleNomAr: (l as unknown as { articleNomAr?: string }).articleNomAr, unite: l.unite, qteCommande: l.qteCommandee, qteLivree: qte, prixUnit, totalLigne: qte * prixUnit, qcOk: true }
             })
           }
           if (blLignes.length === 0) continue

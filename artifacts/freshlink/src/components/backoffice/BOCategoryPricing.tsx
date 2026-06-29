@@ -202,7 +202,7 @@ export default function BOCategoryPricing() {
     if (!selectedClient) return ""
     const edited = edits[art.id]?.[field]
     if (edited !== undefined) return String(edited)
-    const override = art.clientPrices?.[selectedClient]?.[field]
+    const override = field === "taux" ? undefined : art.clientPrices?.[selectedClient]?.[field]
     if (override !== undefined) return String(override)
     return ""
   }

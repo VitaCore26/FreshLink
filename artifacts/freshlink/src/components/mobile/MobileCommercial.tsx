@@ -1936,7 +1936,7 @@ export default function MobileCommercial({ user }: Props) {
                     <div className="flex flex-col gap-1">
                       {lignesCmd.map((l, i) => (
                         <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-foreground">{l.articleNom}{(l as Record<string,unknown>).articleNomAr ? <span className="block text-[10px] text-muted-foreground font-arabic" dir="rtl" lang="ar">{String((l as Record<string,unknown>).articleNomAr)}</span> : null}</span>
+                          <span className="text-foreground">{l.articleNom}{(l as unknown as { articleNomAr?: string }).articleNomAr ? <span className="block text-[10px] text-muted-foreground font-arabic" dir="rtl" lang="ar">{(l as unknown as { articleNomAr?: string }).articleNomAr}</span> : null}</span>
                           <span className="font-semibold text-muted-foreground">
                             {l.quantiteUM ? `${l.quantiteUM} ${l.um} = ` : ""}{l.quantite} {l.unite} · {(Number(l.total) || 0).toLocaleString("fr-MA")} DH
                           </span>
