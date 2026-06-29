@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { readWebIntegrationConfig, writeWebIntegrationConfig, type WebIntegrationConfig } from "../../lib/ext/webIntegration.js";
+import { corsMiddleware } from "../../lib/ext/cors.js";
 
 // /ext/web-integration-config — persiste côté serveur la config "Intégration
 // Site Web" (clé API, origines autorisées, options) gérée depuis BO →
@@ -9,13 +10,8 @@ import { readWebIntegrationConfig, writeWebIntegrationConfig, type WebIntegratio
 
 const router = Router();
 
-router.use((req: Request, res: Response, next) => {
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin ?? "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") { res.sendStatus(204); return; }
-  next();
-});
+// Route de configuration sensible → respecte ALLOWED_ORIGINS si défini (public:false).
+router.use(corsMiddleware({ methods: "GET, POST, OPTIONS", public: false }));
 
 router.get("/", async (_req: Request, res: Response) => {
   const cfg = await readWebIntegrationConfig();
