@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { rateLimit } from "../../lib/ext/rateLimit.js";
+import { verifyApiKey } from "../../lib/ext/webIntegration.js";
 
 const router = Router();
 
@@ -79,6 +80,11 @@ async function injectToLogistique(
 // Format attendu : { nom_client, telephone, lignes[], montant_total, ... }
 router.post("/", async (req: Request, res: Response) => {
   if (rateLimit(req, res, { key: "commandes", limit: 10, windowMs: 60_000 })) return;
+  const apiKey = req.headers["x-api-key"] as string | undefined;
+  if (apiKey && !(await verifyApiKey(apiKey))) {
+    res.status(401).json({ error: "Clé API invalide" });
+    return;
+  }
 
   const body = (req.body ?? {}) as Record<string, unknown>;
 

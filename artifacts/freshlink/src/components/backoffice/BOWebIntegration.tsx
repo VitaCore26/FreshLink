@@ -51,7 +51,13 @@ export default function BOWebIntegration({ user }: Props) {
 
   const handleSave = () => {
     if (!cfg) return
-    ;(store as any).saveWebIntegrationConfig({ ...cfg, updatedAt: new Date().toISOString(), updatedBy: user.id })
+    const updated = { ...cfg, updatedAt: new Date().toISOString(), updatedBy: user.id }
+    ;(store as any).saveWebIntegrationConfig(updated)
+    fetch(`${BASE}/api/ext/web-integration-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }).catch(() => {})
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
