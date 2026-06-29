@@ -76,7 +76,7 @@ export default function AnalyseReceptionPanel() {
     const totalCmd   = receptions.reduce((s, r) => s + r.lignes.reduce((ls, l) => ls + l.quantiteCommandee, 0), 0)
     const totalRec   = receptions.reduce((s, r) => s + r.lignes.reduce((ls, l) => ls + l.quantiteRecue, 0), 0)
     const totalMont  = receptions.reduce((s, r) => s + r.lignes.reduce((ls, l) => ls + (l.prixAchat ?? 0) * l.quantiteRecue, 0), 0)
-    const totalFact  = bls.reduce((s, b) => s + b.montantTotal, 0)
+    const totalFact  = bls.reduce((s, b) => s + (b.montantTotal ?? 0), 0)
     const totalQtyFact = bls.reduce((s, b) => s + b.lignes.reduce((ls, l) => ls + l.quantite, 0), 0)
     const taux = totalCmd > 0 ? Math.round((totalRec / totalCmd) * 100) : 0
     return { totalCmd, totalRec, totalMont, totalFact, totalQtyFact, taux, reliquat: totalCmd - totalRec }
@@ -91,7 +91,7 @@ export default function AnalyseReceptionPanel() {
     })
     bls.forEach(b => {
       if (!days[b.date]) days[b.date] = { date: b.date, recu: 0, facture: 0 }
-      days[b.date].facture += b.montantTotal
+      days[b.date].facture += (b.montantTotal ?? 0)
     })
     return Object.values(days).sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
       .map(d => ({ ...d, date: d.date.slice(5) }))
@@ -124,7 +124,7 @@ export default function AnalyseReceptionPanel() {
     const map: Record<string, { nom: string; qteFacture: number; montFacture: number; nbBL: number }> = {}
     bls.forEach(b => {
       if (!map[b.clientNom]) map[b.clientNom] = { nom: b.clientNom, qteFacture: 0, montFacture: 0, nbBL: 0 }
-      map[b.clientNom].montFacture += b.montantTotal
+      map[b.clientNom].montFacture += (b.montantTotal ?? 0)
       map[b.clientNom].nbBL += 1
       map[b.clientNom].qteFacture += b.lignes.reduce((s, l) => s + l.quantite, 0)
     })
@@ -708,7 +708,7 @@ export default function AnalyseReceptionPanel() {
                       <td className="px-3 py-2" style={{ color: "#6b7280" }}>{bl.secteur}</td>
                       <td className="px-3 py-2" style={{ color: "#6b7280" }}>{bl.livreurNom}</td>
                       <td className="px-3 py-2 text-center" style={{ color: "#60a5fa" }}>{bl.lignes.length}</td>
-                      <td className="px-3 py-2 font-bold" style={{ color: "#34d399" }}>{bl.montantTotal.toFixed(0)} DH</td>
+                      <td className="px-3 py-2 font-bold" style={{ color: "#34d399" }}>{(bl.montantTotal ?? 0).toFixed(0)} DH</td>
                       <td className="px-3 py-2">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
                           style={{
