@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import * as XLSX from "xlsx"
 import { store, type Client } from "@/lib/store"
 import { fetchClients, upsertClient, importClients } from "@/lib/supabase/db"
 import { createClient } from "@/lib/supabase/client"
@@ -288,16 +289,26 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
     if (!file) return
     setImporting(true)
     setImportResult(null)
-    const text = await file.text()
+    const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rows: any[] = []
-    if (file.name.endsWith(".json")) {
+    if (isExcel) {
       try {
-        const parsed = JSON.parse(text)
-        rows = Array.isArray(parsed) ? parsed : []
-      } catch { setImporting(false); alert("Fichier JSON invalide"); return }
+        const buffer = await file.arrayBuffer()
+        const wb = XLSX.read(buffer, { type: "array" })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" })
+      } catch { setImporting(false); alert("Fichier Excel invalide"); return }
     } else {
-      rows = parseCSV(text)
+      const text = await file.text()
+      if (file.name.endsWith(".json")) {
+        try {
+          const parsed = JSON.parse(text)
+          rows = Array.isArray(parsed) ? parsed : []
+        } catch { setImporting(false); alert("Fichier JSON invalide"); return }
+      } else {
+        rows = parseCSV(text)
+      }
     }
     if (rows.length === 0) { setImporting(false); alert("Aucune ligne valide trouvée dans le fichier."); return }
 
@@ -520,7 +531,7 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
               Importer {SECTIONS.find(s => s.id === section)?.label} / استيراد البيانات
             </h3>
             <p className="text-xs text-blue-700 mt-0.5">
-              Supporte CSV ou JSON. Pour CSV: la 1ère ligne doit être les noms de colonnes.
+              Supporte CSV, Excel (.xlsx/.xls) ou JSON. Pour CSV/Excel: la 1ère ligne doit être les noms de colonnes.
               {section === "clients" && " Colonnes: nom, secteur, zone, type, taille, rotation, telephone, adresse, ice, notes, gps_lat, gps_lng"}
               {section === "stock" && " Colonnes: nom, nomAr, famille, unite, stockDisponible, prixAchat, pvMethode, pvValeur"}
               {section === "commandes" && " JSON uniquement recommandé pour les commandes (données structurées)."}
@@ -547,10 +558,10 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
             )}
             <label className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white cursor-pointer transition-opacity ${importing ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
               style={{ background: "oklch(0.38 0.2 260)" }}>
-              <input ref={csvRef} type="file" accept=".csv,.json" className="hidden" onChange={handleClientImport} />
+              <input ref={csvRef} type="file" accept=".csv,.json,.xlsx,.xls" className="hidden" onChange={handleClientImport} />
               {importing
                 ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Import en cours...</>
-                : <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" /></svg> Importer CSV / JSON</>}
+                : <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" /></svg> Importer CSV / Excel / JSON</>}
             </label>
           </div>
         </div>
@@ -620,6 +631,19 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
             CSV ({data.length} lignes)
+          </button>
+          {/* Export this table as Excel — ALL rows */}
+          <button
+            onClick={() => {
+              if (data.length === 0) return
+              const ws = XLSX.utils.json_to_sheet(data)
+              const wb = XLSX.utils.book_new()
+              XLSX.utils.book_append_sheet(wb, ws, section.slice(0, 31))
+              XLSX.writeFile(wb, `freshlink_${section}_${new Date().toISOString().split("T")[0]}.xlsx`)
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Excel ({data.length} lignes)
           </button>
           {/* Export this table as JSON */}
           <button
