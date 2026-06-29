@@ -672,7 +672,7 @@ function BLEditor({
                           className="w-full min-w-[160px] px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-white">
                           <option value="">— Article —</option>
                           {articles.map(a => (
-                            <option key={a.id} value={a.id}>{a.nom}</option>
+                            <option key={a.id} value={a.id}>{a.nom}{a.nomAr ? ` / ${a.nomAr}` : ""}</option>
                           ))}
                         </select>
                         {l.articleNomAr && (

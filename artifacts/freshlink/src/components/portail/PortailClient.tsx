@@ -579,14 +579,17 @@ export default function PortailClient({ user, onLogout }: Props) {
                               </tr>
                             </thead>
                             <tbody>
-                              {cmd.lignes.map((l, i) => (
+                              {cmd.lignes.map((l, i) => {
+                                const nomAr = store.getArticles().find(a => a.id === l.articleId)?.nomAr
+                                return (
                                 <tr key={i} className="border-t border-border">
-                                  <td className="px-3 py-2 font-medium">{l.articleNom}</td>
+                                  <td className="px-3 py-2 font-medium">{l.articleNom}{nomAr ? <span className="block text-xs text-muted-foreground" dir="rtl">{nomAr}</span> : null}</td>
                                   <td className="px-3 py-2 text-right">{l.quantite} {l.unite || ""}</td>
                                   <td className="px-3 py-2 text-right">{money(l.prixVente ?? l.prixUnitaire ?? 0)}</td>
                                   <td className="px-3 py-2 text-right font-bold text-primary">{money((l.prixVente ?? l.prixUnitaire ?? 0) * l.quantite)}</td>
                                 </tr>
-                              ))}
+                                )
+                              })}
                             </tbody>
                             <tfoot>
                               <tr className="border-t-2 border-primary/30 bg-primary/5">
@@ -1315,14 +1318,17 @@ function FactureModal({ invoice, client, onClose }: { invoice: Invoice; client: 
             </tr>
           </thead>
           <tbody>
-            {(invoice.lignes ?? []).map((l, i) => (
+            {(invoice.lignes ?? []).map((l, i) => {
+              const nomAr = store.getArticles().find(a => a.id === l.articleId)?.nomAr
+              return (
               <tr key={i} className="border-b border-slate-100">
-                <td className="px-3 py-2">{l.articleNom}</td>
+                <td className="px-3 py-2">{l.articleNom}{nomAr ? <span className="block text-xs text-slate-400" dir="rtl">{nomAr}</span> : null}</td>
                 <td className="px-3 py-2 text-right">{l.quantite} {l.unite ?? ""}</td>
                 <td className="px-3 py-2 text-right">{l.prixUnitaire.toFixed(2)} DH</td>
                 <td className="px-3 py-2 text-right font-semibold">{(l.quantite * l.prixUnitaire).toFixed(2)} DH</td>
               </tr>
-            ))}
+              )
+            })}
             {(invoice.lignes?.length ?? 0) === 0 && (
               <tr><td colSpan={4} className="px-3 py-2 text-center text-slate-400 italic">Détails des lignes non disponibles</td></tr>
             )}
