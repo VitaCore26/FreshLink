@@ -29,8 +29,8 @@ router.post("/", async (req: Request, res: Response) => {
     `${SB_URL}/rest/v1/fl_tracking?payload->>commandeId=eq.${encodeURIComponent(commandeId)}&select=id,payload&limit=1`,
     { headers }
   );
-  const existing = existingRes.ok ? await existingRes.json() : [];
-  const prev = existing[0]?.payload ?? {};
+  const existing = (existingRes.ok ? await existingRes.json() : []) as Array<{ id?: string; payload?: Record<string, unknown> }>;
+  const prev: Record<string, unknown> = existing[0]?.payload ?? {};
   const prevPipeline: { step: Step; at: string }[] = Array.isArray(prev.pipeline) ? prev.pipeline : [];
   const now = new Date().toISOString();
   const newPipeline = [...prevPipeline.filter((s) => s.step !== etape), { step: etape, at: now }];

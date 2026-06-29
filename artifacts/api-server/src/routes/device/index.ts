@@ -170,8 +170,8 @@ router.post("/seen", async (req: Request, res: Response) => {
       { headers: hdr }
     );
     if (r.ok) {
-      const rows = await r.json();
-      payload = (rows?.[0]?.payload as Record<string, unknown>) ?? {};
+      const rows = await r.json() as Array<{ payload?: Record<string, unknown> }>;
+      payload = rows?.[0]?.payload ?? {};
     }
   } catch {}
 

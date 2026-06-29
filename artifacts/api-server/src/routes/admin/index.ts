@@ -28,7 +28,7 @@ async function verifySupabaseToken(bearerToken: string): Promise<{ id: string; r
       headers: { apikey: SB_SRV, Authorization: `Bearer ${bearerToken}` },
     });
     if (!res.ok) return null;
-    const user = await res.json();
+    const user = await res.json() as { id: string; email?: string; role?: string; user_metadata?: { role?: string } };
     const role: string = user?.user_metadata?.role ?? user?.role ?? "";
     return { id: user.id, role, email: user.email ?? "" };
   } catch {

@@ -32,7 +32,7 @@ async function getAllUsers(): Promise<Record<string, unknown>[]> {
       headers: { apikey: SB_SERVER_KEY, Authorization: `Bearer ${SB_SERVER_KEY}` },
     });
     if (!res.ok) return [];
-    const rows: { id: string; payload: Record<string, unknown> }[] = await res.json();
+    const rows = await res.json() as { id: string; payload: Record<string, unknown> }[];
     return rows.map((r) => ({ id: r.id, ...r.payload }));
   } catch {
     return [];
