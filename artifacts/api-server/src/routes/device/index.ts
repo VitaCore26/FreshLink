@@ -50,6 +50,11 @@ router.post("/check-and-token", async (req: Request, res: Response) => {
       return;
     }
 
+    // Verrou appareil = OPT-IN. Par défaut (pas de config, ou enforce ≠ true),
+    // on délivre le jeton à tout appareil → l'ERP se connecte directement.
+    // Le verrou ne s'applique QUE si l'admin a explicitement activé enforce=true
+    // depuis BO → Accès Appareils. Évite le blocage poule-et-œuf à l'installation.
+    let enforce = false;
     try {
       const cfgRes = await fetch(
         `${SB_URL}/rest/v1/fl_site_access?id=eq.__config&select=payload`,
@@ -57,14 +62,16 @@ router.post("/check-and-token", async (req: Request, res: Response) => {
       );
       if (cfgRes.ok) {
         const cfg = (await cfgRes.json()) as Array<{ payload?: { enforce?: boolean } }>;
-        if (cfg?.[0]?.payload?.enforce === false) {
-          const token = signDeviceToken(fingerprint);
-          res.cookie(DEVICE_COOKIE, token, cookieOpts());
-          res.json({ approved: true, enforce: false });
-          return;
-        }
+        enforce = cfg?.[0]?.payload?.enforce === true;
       }
     } catch {}
+
+    if (!enforce) {
+      const token = signDeviceToken(fingerprint);
+      res.cookie(DEVICE_COOKIE, token, cookieOpts());
+      res.json({ approved: true, enforce: false });
+      return;
+    }
 
     const sbRes = await fetch(
       `${SB_URL}/rest/v1/fl_site_access?id=eq.${encodeURIComponent(fingerprint)}&select=payload`,
