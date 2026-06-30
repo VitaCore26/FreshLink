@@ -58,6 +58,22 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      // Silence le bruit de build hérité de Next.js : les directives "use client"
+      // (inutiles dans ce SPA Vite) déclenchent des avertissements MODULE_LEVEL_DIRECTIVE
+      // et des "Error when using sourcemap..." purement cosmétiques. On les filtre
+      // pour que les vraies erreurs ressortent dans les logs Vercel.
+      onwarn(warning, warn) {
+        if (warning.code === "MODULE_LEVEL_DIRECTIVE") return;
+        if (
+          typeof warning.message === "string" &&
+          warning.message.includes("Can't resolve original location")
+        ) {
+          return;
+        }
+        warn(warning);
+      },
+    },
   },
   server: {
     port,
