@@ -51,9 +51,25 @@ function MainApp() {
     import("@/lib/deviceFingerprint").then(async ({ getDeviceFingerprint }) => {
       const fp = await getDeviceFingerprint()
       if (!fp) return
+      // 1) Obtenir le cookie d'appareil (fl_device_token) — INDISPENSABLE : sans lui,
+      //    /api/sync-read et /api/sync-write renvoient 401 et l'ERP reste "offline".
+      //    Le flux normal ne le faisait pas (seul /device/seen était appelé).
+      try {
+        await fetch("/api/device/check-and-token", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fingerprint: fp }),
+        })
+      } catch { /* hors-ligne : on reste sur le cache local */ }
+      // 2) Enregistrer l'appareil (liste BO → Accès Appareils)
       fetch("/api/device/seen", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint: fp, nom: user.name, userAgent: navigator.userAgent }),
+      }).catch(() => {})
+      // 3) Le cookie est maintenant posé → relancer la synchro Supabase
+      import("@/lib/supabase/db").then(({ syncFromSupabase }) => {
+        syncFromSupabase().then(() => {
+          window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
+        }).catch(() => {})
       }).catch(() => {})
     }).catch(() => {})
   }, [user])
