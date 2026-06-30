@@ -38,13 +38,25 @@ function fromRow<T>(row: { id: string; payload: unknown }): T {
 // Lecture cross-device via le SERVICE-ROLE (/api/sync-read, protégé par device-guard).
 // Les politiques RLS bloquent l'anon → les lectures directes renvoyaient 0 ligne
 // (clients/users/commandes invisibles). On passe par l'endpoint service-role.
+// Dernière erreur de lecture Supabase (pour diagnostic UI : distingue
+// "service-role manquante" (env Vercel) de "Device non autorisé" (cookie) etc.)
+let _lastReadError: string | null = null
+export function getLastSupabaseError(): string | null { return _lastReadError }
+
 async function readRows(table: string): Promise<{ data: { id: string; payload: unknown }[] | null; error: string | null }> {
   try {
     const res = await fetch(`/api/sync-read?table=${encodeURIComponent(table)}`, { cache: "no-store" })
-    const j = await res.json()
-    if (!j?.ok) return { data: null, error: j?.error || `read ${table} failed` }
+    const j = await res.json().catch(() => null)
+    if (!res.ok || !j?.ok) {
+      _lastReadError = (j?.error as string) || `HTTP ${res.status}`
+      return { data: null, error: _lastReadError }
+    }
+    _lastReadError = null
     return { data: Array.isArray(j.data) ? j.data : [], error: null }
-  } catch (e) { return { data: null, error: String(e) } }
+  } catch (e) {
+    _lastReadError = e instanceof Error ? e.message : String(e)
+    return { data: null, error: _lastReadError }
+  }
 }
 
 // Route all writes through /api/sync-write (service role key bypasses RLS)

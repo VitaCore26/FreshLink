@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import * as XLSX from "xlsx"
 import { store, type Client } from "@/lib/store"
-import { fetchClients, upsertClient, importClients } from "@/lib/supabase/db"
+import { fetchClients, upsertClient, importClients, getLastSupabaseError } from "@/lib/supabase/db"
 import { createClient } from "@/lib/supabase/client"
 
 const DH = (n: number) => `${n.toLocaleString("fr-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} DH`
@@ -160,7 +160,15 @@ export default function BODatabase({ user }: { user: { id: string; role?: string
         if (isCurrentUserDemo) {
           setSbMsg(`${clients.length} entrées — compte démo`)
         } else {
-          setSbMsg(`${clients.length} entrées locales — Supabase non joignable`)
+          const why = getLastSupabaseError()
+          const hint = why
+            ? (/service.?role|SUPABASE_SERVICE_ROLE_KEY/i.test(why)
+                ? "clé service-role manquante sur Vercel"
+                : /device|autoris/i.test(why)
+                  ? "appareil non autorisé (reconnexion requise)"
+                  : why)
+            : "API injoignable"
+          setSbMsg(`${clients.length} entrées locales — Supabase non joignable (${hint})`)
         }
       }
     }).catch(() => {
