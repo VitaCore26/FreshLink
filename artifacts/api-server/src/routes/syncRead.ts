@@ -1,20 +1,14 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { createClient } from "@supabase/supabase-js";
 import { requireDeviceApi } from "../lib/deviceGuard.js";
+import { SB_URL, SB_SERVICE_KEY } from "../lib/ext/supabaseEnv.js";
+
+// ⚠️ Lecture via fetch brut sur l'API REST PostgREST (PAS @supabase/supabase-js).
+// Le client supabase-js crashait dans la Lambda Vercel (FUNCTION_INVOCATION_FAILED
+// → 500 non-JSON). Toutes les autres routes /ext/* utilisent déjà fetch brut et
+// fonctionnent ; on aligne sync-read/sync-write sur ce modèle.
 
 const router = Router();
-
-const SB_URL =
-  process.env.VITE_SUPABASE_URL ??
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  "https://wnuilvamhygkzupvfnxz.supabase.co";
-
-const SERVICE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.service_role ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  "";
 
 const ALLOWED_TABLES = new Set([
   "fl_users", "fl_clients", "fl_articles", "fl_fournisseurs",
@@ -35,18 +29,12 @@ const ALLOWED_TABLES = new Set([
   "fl_notices",
 ]);
 
-function getAdminClient() {
-  return createClient(SB_URL, SERVICE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
-
 router.get("/", async (req: Request, res: Response) => {
   if (requireDeviceApi(req)) {
     res.status(401).json({ ok: false, error: "Device non autorisé" });
     return;
   }
-  if (!SERVICE_KEY) {
+  if (!SB_SERVICE_KEY) {
     res.status(500).json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY manquante" });
     return;
   }
@@ -60,18 +48,19 @@ router.get("/", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const sb = getAdminClient();
-    const { data, error } = await sb
-      .from(table)
-      .select("id, payload")
-      .limit(20000);
-    if (error) {
-      res.status(500).json({ ok: false, error: `${error.message} (code: ${error.code})` });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/${table}?select=id,payload&limit=20000`,
+      { headers: { apikey: SB_SERVICE_KEY, Authorization: `Bearer ${SB_SERVICE_KEY}` } },
+    );
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      res.status(502).json({ ok: false, error: `Supabase ${r.status}: ${txt.slice(0, 200)}` });
       return;
     }
-    res.json({ ok: true, data: data ?? [] });
+    const data = (await r.json()) as { id: string; payload: unknown }[];
+    res.json({ ok: true, data: Array.isArray(data) ? data : [] });
   } catch (e) {
-    res.status(500).json({ ok: false, error: "Erreur interne" });
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Erreur interne" });
   }
 });
 
