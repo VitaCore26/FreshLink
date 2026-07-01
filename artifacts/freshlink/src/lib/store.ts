@@ -605,6 +605,10 @@ export interface Trip {
   carburantInclus?: boolean      // true = trip "avec carburant" (on paie le carburant → analyse conso)
   carburantReelLitres?: number   // litres réellement consommés (saisie au retour)
   coutEstime?: number            // coût estimé du voyage (DH) — snapshot à la planification
+  // Estimation à l'affectation (avant tout trajet réel) — distance à vol
+  // d'oiseau entre arrêts de l'itinéraire, majorée d'un facteur route.
+  kmEstime?: number               // km estimé au moment de l'affectation
+  litresEstimeAffectation?: number
 }
 
 export interface LigneRetour {

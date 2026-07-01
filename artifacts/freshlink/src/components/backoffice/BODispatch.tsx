@@ -3,8 +3,32 @@
 import { useState, useEffect, useRef } from "react"
 import { store, type Commande, type Trip, type Livreur, type TransportCompany, type User, ROLE_COLORS } from "@/lib/store"
 import { uploadToStorage } from "@/lib/supabase/client"
+import { printBL, printFeuilleRoute, type FeuilleRouteData } from "@/lib/print"
 
 interface Props { user: User }
+
+// Distance à vol d'oiseau (km) entre 2 points GPS (formule de Haversine).
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371
+  const dLat = (b.lat - a.lat) * Math.PI / 180
+  const dLng = (b.lng - a.lng) * Math.PI / 180
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
+}
+
+// Majoration route vs vol d'oiseau (pas de routing réel branché) — ratio usuel
+// ville/périurbain pour une estimation raisonnable, pas une valeur exacte.
+const ROAD_FACTOR = 1.3
+
+// Estime le km total d'une tournée à partir des arrêts GPS de son itinéraire
+// (triés par ordre de livraison), départ->arrêt1->arrêt2->...
+function estimateTripKm(itineraire: Trip["itineraire"]): number {
+  const pts = [...itineraire].sort((a, b) => a.ordre - b.ordre)
+  if (pts.length < 2) return 0
+  let total = 0
+  for (let i = 1; i < pts.length; i++) total += haversineKm(pts[i - 1], pts[i])
+  return Math.round(total * ROAD_FACTOR * 10) / 10
+}
 
 const EMPTY_LIVREUR: Omit<Livreur, "id"> = {
   type: "interne", nom: "", prenom: "", telephone: "", actif: true,
@@ -52,6 +76,7 @@ export default function BODispatch({ user }: Props) {
   const EMPTY_TC: TransportCompany = { id: "", nom: "", actif: true }
   const [transportForm, setTransportForm] = useState<TransportCompany>(EMPTY_TC)
   const [showTripForm, setShowTripForm] = useState(false)
+  const [printOptionsTripId, setPrintOptionsTripId] = useState<string | null>(null)
   const [showLivreurForm, setShowLivreurForm] = useState(false)
   const [editingLivreur, setEditingLivreur] = useState<Livreur | null>(null)
   const [livreurForm, setLivreurForm] = useState<Omit<Livreur, "id">>(EMPTY_LIVREUR)
@@ -133,7 +158,11 @@ export default function BODispatch({ user }: Props) {
   const tripCout = (t: Trip) => {
     const p = store.getEmailConfig()   // tarifs livreur + prixCarburantL vivent dans EmailConfig
     const liv = livreurs.find(l => l.id === t.livreurId)
-    const km = t.kmTotal ?? ((t.kmArrivee ?? 0) > 0 && (t.kmDepart ?? 0) > 0 ? (t.kmArrivee! - t.kmDepart!) : 0)
+    const kmReel = t.kmTotal ?? ((t.kmArrivee ?? 0) > 0 && (t.kmDepart ?? 0) > 0 ? (t.kmArrivee! - t.kmDepart!) : 0)
+    // Tant que le livreur n'a pas saisi de KM réel, on retombe sur l'estimation
+    // calculée à l'affectation (kmEstime) — jamais 0/vide entre planification et départ.
+    const km = kmReel > 0 ? kmReel : (t.kmEstime ?? 0)
+    const isEstime = kmReel <= 0 && (t.kmEstime ?? 0) > 0
     const avecCarb = t.carburantInclus ?? liv?.carburantInclus ?? false
     const consoL100 = Number(liv?.consommationL100) || 0
     const prixL = Number(p.prixCarburantL) || 15
@@ -144,7 +173,7 @@ export default function BODispatch({ user }: Props) {
     const coutCarbReel = Math.round(litresReel * prixL)
     const ecartLitres = litresReel > 0 ? Math.round((litresReel - litresPrevu) * 10) / 10 : 0
     const coutEstime = Math.round(coutKm + (avecCarb ? coutCarbPrevu : 0))
-    return { km, avecCarb, consoL100, prixL, coutKm: Math.round(coutKm), litresPrevu, coutCarbPrevu, litresReel, coutCarbReel, ecartLitres, coutEstime }
+    return { km, isEstime, avecCarb, consoL100, prixL, coutKm: Math.round(coutKm), litresPrevu, coutCarbPrevu, litresReel, coutCarbReel, ecartLitres, coutEstime }
   }
   const setCarbReel = (id: string, litres: number) => { store.updateTrip(id, { carburantReelLitres: litres }); refresh() }
   const toggleTripCarb = (id: string, v: boolean) => { store.updateTrip(id, { carburantInclus: v }); refresh() }
@@ -169,6 +198,19 @@ export default function BODispatch({ user }: Props) {
     const livreur = livreurs.find(l => l.id === selectedLivreurId)
     if (!livreur) return
     const cmds = commandes.filter(c => selectedCmds.includes(c.id))
+    const itineraire = cmds
+      .filter(c => c.gpsLat && c.gpsLng)
+      .map((c, i) => ({ lat: c.gpsLat, lng: c.gpsLng, clientNom: c.clientNom, ordre: i + 1 }))
+    // Calculs à l'affectation : km/carburant/coût estimés — snapshot pris ici,
+    // avant tout trajet réel (le livreur saisira les valeurs réelles au retour).
+    const kmEstime = estimateTripKm(itineraire)
+    const emailCfg = store.getEmailConfig()
+    const avecCarb = livreur.carburantInclus ?? false
+    const consoL100 = Number(livreur.consommationL100) || 0
+    const prixL = Number(emailCfg.prixCarburantL) || 15
+    const litresEstimeAffectation = consoL100 > 0 ? Math.round((kmEstime / 100) * consoL100 * 10) / 10 : 0
+    const coutKmEstime = kmEstime * (Number(emailCfg.tarifKmLivreur) || 0)
+    const coutCarbEstime = avecCarb ? litresEstimeAffectation * prixL : 0
     const trip: Trip = {
       id: store.genTripNumber(),
       date: store.today(),
@@ -177,9 +219,10 @@ export default function BODispatch({ user }: Props) {
       vehicule: vehicule || livreur.matricule || "",
       commandeIds: selectedCmds,
       statut: "planifié",
-      itineraire: cmds
-        .filter(c => c.gpsLat && c.gpsLng)
-        .map((c, i) => ({ lat: c.gpsLat, lng: c.gpsLng, clientNom: c.clientNom, ordre: i + 1 })),
+      itineraire,
+      kmEstime,
+      litresEstimeAffectation,
+      coutEstime: Math.round(coutKmEstime + coutCarbEstime),
     }
     store.addTrip(trip)
     selectedCmds.forEach(id => store.updateCommande(id, { statut: "en_transit" }))
@@ -232,6 +275,50 @@ export default function BODispatch({ user }: Props) {
       }
     }
     refresh()
+  }
+
+  // Génère un BL individuel par client (déjà le cas : un fl_bons_livraison par
+  // commande, jamais un BL global) + option feuille de route pour la tournée.
+  const handlePrintTripBLs = (trip: Trip, withRoute: boolean) => {
+    const company = store.getCompanyConfig()
+    const bls = store.getBonsLivraison().filter(b => b.tripId === trip.id)
+    bls.forEach(bl => printBL(bl, company))
+
+    if (withRoute) {
+      const preps = store.getBonsPreparation().filter(p => p.tripId === trip.id && p.statut === "valide")
+      const cumulMap = new Map<string, { articleNom: string; unite: string; quantite: number }>()
+      preps.forEach(p => p.lignes.forEach(l => {
+        const cur = cumulMap.get(l.articleId)
+        const qte = l.qtePrepared || l.qteCommandee
+        if (cur) cur.quantite += qte
+        else cumulMap.set(l.articleId, { articleNom: l.articleNom, unite: l.unite, quantite: qte })
+      }))
+
+      const allClients = store.getClients()
+      const clients = trip.commandeIds.map(cid => {
+        const cmd = commandes.find(c => c.id === cid)
+        const stop = trip.itineraire.find(i => i.clientNom === cmd?.clientNom)
+        const cl = allClients.find(c => c.id === cmd?.clientId)
+        return {
+          ordre: stop?.ordre ?? 999,
+          clientNom: cmd?.clientNom ?? "—",
+          secteur: cmd?.secteur,
+          adresse: cl?.adresse,
+          heureLivraison: (cmd as unknown as { heureLivraison?: string })?.heureLivraison,
+          telephone: cl?.telephone,
+        }
+      })
+
+      const data: FeuilleRouteData = {
+        tripId: trip.id, tripNumero: trip.numero, date: trip.date,
+        livreurNom: trip.livreurNom, vehicule: trip.vehicule,
+        sequenceMode: trip.sequenceMode,
+        articlesCumules: [...cumulMap.values()],
+        clients,
+      }
+      printFeuilleRoute(data, company)
+    }
+    setPrintOptionsTripId(null)
   }
 
   const loadTripMap = async (trip: Trip, el: HTMLDivElement) => {
@@ -600,8 +687,34 @@ export default function BODispatch({ user }: Props) {
                       Terminer
                     </button>
                   )}
+                  {trip.statut === "terminé" && (
+                    <button onClick={() => setPrintOptionsTripId(printOptionsTripId === trip.id ? null : trip.id)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-slate-700 hover:opacity-90">
+                      🖨️ Imprimer BL
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {printOptionsTripId === trip.id && (
+                <div className="border-t border-border px-4 py-3 bg-slate-50/60 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {store.getBonsLivraison().filter(b => b.tripId === trip.id).length} BL individuel(s) — un par client
+                  </span>
+                  <button onClick={() => handlePrintTripBLs(trip, false)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-300 hover:bg-slate-100">
+                    Sans feuille de route
+                  </button>
+                  <button onClick={() => handlePrintTripBLs(trip, true)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-slate-700 hover:opacity-90">
+                    Avec feuille de route
+                  </button>
+                  <button onClick={() => setPrintOptionsTripId(null)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">
+                    Annuler
+                  </button>
+                </div>
+              )}
 
               {/* Estimation coût voyage + analyse carburant (prévu vs réel) */}
               {(() => {
@@ -609,14 +722,16 @@ export default function BODispatch({ user }: Props) {
                 return (
                   <div className="border-t border-border px-4 py-3 bg-slate-50/60 flex flex-col gap-2">
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <span className="text-xs font-bold text-slate-700">💰 Coût voyage estimé : <span className="text-emerald-700">{c.coutEstime.toLocaleString("fr-MA")} DH</span></span>
+                      <span className="text-xs font-bold text-slate-700">
+                        💰 Coût voyage {c.isEstime ? "estimé (à l'affectation)" : ""} : <span className="text-emerald-700">{c.coutEstime.toLocaleString("fr-MA")} DH</span>
+                      </span>
                       <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={c.avecCarb} onChange={e => toggleTripCarb(trip.id, e.target.checked)} className="w-3.5 h-3.5 rounded accent-primary" />
                         Avec carburant
                       </label>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                      <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Km</p><p className="font-bold">{c.km || "—"}</p></div>
+                      <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Km{c.isEstime ? " (estimé)" : ""}</p><p className="font-bold">{c.km || "—"}</p></div>
                       <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Coût km</p><p className="font-bold">{c.coutKm} DH</p></div>
                       {c.avecCarb && <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5"><p className="text-slate-400">Carb. prévu</p><p className="font-bold">{c.litresPrevu} L · {c.coutCarbPrevu} DH</p></div>}
                       {c.avecCarb && (

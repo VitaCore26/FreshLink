@@ -752,6 +752,90 @@ export function downloadBLFromBO(bl: BOBonLivraison, opts: PrintBLOpts = {}, com
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  FEUILLE DE ROUTE — cumul articles (chargement) + ordre de livraison
+// ─────────────────────────────────────────────────────────────────────────────
+export interface FeuilleRouteData {
+  tripId:      string
+  tripNumero?: string
+  date:        string
+  livreurNom:  string
+  vehicule?:   string
+  sequenceMode?: "horaire" | "itineraire"
+  articlesCumules: { articleNom: string; unite: string; quantite: number }[]
+  clients: { ordre: number; clientNom: string; secteur?: string; adresse?: string; heureLivraison?: string; telephone?: string }[]
+}
+
+function buildFeuilleRouteHtml(data: FeuilleRouteData, company?: CompanyConfig): string {
+  const cfg    = { ...vita_fresh_CONFIG, ...company }
+  const accent = cfg.couleurEntete ?? "#1a4f2a"
+  const gold   = "#b8962e"
+  const num    = data.tripNumero ?? data.tripId
+  const dateStr = fmtDate(data.date)
+  const modeLabel = data.sequenceMode === "horaire" ? "Créneaux horaires" : data.sequenceMode === "itineraire" ? "Optimisation GPS" : "—"
+
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
+<title>Feuille de route ${num}</title>
+<style>${baseCss(accent, gold)}
+.fr-table{width:100%;border-collapse:collapse;margin-top:10px}
+.fr-table th{background:${accent}11;color:${accent};font-size:9.5px;font-weight:800;
+  text-transform:uppercase;letter-spacing:0.4px;text-align:left;padding:7px 10px;border-bottom:2px solid ${accent}33}
+.fr-table td{padding:7px 10px;border-bottom:1px solid #e2e8f0;font-size:11.5px}
+.fr-table tr:nth-child(even) td{background:#f8fafc}
+.fr-section-title{font-size:12px;font-weight:800;color:${accent};text-transform:uppercase;
+  letter-spacing:0.5px;margin:20px 0 4px;padding-bottom:4px;border-bottom:2px solid ${accent}}
+.fr-ordre{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:${accent};color:#fff;font-weight:800;font-size:11px}
+</style></head><body>
+<div style="max-width:794px;margin:0 auto;padding:24px 28px">
+<div class="stripe"></div>
+<div class="lh">
+  <div class="lh-brand">
+    <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
+    <div class="lh-co">
+      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
+      <div class="lh-tag">Feuille de route — Tournée ${num}</div>
+    </div>
+  </div>
+  <div style="text-align:right;font-size:10px;opacity:0.85">${dateStr}<br>Livreur: ${data.livreurNom}${data.vehicule ? `<br>Véhicule: ${data.vehicule}` : ""}<br>Séquençage: ${modeLabel}</div>
+</div>
+
+<div class="fr-section-title">📦 Chargement — cumul par article</div>
+<table class="fr-table">
+  <thead><tr><th>Article</th><th>Unité</th><th style="text-align:right">Quantité totale</th></tr></thead>
+  <tbody>
+    ${data.articlesCumules.map(a => `<tr><td>${a.articleNom}</td><td>${a.unite}</td><td style="text-align:right;font-weight:700">${a.quantite.toLocaleString("fr-MA")}</td></tr>`).join("")}
+  </tbody>
+</table>
+
+<div class="fr-section-title">🚚 Ordre de livraison (${data.clients.length} client${data.clients.length > 1 ? "s" : ""})</div>
+<table class="fr-table">
+  <thead><tr><th>#</th><th>Client</th><th>Secteur</th><th>Adresse</th><th>Créneau</th><th>Téléphone</th></tr></thead>
+  <tbody>
+    ${data.clients.sort((a, b) => a.ordre - b.ordre).map(c => `<tr>
+      <td><span class="fr-ordre">${c.ordre}</span></td>
+      <td style="font-weight:700">${c.clientNom}</td>
+      <td>${c.secteur ?? "—"}</td>
+      <td>${c.adresse ?? "—"}</td>
+      <td>${c.heureLivraison ?? "—"}</td>
+      <td>${c.telephone ?? "—"}</td>
+    </tr>`).join("")}
+  </tbody>
+</table>
+
+<div style="margin-top:24px;font-size:9.5px;color:#94a3b8;text-align:center">Feuille de route générée le ${new Date().toLocaleString("fr-FR")} — ${cfg.nom}</div>
+</div>
+</body></html>`
+  return html
+}
+
+export function printFeuilleRoute(data: FeuilleRouteData, company?: CompanyConfig) {
+  open(buildFeuilleRouteHtml(data, company))
+}
+export function downloadFeuilleRoute(data: FeuilleRouteData, company?: CompanyConfig) {
+  dl(buildFeuilleRouteHtml(data, company), `Feuille-Route-${(data.tripNumero ?? data.tripId).replace(/[^a-zA-Z0-9-]/g,"_")}.html`)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  BULLETIN DE PAIE ultra-pro (Droit marocain — CNSS/AMO/IR 2024)
 // ─────────────────────────────────────────────────────────────────────────────
 export function printFichePaie(
