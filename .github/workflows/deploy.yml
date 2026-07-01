@@ -43,6 +43,11 @@ jobs:
         run: pnpm run typecheck
 
       - name: Build SPA
+        env:
+          VITE_GESTFLUX_URL: ${{ secrets.VITE_GESTFLUX_URL }}
+          VITE_GESTFLUX_ANON_KEY: ${{ secrets.VITE_GESTFLUX_ANON_KEY }}
+          VITE_IZIRY_URL: ${{ secrets.VITE_IZIRY_URL }}
+          VITE_IZIRY_ANON_KEY: ${{ secrets.VITE_IZIRY_ANON_KEY }}
         run: pnpm --filter "./artifacts/freshlink" run build
 
       - name: Build API
@@ -114,6 +119,10 @@ jobs:
           SetEnv DEVICE_SECRET "${{ secrets.DEVICE_SECRET }}"
           SetEnv NEXT_PUBLIC_SUPABASE_URL "${{ secrets.SUPABASE_URL }}"
           SetEnv VITE_SUPABASE_URL "${{ secrets.SUPABASE_URL }}"
+          SetEnv VITE_GESTFLUX_URL "${{ secrets.VITE_GESTFLUX_URL }}"
+          SetEnv VITE_GESTFLUX_ANON_KEY "${{ secrets.VITE_GESTFLUX_ANON_KEY }}"
+          SetEnv VITE_IZIRY_URL "${{ secrets.VITE_IZIRY_URL }}"
+          SetEnv VITE_IZIRY_ANON_KEY "${{ secrets.VITE_IZIRY_ANON_KEY }}"
 
           RewriteEngine On
           RewriteCond %{REQUEST_URI} !^/api/
