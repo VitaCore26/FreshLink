@@ -12,7 +12,7 @@
 export const SB_URL: string =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   process.env.VITE_SUPABASE_URL ??
-  "https://wnuilvamhygkzupvfnxz.supabase.co";
+  "https://bxdqkigoidwnscsjafwd.supabase.co";
 
 /**
  * Clé service_role (contourne RLS) — obligatoire pour les écritures serveur.

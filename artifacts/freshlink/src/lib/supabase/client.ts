@@ -2,15 +2,15 @@
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-// ── Supabase Project: wnuilvamhygkzupvfnxz ─────────────────────────────────
-// Get your keys at: https://supabase.com/dashboard/project/wnuilvamhygkzupvfnxz/settings/api
+// ── Supabase Project: bxdqkigoidwnscsjafwd ─────────────────────────────────
+// Get your keys at: https://supabase.com/dashboard/project/bxdqkigoidwnscsjafwd/settings/api
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL ??
-  "https://wnuilvamhygkzupvfnxz.supabase.co"
+  "https://bxdqkigoidwnscsjafwd.supabase.co"
 
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndudWlsdmFtaHlna3p1cHZmbnh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NzU2ODgsImV4cCI6MjA5NjI1MTY4OH0.OQ28nHPNkuJNSZerZwiTLRIn5rRNhVc8rEwToMYCbhI"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4ZHFraWdvaWR3bnNjc2phZndkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MTgxOTYsImV4cCI6MjA5ODM5NDE5Nn0.c5dzNldPofCGGq1MzWF78mGjrhqw5vXxZw_t9f9rEYM"
 
 if (!SUPABASE_ANON_KEY && typeof window !== "undefined") {
   console.warn("[FreshLink] NEXT_PUBLIC_SUPABASE_ANON_KEY not set — running offline mode")

@@ -18,7 +18,7 @@ const router = Router();
 const SB_URL =
   process.env.VITE_SUPABASE_URL ??
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  "https://wnuilvamhygkzupvfnxz.supabase.co";
+  "https://bxdqkigoidwnscsjafwd.supabase.co";
 const SB_SRV =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.service_role ||

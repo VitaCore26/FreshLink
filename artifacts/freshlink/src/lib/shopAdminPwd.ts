@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs"
 //  Aucune valeur en clair n'est jamais renvoyée au client.
 // ════════════════════════════════════════════════════════════════════════════
 
-const SB_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://wnuilvamhygkzupvfnxz.supabase.co"
+const SB_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://bxdqkigoidwnscsjafwd.supabase.co"
 const SB_SRV = import.meta.env.VITE_SUPABASE_SERVICE_KEY ?? ""
 const ENV_PWD = import.meta.env.VITE_SHOP_ADMIN_PASSWORD ?? ""
 

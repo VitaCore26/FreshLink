@@ -61,7 +61,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Always restart the api-server workflow after code changes (it does a full esbuild compile on start)
 - Frontend `deviceGuard.ts` must NOT import Node.js `crypto` — use Web Crypto API instead
 - The 401 on `/api/device/seen` on first load is expected — device not yet approved/cookied
-- Supabase credentials: project `wnuilvamhygkzupvfnxz.supabase.co` (hardcoded fallback in client.ts)
+- Supabase credentials: project `bxdqkigoidwnscsjafwd.supabase.co` (hardcoded fallback in client.ts)
 - Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` env vars for Supabase connectivity
 - Set `SUPABASE_SERVICE_ROLE_KEY` in api-server env for service_role operations
 
