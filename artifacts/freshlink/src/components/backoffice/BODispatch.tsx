@@ -122,13 +122,12 @@ export default function BODispatch({ user }: Props) {
   const prevendeurs = [...new Set(availableCommandes.map(c => c.commercialNom))]
   const activeLivreurs = livreurs.filter(l => l.actif)
 
-  // Démarrage / fin de tournée = action du LIVREUR assigné (ou d'un manager
-  // logistique en secours). Un autre livreur ne peut pas démarrer la tournée
-  // de quelqu'un d'autre.
-  const TRIP_MANAGERS = ["super_super_admin", "super_admin", "admin", "resp_logistique", "dispatcheur"]
-  const canManageTrips = TRIP_MANAGERS.includes(user.role)
+  // Démarrage / fin de tournée = action exclusive du LIVREUR assigné. Ni le
+  // BO ni l'admin ne peuvent déclencher Départ/Terminée, même avec un rôle
+  // "dispatcheur"/"admin" — un autre livreur ne peut pas non plus démarrer
+  // la tournée de quelqu'un d'autre.
   const ownsTrip = (t: Trip) => user.role === "livreur" && (t.livreurId === user.id || t.livreurNom === user.name)
-  const canRunTrip = (t: Trip) => canManageTrips || ownsTrip(t)
+  const canRunTrip = (t: Trip) => ownsTrip(t)
 
   // Estimation coût voyage + analyse carburant (prévu vs réel) d'un trip
   const tripCout = (t: Trip) => {
@@ -194,17 +193,37 @@ export default function BODispatch({ user }: Props) {
     if (statut === "terminé") {
       const trip = store.getTrips().find(t => t.id === id)
       if (trip) {
+        // Préparations numériques validées liées à cette tournée — source de
+        // vérité pour les quantités réellement picking (jamais la commande
+        // d'origine si une préparation existe : zéro écart toléré entre le
+        // préparé validé et le BL).
+        const preps = store.getBonsPreparation().filter(p => p.tripId === id && p.statut === "valide")
         trip.commandeIds.forEach(cid => {
           const cmd = store.getCommandes().find(c => c.id === cid)
           if (cmd && cmd.statut === "en_transit") {
             store.updateCommande(cid, { statut: "livre" })
-            const total = cmd.lignes.reduce((s, l) => s + l.quantite * (l.prixVente ?? l.prixUnitaire ?? 0), 0)
+            const lignes = cmd.lignes.map(l => {
+              let qte = l.quantite // repli : pas de préparation numérique pour cette tournée
+              for (const prep of preps) {
+                const pl = prep.lignes.find(pl => pl.articleId === l.articleId)
+                const ordered = pl?.qtesParClient[cmd.clientId]
+                if (!pl || !ordered) continue
+                // Écart préparé vs commandé sur cet article -> répercuté au prorata
+                // sur la part de ce client (qtePrepared fait foi, jamais qteCommandee).
+                const ratio = pl.qteCommandee > 0 ? pl.qtePrepared / pl.qteCommandee : 1
+                qte = ordered * ratio
+                break
+              }
+              const prixU = l.prixVente ?? l.prixUnitaire ?? 0
+              return { articleNom: l.articleNom, quantite: qte, prixUnitaire: prixU, total: qte * prixU }
+            })
+            const total = lignes.reduce((s, l) => s + l.total, 0)
             const tva = 0.20
             store.addBonLivraison({
               id: store.genBL(), date: store.today(), tripId: id,
               commandeId: cid, clientNom: cmd.clientNom, secteur: cmd.secteur, zone: cmd.zone,
               livreurNom: trip.livreurNom, prevendeurNom: cmd.commercialNom,
-              lignes: cmd.lignes.map(l => ({ articleNom: l.articleNom, quantite: l.quantite, prixUnitaire: l.prixVente ?? l.prixUnitaire ?? 0, total: l.quantite * (l.prixVente ?? l.prixUnitaire ?? 0) })),
+              lignes,
               montantTotal: total, tva, montantTTC: total * (1 + tva),
               statut: "émis", statutLivraison: "livre", valideMagasinier: false,
             })
