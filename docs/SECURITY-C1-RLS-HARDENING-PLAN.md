@@ -1,5 +1,21 @@
 # 🔴 C1 — Plan de durcissement RLS (base Supabase publique)
 
+> **MISE À JOUR 2026-07-01** : ce plan supposait RLS désactivée + `GRANT ALL`
+> à `anon`. Vérification empirique sur la prod (projet `bxdqkigoidwnscsjafwd`,
+> et l'ancien projet avant migration) : **RLS est déjà activée et FORCÉE sur
+> les 65 tables `fl_*`**, et 8 policies anon légitimes existent déjà (lecture
+> catalogue/contacts/feedbacks/news/stats shop, dépôt d'avis). Le "problème"
+> décrit ci-dessous est donc déjà résolu en pratique — quelqu'un a durci la
+> base sans mettre à jour ce document ni `supabase/migrations/0001_rls_hardening.sql`
+> (désormais resynchronisé, voir ce fichier).
+>
+> Point encore ouvert, sans lien avec RLS : `lib/auth/supabaseAuth.ts` /
+> `hooks/useAuth.ts` interrogent `fl_users` comme si elle avait des colonnes
+> plates, alors que le schéma réel est `(id, payload jsonb, updated_at)` — ce
+> code semble déjà mort ou cassé indépendamment de RLS (le vrai login passe
+> par `/api/ext/auth`). À auditer séparément avant de le retoucher ou de le
+> supprimer.
+
 ## Problème
 RLS est **désactivé** et `GRANT ALL TO anon` est appliqué à toutes les tables `fl_*`
 (`artifacts/freshlink/public/supabase-setup.sql`, ~l.278-295). La clé `anon` étant
