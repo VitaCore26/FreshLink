@@ -245,6 +245,14 @@ export async function signOut(): Promise<void> {
 
 /**
  * Créer un nouvel utilisateur (admin seulement)
+ *
+ * NOTE : fl_users est une table JSONB générique (id, payload, updated_at), pas
+ * de colonnes plates — et le client navigateur n'a que la clé anon (jamais
+ * service_role). `supabase.auth.admin.createUser()` (utilisé ici avant) exige
+ * service_role et échouait donc systématiquement. On suit désormais le même
+ * schéma que components/backoffice/BOUsers.tsx (le vrai écran de gestion des
+ * utilisateurs, fonctionnel) : écriture locale + push via /api/sync-write
+ * (service_role côté serveur, contourne la RLS).
  */
 export async function createUser(
   email: string,
@@ -252,81 +260,35 @@ export async function createUser(
   userData: Partial<User>
 ): Promise<{ user: User | null; error: string | null }> {
   try {
-    const supabase = createClient()
-
-    // 1. Créer le compte Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const newUser: User = {
+      id: store.genId(),
+      name: userData.name || "Nouvel utilisateur",
       email,
       password,
-      email_confirm: true,
-    })
-
-    if (authError || !authData.user) {
-      return { user: null, error: authError?.message || "Erreur création compte" }
-    }
-
-    // 2. Créer le profil dans fl_users
-    const newUser: Partial<User> = {
-      id: authData.user.id,
-      email,
-      name: userData.name || "Nouvel utilisateur",
       role: userData.role || "prevendeur",
       actif: true,
       ...userData,
     }
 
-    // fl_users utilise des colonnes snake_case : on mappe camelCase → snake_case
-    // (miroir de la lecture dans signInWithEmail/getCurrentUser).
-    const newRow: FlUserRow = {
-      id: authData.user.id,
-      name: newUser.name!,
-      email,
-      role: newUser.role!,
-      actif: newUser.actif ?? true,
-      access_type: newUser.accessType,
-      secteur: newUser.secteur,
-      phone: newUser.phone,
-      telephone: newUser.telephone,
-      photo_url: newUser.photoUrl,
-      can_view_achat: newUser.canViewAchat,
-      can_view_commercial: newUser.canViewCommercial,
-      can_view_logistique: newUser.canViewLogistique,
-      can_view_stock: newUser.canViewStock,
-      can_view_cash: newUser.canViewCash,
-      can_view_finance: newUser.canViewFinance,
-      can_view_recap: newUser.canViewRecap,
-      can_view_database: newUser.canViewDatabase,
-      can_view_external: newUser.canViewExternal,
-      can_create_commande_bo: newUser.canCreateCommandeBO,
-      objectif_clients: newUser.objectifClients,
-      objectif_tonnage: newUser.objectifTonnage,
-      objectif_journalier_ca: newUser.objectifJournalierCA,
-      objectif_hebdomadaire_ca: newUser.objectifHebdomadaireCA,
-      objectif_mensuel_ca: newUser.objectifMensuelCA,
-      fournisseur_id: newUser.fournisseurId,
-      client_id: newUser.clientId,
-      depot_id: newUser.depotId,
-      require_camera_auth: newUser.requireCameraAuth,
+    const all = store.getUsers()
+    all.push(newUser)
+    store.saveUsers(all)
+
+    const { id, ...payload } = newUser
+    const res = await fetch("/api/sync-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table: "fl_users",
+        upserts: [{ id, payload, updated_at: new Date().toISOString() }],
+      }),
+    })
+    const json = await res.json() as { ok: boolean; errors?: string[] }
+    if (!json.ok) {
+      return { user: null, error: json.errors?.join(", ") || "Erreur de synchronisation" }
     }
 
-    // fl_users n'ayant pas de types Supabase générés, le client type l'Insert de
-    // cette table comme `never` (même cause que les casts `as FlUserRow` à la
-    // lecture). Le payload est désormais correctement mappé en snake_case ci-dessus ;
-    // le cast ne fait que franchir cette frontière non typée.
-    const { error: dbError } = await supabase
-      .from("fl_users")
-      .insert([newRow] as never)
-
-    if (dbError) {
-      // Rollback : supprimer le compte auth si la création DB échoue
-      await supabase.auth.admin.deleteUser(authData.user.id)
-      return { user: null, error: dbError.message }
-    }
-
-    return {
-      user: newUser as User,
-      error: null,
-    }
+    return { user: newUser, error: null }
   } catch (e) {
     return {
       user: null,
