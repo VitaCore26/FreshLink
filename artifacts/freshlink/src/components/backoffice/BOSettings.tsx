@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
-import { store, type EmailConfig, type MotifRetour, type CompanyConfig, type CompanyContacts, type WorkflowConfig, type WorkflowStep, type ContenantTare, DEFAULT_WORKFLOW_STEPS, type ProcessConfig, DEFAULT_PROCESS_CONFIG, type TransportCompany, ROLE_LABELS, type UserRole } from "@/lib/store"
+import { store, passwordMatches, type EmailConfig, type MotifRetour, type CompanyConfig, type CompanyContacts, type WorkflowConfig, type WorkflowStep, type ContenantTare, DEFAULT_WORKFLOW_STEPS, type ProcessConfig, DEFAULT_PROCESS_CONFIG, type TransportCompany, ROLE_LABELS, type UserRole } from "@/lib/store"
 import { useRealtimeSync } from "@/lib/supabase/useRealtimeSync"
 import { seedDemoData } from "@/lib/seedData"
 // EmailJS retiré — l'envoi d'email passe par Resend (serveur, /api/send-email)
@@ -302,6 +302,24 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
       setSbCheck({ connected: false, tables_exist: 0, tables_total: 22, missing: [], ready: false })
     }
     setSbChecking(false)
+  }
+
+  // Resynchroniser tire toutes les tables Supabase par-dessus le cache local —
+  // action sensible (peut écraser des données locales non encore poussées) :
+  // on exige une re-saisie du mot de passe avant de l'exécuter.
+  const [showSyncConfirm, setShowSyncConfirm] = useState(false)
+  const [syncConfirmPwd, setSyncConfirmPwd]   = useState("")
+  const [syncConfirmError, setSyncConfirmError] = useState<string | null>(null)
+
+  const confirmAndSync = () => {
+    const full = store.getUsers().find(u => u.id === user.id)
+    const ok = !!full && (
+      passwordMatches(full.password, syncConfirmPwd) ||
+      passwordMatches(full.passwordBO, syncConfirmPwd)
+    )
+    if (!ok) { setSyncConfirmError("Mot de passe incorrect."); return }
+    setShowSyncConfirm(false); setSyncConfirmPwd(""); setSyncConfirmError(null)
+    handleSbSync()
   }
 
   const handleSbSync = async () => {
@@ -2995,15 +3013,41 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
 
               {/* Sync button */}
               <div className="flex flex-col gap-2">
-                <button
-                  onClick={handleSbSync}
-                  disabled={sbSyncing}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-60 shadow-sm w-fit">
-                  {sbSyncing
-                    ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg> Synchronisation…</>
-                    : <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> Sync Supabase → localStorage</>
-                  }
-                </button>
+                {!showSyncConfirm ? (
+                  <button
+                    onClick={() => { setSyncConfirmError(null); setSyncConfirmPwd(""); setShowSyncConfirm(true) }}
+                    disabled={sbSyncing}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-60 shadow-sm w-fit">
+                    {sbSyncing
+                      ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg> Synchronisation…</>
+                      : <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> Sync Supabase → localStorage</>
+                    }
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-2 p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 w-fit min-w-[280px]">
+                    <p className="text-xs font-bold text-emerald-800">Confirmez votre mot de passe pour synchroniser</p>
+                    <input
+                      type="password"
+                      autoFocus
+                      value={syncConfirmPwd}
+                      onChange={e => { setSyncConfirmPwd(e.target.value); setSyncConfirmError(null) }}
+                      onKeyDown={e => { if (e.key === "Enter") confirmAndSync() }}
+                      placeholder="Mot de passe"
+                      className="px-3 py-1.5 text-xs rounded-lg border border-emerald-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    />
+                    {syncConfirmError && <p className="text-[11px] text-red-600 font-semibold">{syncConfirmError}</p>}
+                    <div className="flex gap-2">
+                      <button onClick={confirmAndSync}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-colors">
+                        Confirmer
+                      </button>
+                      <button onClick={() => { setShowSyncConfirm(false); setSyncConfirmPwd(""); setSyncConfirmError(null) }}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted transition-colors">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {sbSyncResult && (
                   <div className={`flex items-start gap-2 px-3 py-2 rounded-xl text-xs border ${sbSyncResult.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
                     <span>

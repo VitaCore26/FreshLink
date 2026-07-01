@@ -46,30 +46,46 @@ function MainApp() {
     }
   }, [])
 
+  // Obtenir le cookie d'appareil (fl_device_token) DÈS LE CHARGEMENT DE L'APP,
+  // avant toute connexion — INDISPENSABLE : /api/sync-read et /api/sync-write
+  // le refusent sans lui (401 "Device non autorisé"), et le login lui-même
+  // appelle sync-read (fetchUsers) pour vérifier les identifiants. Gater ce
+  // fetch derrière `user` créait une impasse : impossible de se connecter la
+  // première fois sur un appareil neuf (aucun cookie -> fetchUsers échoue
+  // silencieusement -> liste d'utilisateurs vide/périmée -> "identifiants
+  // incorrects" même avec le bon mot de passe).
   useEffect(() => {
-    if (!user) return
     import("@/lib/deviceFingerprint").then(async ({ getDeviceFingerprint }) => {
       const fp = await getDeviceFingerprint()
       if (!fp) return
-      // 1) Obtenir le cookie d'appareil (fl_device_token) — INDISPENSABLE : sans lui,
-      //    /api/sync-read et /api/sync-write renvoient 401 et l'ERP reste "offline".
-      //    Le flux normal ne le faisait pas (seul /device/seen était appelé).
       try {
         await fetch("/api/device/check-and-token", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fingerprint: fp }),
         })
       } catch { /* hors-ligne : on reste sur le cache local */ }
-      // 2) Enregistrer l'appareil (liste BO → Accès Appareils)
+      fetch("/api/device/seen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fingerprint: fp, userAgent: navigator.userAgent }),
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [])
+
+  // Une fois connecté (cookie déjà posé par l'effet ci-dessus) : resynchro complète.
+  useEffect(() => {
+    if (!user) return
+    import("@/lib/deviceFingerprint").then(async ({ getDeviceFingerprint }) => {
+      const fp = await getDeviceFingerprint()
+      if (!fp) return
+      // Ré-enregistre l'appareil avec le nom de l'utilisateur maintenant connu.
       fetch("/api/device/seen", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint: fp, nom: user.name, userAgent: navigator.userAgent }),
       }).catch(() => {})
-      // 3) Le cookie est maintenant posé → relancer la synchro Supabase
-      import("@/lib/supabase/db").then(({ syncFromSupabase }) => {
-        syncFromSupabase().then(() => {
-          window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
-        }).catch(() => {})
+    }).catch(() => {})
+    import("@/lib/supabase/db").then(({ syncFromSupabase }) => {
+      syncFromSupabase().then(() => {
+        window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
       }).catch(() => {})
     }).catch(() => {})
   }, [user])
