@@ -1,13 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+// Default to 3000 when unset: some hosts (e.g. LiteSpeed/Passenger-style
+// lsnode) spawn the app without ever setting PORT and instead proxy to a
+// fixed/expected port.
+const rawPort = process.env["PORT"] || "3000";
 
 const port = Number(rawPort);
 
