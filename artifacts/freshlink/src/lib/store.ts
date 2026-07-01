@@ -2304,7 +2304,10 @@ export const store = {
     // - tout utilisateur avec l'email jawad@vita-fresh.ma qui n'est pas VFU00001
     const clean = raw.filter(u =>
       u.id !== "u_jawad_root" &&
-      !(String(u.email ?? "").toLowerCase() === "jawad@vita-fresh.ma" && u.id !== JAWAD_ID)
+      !(String(u.email ?? "").toLowerCase() === "jawad@vita-fresh.ma" && u.id !== JAWAD_ID) &&
+      // Lignes système (marqueurs internes stockés dans fl_users, ex. révocation
+      // de sessions) — jamais de vrais utilisateurs, à ne jamais afficher/lister.
+      !String(u.id ?? "").startsWith("__")
     )
     // Migrer localStorage si nécessaire (u_jawad_root présent → on sauvegarde proprement)
     const hadLegacy = raw.some(u => u.id === "u_jawad_root")

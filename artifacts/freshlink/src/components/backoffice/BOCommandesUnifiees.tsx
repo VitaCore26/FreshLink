@@ -159,7 +159,15 @@ export default function BOCommandesUnifiees({ user }: Props) {
     const client = store.getClients().find(c => c.id === noClientId)
     if (!client) { setMsg({ ok: false, text: "Choisissez un client." }); return }
     const articles = store.getArticles()
-    const toNum = (s: string) => Number(String(s).replace(",", ".").trim())
+    // Convertit chiffres arabes-indiens (٠-٩) et persans (۰-۹) en ASCII avant
+    // parseFloat — Number()/parseFloat() renvoient NaN sur ces glyphes, ce qui
+    // fait échouer silencieusement la validation "quantite > 0" pour tout
+    // utilisateur avec un clavier/locale arabe (message trompeur "Ajoutez au
+    // moins une ligne valide." alors qu'une quantité est bien saisie à l'écran).
+    const toNum = (s: string) => {
+      const ascii = String(s).replace(/[٠-٩۰-۹]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d) >= 0 ? "٠١٢٣٤٥٦٧٨٩".indexOf(d) : "۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+      return Number(ascii.replace(",", ".").trim())
+    }
     const lignes: LigneCommande[] = noLignes
       .filter(l => l.articleId && toNum(l.quantite) > 0)
       .map(l => {

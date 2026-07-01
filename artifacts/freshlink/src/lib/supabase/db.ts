@@ -31,7 +31,12 @@ function toRow(item: Record<string, unknown>) {
 }
 
 function fromRow<T>(row: { id: string; payload: unknown }): T {
-  if (row.payload && typeof row.payload === "object") return row.payload as T
+  // row.id (la vraie clé primaire) fait toujours foi — certains payloads plus
+  // anciens ne contiennent pas leur propre "id", ce qui laissait l'objet
+  // reconstitué avec id=undefined (ex: crash "Cannot read properties of null
+  // (reading 'sending')" dans la liste Utilisateurs : un id undefined pouvait
+  // matcher un état null par coïncidence dans une comparaison).
+  if (row.payload && typeof row.payload === "object") return { ...row.payload, id: row.id } as T
   return row as unknown as T
 }
 
