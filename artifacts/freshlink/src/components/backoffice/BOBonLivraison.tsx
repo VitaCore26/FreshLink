@@ -926,7 +926,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
       clientModalitePaiement:  bl.clientModalitePaiement ?? (client?.modalitePaiement ?? ""),
       clientCreditSolde:       bl.clientCreditSolde ?? client?.creditSolde,
       clientCreditAutorise:    bl.clientCreditAutorise ?? client?.creditAutorise,
-    }, printOpts)
+    }, printOpts, store.getCompanyConfig())
   }
 
   const qcObligatoire = useMemo(() => {
@@ -1707,7 +1707,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
                           {/* Telecharger */}
                           <button onClick={() => {
                             const c = store.getClients().find(c => c.id === bl.clientId || c.nom === bl.clientNom)
-                            downloadBLFromBO({ ...bl, clientIce: bl.clientIce ?? c?.ice, clientModalitePaiement: bl.clientModalitePaiement ?? (c?.modalitePaiement ?? ""), clientCreditSolde: bl.clientCreditSolde ?? c?.creditSolde, clientCreditAutorise: bl.clientCreditAutorise ?? c?.creditAutorise }, printOpts)
+                            downloadBLFromBO({ ...bl, clientIce: bl.clientIce ?? c?.ice, clientModalitePaiement: bl.clientModalitePaiement ?? (c?.modalitePaiement ?? ""), clientCreditSolde: bl.clientCreditSolde ?? c?.creditSolde, clientCreditAutorise: bl.clientCreditAutorise ?? c?.creditAutorise }, printOpts, store.getCompanyConfig())
                           }} title="Telecharger"
                             className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

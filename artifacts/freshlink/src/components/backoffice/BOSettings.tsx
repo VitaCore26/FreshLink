@@ -2885,7 +2885,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
                 </div>
                 <div>
                   <p className="font-bold text-blue-900 text-sm">Connectivité Supabase</p>
-                  <p className="text-xs text-blue-700">Projet : jwdrwapuetqoqnankgma</p>
+                  <p className="text-xs text-blue-700">Projet : bxdqkigoidwnscsjafwd</p>
                 </div>
               </div>
               <button
@@ -2906,7 +2906,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
                 <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Variables d&apos;environnement (Vercel)</p>
                 <div className="space-y-2">
                   {[
-                    { key: "NEXT_PUBLIC_SUPABASE_URL",    label: "Supabase URL",          required: true,  hint: "https://jwdrwapuetqoqnankgma.supabase.co" },
+                    { key: "NEXT_PUBLIC_SUPABASE_URL",    label: "Supabase URL",          required: true,  hint: "https://bxdqkigoidwnscsjafwd.supabase.co" },
                     { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", label: "Anon Key (lecture)",  required: true,  hint: "eyJhb... (clé publique)" },
                     { key: "SUPABASE_SERVICE_ROLE_KEY",   label: "Service Role Key",       required: true,  hint: "eyJhb... ⚠️ CONFIDENTIEL — nécessaire pour sync-write" },
                     { key: "RESEND_API_KEY",              label: "Resend (email)",          required: false, hint: "re_... — Notifications email" },
@@ -2978,7 +2978,7 @@ export default function BOSettings({ user }: { user: { id: string; name: string;
                         </svg>
                         <span>
                           Créer les tables via le&nbsp;
-                          <a href={sbCheck.supabase_sql_editor ?? "https://supabase.com/dashboard/project/jwdrwapuetqoqnankgma/sql/new"}
+                          <a href={sbCheck.supabase_sql_editor ?? "https://supabase.com/dashboard/project/bxdqkigoidwnscsjafwd/sql/new"}
                             target="_blank" rel="noopener" className="font-bold text-blue-600 hover:underline">
                             SQL Editor Supabase
                           </a>

@@ -650,8 +650,8 @@ interface BOBonLivraison {
   notesBL?:              string
 }
 
-function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts): string {
-  const cfg    = { ...vita_fresh_CONFIG }
+function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts, company?: CompanyConfig): string {
+  const cfg    = { ...vita_fresh_CONFIG, ...company }
   const accent = cfg.couleurEntete ?? "#1a4f2a"
   const gold   = "#b8962e"
   const companyNom = opts.nomSocieteOverride || cfg.nom
@@ -744,11 +744,11 @@ ${isFacture?`<div class="notice" style="margin-top:8px"><strong>Document :</stro
 </div><script>window.onload=()=>{window.print()}</script></body></html>`
 }
 
-export function printBLFromBO(bl: BOBonLivraison, opts: PrintBLOpts = {}) {
-  open(buildBLHtml(bl, opts))
+export function printBLFromBO(bl: BOBonLivraison, opts: PrintBLOpts = {}, company?: CompanyConfig) {
+  open(buildBLHtml(bl, opts, company))
 }
-export function downloadBLFromBO(bl: BOBonLivraison, opts: PrintBLOpts = {}) {
-  dl(buildBLHtml(bl, opts), `BL-${bl.numero.replace(/[^a-zA-Z0-9-]/g,"_")}.html`)
+export function downloadBLFromBO(bl: BOBonLivraison, opts: PrintBLOpts = {}, company?: CompanyConfig) {
+  dl(buildBLHtml(bl, opts, company), `BL-${bl.numero.replace(/[^a-zA-Z0-9-]/g,"_")}.html`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
