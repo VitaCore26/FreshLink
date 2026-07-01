@@ -159,6 +159,7 @@ export interface Client {
   adresse?: string
   ice?: string // Identifiant Commun de l'Entreprise (Maroc)
   notes?: string
+  heureLivraison?: string  // "HH:MM" — créneau de livraison par défaut de ce client, saisi à la création
   // ── Photo du client (logo/devanture/photo de profil) ──
   // Affichée dans le BO, l'app mobile commercial, et le portail web client
   photo?: string  // URL (Unsplash, Supabase Storage, base64, etc.)

@@ -18,6 +18,7 @@ import MobileFeedback from "./MobileFeedback"
 import MobileMagasinier from "./MobileMagasinier"
 import FreshLinkLogo from "@/components/ui/FreshLinkLogo"
 import LangSwitcher from "@/components/ui/LangSwitcher"
+import ThemeToggle from "@/components/ui/ThemeToggle"
 import MobilePricing from "./MobilePricing"
 import MobileBLValidation from "./MobileBLValidation"
 import MobileAlertes from "./MobileAlertes"
@@ -151,6 +152,7 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
 
         <div className="flex items-center gap-1.5" data-no-translate>
           <LangSwitcher compact />
+          <ThemeToggle compact />
 
           {/* Online indicator */}
           <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border ${isOnline ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-700"}`}>

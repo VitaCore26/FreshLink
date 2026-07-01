@@ -87,6 +87,14 @@ export default function MobileCommercial({ user }: Props) {
 
   // Add new client
   const [showAddClient, setShowAddClient] = useState(false)
+  // Heure de livraison par défaut = la dernière choisie par CE prévendeur —
+  // masquée par défaut dans le formulaire (pas de saisie supplémentaire à
+  // faire à chaque client), affichable/modifiable au besoin.
+  const LAST_HEURE_KEY = `fl_last_heure_livraison_${user.id}`
+  const lastHeureLivraison = () => {
+    try { return localStorage.getItem(LAST_HEURE_KEY) || "08:00" } catch { return "08:00" }
+  }
+  const [showHeureLivraison, setShowHeureLivraison] = useState(false)
   const [newClient, setNewClient] = useState({
     nom: "", secteur: user.secteur || "", zone: "",
     type: "epicerie" as Client["type"], typeAutre: "",
@@ -95,6 +103,7 @@ export default function MobileCommercial({ user }: Props) {
     rotation: "journalier" as Client["rotation"],
     telephone: "", email: "", adresse: "",
     categorie: undefined as "chr" | "marchand" | "particulier" | undefined,
+    heureLivraison: lastHeureLivraison(),
   })
 
   // Proximity radius (km) — configurable by prevendeur
@@ -452,16 +461,20 @@ export default function MobileCommercial({ user }: Props) {
       createdAt: store.today(),
       prevendeurId: user.id,
       categorie: newClient.categorie,
+      heureLivraison: newClient.heureLivraison,
     }
     store.addClient(client)
     // Sync le nouveau client vers Supabase (back-office)
     import("@/lib/supabase/db").then(db => db.upsertClient(client)).catch(e => console.error("[MobileCommercial] sync client error:", e))
+    // Mémorise cette heure comme défaut pour le PROCHAIN client créé par ce prévendeur
+    try { localStorage.setItem(LAST_HEURE_KEY, newClient.heureLivraison) } catch { /* noop */ }
     setClients(store.getClients())
     setSelectedClientId(client.id)
     setShowAddClient(false)
+    setShowHeureLivraison(false)
     setNewClient({ nom: "", secteur: user.secteur || "", zone: "", type: "epicerie", typeAutre: "",
       taille: "150-300kg", typeProduits: "moyenne", rotation: "journalier",
-      telephone: "", email: "", adresse: "", categorie: undefined })
+      telephone: "", email: "", adresse: "", categorie: undefined, heureLivraison: newClient.heureLivraison })
   }
 
   // Returns the quantity in BASE units (kg/piece/...) regardless of input mode
@@ -1088,6 +1101,22 @@ export default function MobileCommercial({ user }: Props) {
               <label className="text-xs font-semibold text-foreground">Email (optionnel)</label>
               <input type="email" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })}
                 className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            </div>
+            {/* Heure de livraison — masquée par défaut, pré-remplie avec la dernière heure utilisée */}
+            <div className="col-span-2">
+              {!showHeureLivraison ? (
+                <button type="button" onClick={() => setShowHeureLivraison(true)}
+                  className="text-xs font-semibold text-primary underline">
+                  Livraison par défaut : {newClient.heureLivraison} · Modifier
+                </button>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-foreground">Heure de livraison par défaut</label>
+                  <input type="time" value={newClient.heureLivraison}
+                    onChange={e => setNewClient({ ...newClient, heureLivraison: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+              )}
             </div>
             {/* Credit section */}
             <div className="col-span-2 border-t border-border pt-3 flex flex-col gap-2">

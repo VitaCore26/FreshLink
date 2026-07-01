@@ -83,10 +83,16 @@ function MainApp() {
         body: JSON.stringify({ fingerprint: fp, nom: user.name, userAgent: navigator.userAgent }),
       }).catch(() => {})
     }).catch(() => {})
-    import("@/lib/supabase/db").then(({ syncFromSupabase }) => {
+    import("@/lib/supabase/db").then(({ syncFromSupabase, hydrateConfigs }) => {
       syncFromSupabase().then(() => {
         window.dispatchEvent(new CustomEvent("fl_store_updated", { detail: { table: "all" } }))
       }).catch(() => {})
+      // Recharge process/workflow/alertes/email config à chaque ouverture de
+      // l'app (pas juste au login) — sinon un utilisateur qui reste connecté
+      // (session persistée) garde un cache de config périmé indéfiniment :
+      // un admin qui désactive "Photo achat obligatoire" côté BO n'a aucun
+      // effet chez un acheteur déjà connecté tant qu'il ne se reconnecte pas.
+      hydrateConfigs().catch(() => {})
     }).catch(() => {})
   }, [user])
 

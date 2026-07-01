@@ -451,7 +451,7 @@ export default function BOCommandesUnifiees({ user }: Props) {
       {/* ── Modal : nouvelle commande (création manuelle) ── */}
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
               <h3 className="font-bold text-slate-800">Nouvelle commande</h3>
               <button onClick={() => setShowNew(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">✕</button>

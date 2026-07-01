@@ -238,6 +238,7 @@ export default function MobileAchat({ user }: Props) {
   const [poModalId, setPoModalId] = useState<string | null>(null)
   const [poDetail, setPoDetail] = useState({
     quantite: "",
+    nbUnites: "",   // nombre d'UM (caisses/cartons…) — calcule quantite = nbUnites × colisageParUM
     prixUnitaire: "",
     fournisseurId: "",
     montantPaye: "",
@@ -245,6 +246,7 @@ export default function MobileAchat({ user }: Props) {
     notePaiement: "",
     photoAchat: "",       // photo obligatoire avant validation
     chargeIds: [] as string[],  // plusieurs charges par article (chariot, manutention…)
+    chargeMontants: {} as Record<number, string>,  // override par ligne — vide = valeur par défaut du BO
   })
   const [chargesArticle, setChargesArticle] = useState(store.getChargesArticle())
   const [poSaving, setPoSaving] = useState(false)
@@ -254,7 +256,14 @@ export default function MobileAchat({ user }: Props) {
   const setChargeRow = (idx: number, id: string) => setPoDetail(p => {
     const next = [...p.chargeIds]; next[idx] = id; return { ...p, chargeIds: next }
   })
-  const removeChargeRow = (idx: number) => setPoDetail(p => ({ ...p, chargeIds: p.chargeIds.filter((_, i) => i !== idx) }))
+  const removeChargeRow = (idx: number) => setPoDetail(p => {
+    const chargeIds = p.chargeIds.filter((_, i) => i !== idx)
+    // Réindexe les overrides restants (les indices se décalent après suppression)
+    const chargeMontants: Record<number, string> = {}
+    p.chargeIds.forEach((_, i) => { if (i === idx) return; const ni = i > idx ? i - 1 : i; if (p.chargeMontants[i] !== undefined) chargeMontants[ni] = p.chargeMontants[i] })
+    return { ...p, chargeIds, chargeMontants }
+  })
+  const setChargeMontantOverride = (idx: number, v: string) => setPoDetail(p => ({ ...p, chargeMontants: { ...p.chargeMontants, [idx]: v } }))
   // Crée une NOUVELLE charge dans le catalogue (si elle n'existe pas) et l'ajoute en ligne
   const createNewCharge = () => {
     const nom = window.prompt("Nom de la nouvelle charge (ex: Chariot, Manutention) :", "")?.trim()
@@ -269,13 +278,19 @@ export default function MobileAchat({ user }: Props) {
     setPoDetail(p => ({ ...p, chargeIds: [...p.chargeIds, created.id] }))
   }
   const chargeMontantOf = (id: string) => Number(chargesArticle.find(c => c.id === id)?.montant) || 0
-  const totalChargeUnit = () => poDetail.chargeIds.reduce((s, id) => s + chargeMontantOf(id), 0)
+  // Valeur par défaut = catalogue BO ; l'acheteur peut la surcharger par ligne de PO
+  const chargeMontantAt = (idx: number, id: string) => {
+    const override = poDetail.chargeMontants[idx]
+    return override !== undefined && override !== "" ? (Number(override) || 0) : chargeMontantOf(id)
+  }
+  const totalChargeUnit = () => poDetail.chargeIds.reduce((s, id, idx) => s + chargeMontantAt(idx, id), 0)
 
   const openPOModal = (po: typeof pendingPOs[0]) => {
     // Charge par défaut = celle affectée à l'article (back-office), modifiable ici
     const art = store.getArticles().find(a => a.id === po.articleId)
     setPoDetail({
       quantite: String(po.quantite),
+      nbUnites: art?.colisageParUM ? String(Math.round((po.quantite / art.colisageParUM) * 100) / 100) : "",
       prixUnitaire: String(po.prixUnitaire),
       fournisseurId: po.fournisseurId,
       montantPaye: "",
@@ -283,6 +298,7 @@ export default function MobileAchat({ user }: Props) {
       notePaiement: "",
       photoAchat: "",
       chargeIds: (po.chargeArticleId ?? art?.chargeArticleId) ? [po.chargeArticleId ?? art?.chargeArticleId ?? ""] : [],
+      chargeMontants: {},
     })
     setPoModalId(po.id)
   }
@@ -301,9 +317,15 @@ export default function MobileAchat({ user }: Props) {
     const total = qty * pu
     const fourNom = fournisseurs.find(f => f.id === poDetail.fournisseurId)?.nom ?? ""
     const po = store.getPurchaseOrders().find(p => p.id === poModalId)
-    // Charges par article (plusieurs possibles) — coût de revient
+    // Charges par article (plusieurs possibles) — coût de revient. Le montant
+    // retenu est celui affiché à l'écran (override acheteur si saisi, sinon
+    // la valeur par défaut du catalogue BO) — jamais divergent de l'aperçu.
     const selectedCharges = poDetail.chargeIds
-      .map(id => chargesArticle.find(c => c.id === id))
+      .map((id, idx) => {
+        const c = chargesArticle.find(c => c.id === id)
+        if (!c) return null
+        return { id: c.id, nom: c.nom, montant: chargeMontantAt(idx, id) }
+      })
       .filter((c): c is { id: string; nom: string; montant: number } => !!c)
     const chargeMontant = selectedCharges.reduce((s, c) => s + (Number(c.montant) || 0), 0)
     store.updatePurchaseOrder(poModalId, {
@@ -1364,6 +1386,7 @@ export default function MobileAchat({ user }: Props) {
       {poModalId && (() => {
         const po = pendingPOs.find(p => p.id === poModalId) ?? store.getPurchaseOrders().find(p => p.id === poModalId)
         if (!po) return null
+        const poArt = store.getArticles().find(a => a.id === po.articleId)
         const totalCalc = (Number(poDetail.quantite) || 0) * (Number(poDetail.prixUnitaire) || 0)
         return (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={() => setPoModalId(null)}>
@@ -1391,7 +1414,13 @@ export default function MobileAchat({ user }: Props) {
                     <input
                       type="number" min="0"
                       value={poDetail.quantite}
-                      onChange={e => setPoDetail(p => ({ ...p, quantite: e.target.value }))}
+                      onChange={e => {
+                        const v = e.target.value
+                        setPoDetail(p => ({
+                          ...p, quantite: v,
+                          nbUnites: poArt?.colisageParUM ? String(Math.round(((Number(v) || 0) / poArt.colisageParUM) * 100) / 100) : p.nbUnites,
+                        }))
+                      }}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-green-400"
                       placeholder="0"
                     />
@@ -1407,6 +1436,27 @@ export default function MobileAchat({ user }: Props) {
                     />
                   </div>
                 </div>
+
+                {/* Nombre d'unités (caisses/cartons…) — recalcule la quantité totale */}
+                {poArt?.colisageParUM ? (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Nombre d&apos;unités ({poArt.um ?? "UM"} de {poArt.colisageParUM} {po.articleUnite})
+                    </label>
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={poDetail.nbUnites}
+                      onChange={e => {
+                        const v = e.target.value
+                        const nb = Number(v) || 0
+                        setPoDetail(p => ({ ...p, nbUnites: v, quantite: String(Math.round(nb * (poArt.colisageParUM ?? 0) * 100) / 100) }))
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-green-400"
+                      placeholder="0"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Modifier ce champ recalcule automatiquement la quantité totale ci-dessus.</p>
+                  </div>
+                ) : null}
 
                 {/* Charges par article (plusieurs possibles) — charge | coût + "+" */}
                 <div>
@@ -1434,7 +1484,10 @@ export default function MobileAchat({ user }: Props) {
                             <option key={c.id} value={c.id}>{c.nom}</option>
                           ))}
                         </select>
-                        <span className="w-24 text-right text-sm font-bold font-mono text-amber-700">{chargeMontantOf(cid).toFixed(2)}</span>
+                        <input type="text" inputMode="decimal" className="w-24 px-2 py-2 rounded-lg border border-amber-300 bg-white text-right text-sm font-bold font-mono text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          placeholder={chargeMontantOf(cid).toFixed(2)}
+                          value={poDetail.chargeMontants[idx] ?? ""}
+                          onChange={e => setChargeMontantOverride(idx, e.target.value.replace(",", "."))} />
                         <button type="button" onClick={() => removeChargeRow(idx)} title="Retirer"
                           className="shrink-0 w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-red-100 hover:text-red-600">×</button>
                       </div>
