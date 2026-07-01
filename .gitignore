@@ -61,3 +61,7 @@ Thumbs.db
 .vercel/
 .netlify/
 tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Local machine-specific tooling
+.claude/
