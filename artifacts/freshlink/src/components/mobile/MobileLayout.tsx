@@ -1,30 +1,36 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense, lazy } from "react"
 import { store, type User, type UserRole, ROLE_LABELS, ROLE_COLORS, isDemoUser } from "@/lib/store"
 import { useLang } from "@/lib/i18n"
-import MobileAchat from "./MobileAchat"
-import MobileCommercial from "./MobileCommercial"
-import MobileLogistique from "./MobileLogistique"
-import MessagerieChannel from "../MessagerieChannel"
+// Lazy : chaque rôle n'utilise qu'un sous-ensemble de ces écrans (gérés par
+// resolvedTab, un seul monté à la fois) — les charger statiquement forçait
+// tous les rôles à télécharger le JS de tous les autres rôles au premier
+// chargement de l'app (ex: un acheteur téléchargeait aussi Commercial,
+// Logistique, Contrôles...). CallCenter reste statique : toujours monté
+// (écoute des appels entrants indépendamment de l'onglet actif).
+const MobileAchat            = lazy(() => import("./MobileAchat"))
+const MobileCommercial       = lazy(() => import("./MobileCommercial"))
+const MobileLogistique       = lazy(() => import("./MobileLogistique"))
+const MessagerieChannel      = lazy(() => import("../MessagerieChannel"))
 import CallCenter from "../CallCenter"
-import MobileObjectifs from "./MobileObjectifs"
-import MobilePreparation from "./MobilePreparation"
-import MobileControlAchat from "./MobileControlAchat"
-import MobileControlPrep from "./MobileControlPrep"
-import MobileControlRetour from "./MobileControlRetour"
-import MobileAgentIA from "./MobileAgentIA"
-import MobileFeedback from "./MobileFeedback"
-import MobileMagasinier from "./MobileMagasinier"
+const MobileObjectifs        = lazy(() => import("./MobileObjectifs"))
+const MobilePreparation      = lazy(() => import("./MobilePreparation"))
+const MobileControlAchat     = lazy(() => import("./MobileControlAchat"))
+const MobileControlPrep      = lazy(() => import("./MobileControlPrep"))
+const MobileControlRetour    = lazy(() => import("./MobileControlRetour"))
+const MobileAgentIA          = lazy(() => import("./MobileAgentIA"))
+const MobileFeedback         = lazy(() => import("./MobileFeedback"))
+const MobileMagasinier       = lazy(() => import("./MobileMagasinier"))
 import FreshLinkLogo from "@/components/ui/FreshLinkLogo"
 import LangSwitcher from "@/components/ui/LangSwitcher"
 import ThemeToggle from "@/components/ui/ThemeToggle"
-import MobilePricing from "./MobilePricing"
-import MobileBLValidation from "./MobileBLValidation"
-import MobileAlertes from "./MobileAlertes"
-import MobileChargesAcheteur from "./MobileChargesAcheteur"
-import MobileClientPortail from "./MobileClientPortail"
-import MobileFournisseurPortail from "./MobileFournisseurPortail"
+const MobilePricing          = lazy(() => import("./MobilePricing"))
+const MobileBLValidation     = lazy(() => import("./MobileBLValidation"))
+const MobileAlertes          = lazy(() => import("./MobileAlertes"))
+const MobileChargesAcheteur  = lazy(() => import("./MobileChargesAcheteur"))
+const MobileClientPortail    = lazy(() => import("./MobileClientPortail"))
+const MobileFournisseurPortail = lazy(() => import("./MobileFournisseurPortail"))
 import RoleSwitcher from "@/components/ui/RoleSwitcher"
 import MobileAutoTranslate from "./MobileAutoTranslate"
 
@@ -212,24 +218,30 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
       {/* ── Content ─────────────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
         style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
-        {resolvedTab === "magasinier"    && <MobileMagasinier user={user} />}
-        {resolvedTab === "achat"         && <MobileAchat user={user} />}
-        {resolvedTab === "charges"       && <MobileChargesAcheteur user={user} />}
-        {resolvedTab === "commercial"    && <MobileCommercial user={user} />}
-        {resolvedTab === "logistique"    && <MobileLogistique user={user} />}
-        {resolvedTab === "bilan"         && <MobileObjectifs user={user} />}
-        {resolvedTab === "preparation"   && <MobilePreparation user={user} />}
-        {resolvedTab === "ctrl_achat"    && <MobileControlAchat user={user} />}
-        {resolvedTab === "ctrl_prep"     && <MobileControlPrep user={user} />}
-        {resolvedTab === "ctrl_retour"   && <MobileControlRetour user={user} />}
-        {resolvedTab === "agent_ia"      && <MobileAgentIA user={user} />}
-        {resolvedTab === "avis"          && <MobileFeedback user={user} />}
-        {resolvedTab === "pricing"       && <MobilePricing user={user} />}
-        {resolvedTab === "bl_validation" && <MobileBLValidation user={user} />}
-        {resolvedTab === "alertes"             && <MobileAlertes user={user} />}
-        {resolvedTab === "client_portail"      && <MobileClientPortail user={user} />}
-        {resolvedTab === "fournisseur_portail" && <MobileFournisseurPortail user={user} />}
-        {resolvedTab === "messages"            && <div className="p-3"><MessagerieChannel user={user} compact /></div>}
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          {resolvedTab === "magasinier"    && <MobileMagasinier user={user} />}
+          {resolvedTab === "achat"         && <MobileAchat user={user} />}
+          {resolvedTab === "charges"       && <MobileChargesAcheteur user={user} />}
+          {resolvedTab === "commercial"    && <MobileCommercial user={user} />}
+          {resolvedTab === "logistique"    && <MobileLogistique user={user} />}
+          {resolvedTab === "bilan"         && <MobileObjectifs user={user} />}
+          {resolvedTab === "preparation"   && <MobilePreparation user={user} />}
+          {resolvedTab === "ctrl_achat"    && <MobileControlAchat user={user} />}
+          {resolvedTab === "ctrl_prep"     && <MobileControlPrep user={user} />}
+          {resolvedTab === "ctrl_retour"   && <MobileControlRetour user={user} />}
+          {resolvedTab === "agent_ia"      && <MobileAgentIA user={user} />}
+          {resolvedTab === "avis"          && <MobileFeedback user={user} />}
+          {resolvedTab === "pricing"       && <MobilePricing user={user} />}
+          {resolvedTab === "bl_validation" && <MobileBLValidation user={user} />}
+          {resolvedTab === "alertes"             && <MobileAlertes user={user} />}
+          {resolvedTab === "client_portail"      && <MobileClientPortail user={user} />}
+          {resolvedTab === "fournisseur_portail" && <MobileFournisseurPortail user={user} />}
+          {resolvedTab === "messages"            && <div className="p-3"><MessagerieChannel user={user} compact /></div>}
+        </Suspense>
       </main>
 
       {/* Appels audio in-app (WebRTC) — sonne quel que soit l'écran */}
