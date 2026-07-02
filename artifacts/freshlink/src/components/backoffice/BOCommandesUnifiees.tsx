@@ -151,11 +151,13 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [msg, setMsg]                     = useState<{ ok: boolean; text: string } | null>(null)
   // ── Création manuelle d'une commande (BO) ──────────────────────────────────
   const [showNew, setShowNew]             = useState(false)
+  const [savingOrder, setSavingOrder]     = useState(false)
   const [noClientId, setNoClientId]       = useState("")
   const [noHeure, setNoHeure]             = useState("08:00")
   const [noLignes, setNoLignes]           = useState<{ articleId: string; quantite: string; prixVente: string }[]>([{ articleId: "", quantite: "", prixVente: "" }])
 
   const saveNewOrder = async () => {
+    if (savingOrder) return // anti double-clic — jamais deux commandes identiques
     const client = store.getClients().find(c => c.id === noClientId)
     if (!client) { setMsg({ ok: false, text: "Choisissez un client." }); return }
     const articles = store.getArticles()
@@ -185,10 +187,12 @@ export default function BOCommandesUnifiees({ user }: Props) {
       lignes, heurelivraison: noHeure, statut: "valide",
       emailDestinataire: store.getEmailConfig().commercial,
     }
+    setSavingOrder(true)
     store.addCommande(cmd)
     try { const db = await import("@/lib/supabase/db"); await db.upsertCommande(cmd) } catch { /* offline */ }
     setShowNew(false); setNoClientId(""); setNoLignes([{ articleId: "", quantite: "", prixVente: "" }])
     setMsg({ ok: true, text: `✅ Commande ${cmd.id} créée (${client.nom}).` })
+    setSavingOrder(false)
     load()
   }
 
@@ -500,7 +504,10 @@ export default function BOCommandesUnifiees({ user }: Props) {
               </div>
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setShowNew(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600">Annuler</button>
-                <button onClick={saveNewOrder} className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold">Créer la commande</button>
+                <button onClick={saveNewOrder} disabled={savingOrder}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">
+                  {savingOrder ? "Création..." : "Créer la commande"}
+                </button>
               </div>
             </div>
           </div>

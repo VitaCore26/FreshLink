@@ -1388,6 +1388,10 @@ export default function MobileAchat({ user }: Props) {
         if (!po) return null
         const poArt = store.getArticles().find(a => a.id === po.articleId)
         const totalCalc = (Number(poDetail.quantite) || 0) * (Number(poDetail.prixUnitaire) || 0)
+        // Le bouton Confirmer ignorait ce réglage et bloquait TOUJOURS sans
+        // photo, même config désactivée côté BO — c'était la vraie cause du
+        // "camera reste obligatoire malgré la désactivation".
+        const photoObligatoire = store.getProcessConfig().photoAchatObligatoire !== false
         return (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={() => setPoModalId(null)}>
             <div className="w-full max-w-lg bg-white rounded-t-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -1592,17 +1596,17 @@ export default function MobileAchat({ user }: Props) {
                   />
                 </div>
 
-                {/* ── Photo obligatoire ── */}
+                {/* ── Photo (obligatoire uniquement si activé côté BO) ── */}
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
-                    Photo marchandise (obligatoire)
+                    {photoObligatoire && <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />}
+                    Photo marchandise {photoObligatoire ? "(obligatoire)" : "(optionnelle)"}
                   </label>
                   <POCameraCapture
                     value={poDetail.photoAchat}
                     onChange={url => setPoDetail(p => ({ ...p, photoAchat: url }))}
                   />
-                  {!poDetail.photoAchat && (
+                  {photoObligatoire && !poDetail.photoAchat && (
                     <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">
                       <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1615,7 +1619,7 @@ export default function MobileAchat({ user }: Props) {
                 {/* Confirm button */}
                 <button
                   onClick={confirmPO}
-                  disabled={poSaving || !poDetail.quantite || !poDetail.prixUnitaire || !poDetail.fournisseurId || !poDetail.photoAchat}
+                  disabled={poSaving || !poDetail.quantite || !poDetail.prixUnitaire || !poDetail.fournisseurId || (photoObligatoire && !poDetail.photoAchat)}
                   className="w-full py-3.5 rounded-xl bg-green-600 text-white font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2 transition-opacity hover:bg-green-700">
                   {poSaving ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -179,6 +179,7 @@ export default function BoPurchaseOrders() {
   const [articles, setArticles] = useState<Article[]>([])
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [poSubmitting, setPoSubmitting] = useState(false)
   const [filterStatut, setFilterStatut] = useState<string>("tous")
   const [filterArticle, setFilterArticle] = useState<string>("")
   const [emailConfig] = useState(store.getEmailConfig().achat)
@@ -222,6 +223,8 @@ export default function BoPurchaseOrders() {
 
   const handleSubmit = async () => {
     if (!fArticleId || !fFournisseurId || !fQuantite || !fPrix) return
+    if (poSubmitting) return // anti double-clic — jamais deux PO identiques
+    setPoSubmitting(true)
     const art = articles.find(a => a.id === fArticleId)!
     const fou = fournisseurs.find(f => f.id === fFournisseurId)!
     const po: PurchaseOrder = {
@@ -261,6 +264,7 @@ export default function BoPurchaseOrders() {
     setShowForm(false)
     setFArticleId(""); setFFournisseurId(""); setFQuantite(""); setFPrix(""); setFNotes("")
     refresh()
+    setPoSubmitting(false)
 
     // Send email
     await sendEmail({
@@ -551,12 +555,12 @@ export default function BoPurchaseOrders() {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={!fArticleId || !fFournisseurId || !fQuantite || !fPrix}
+              disabled={poSubmitting || !fArticleId || !fFournisseurId || !fQuantite || !fPrix}
               className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white font-sans transition-opacity hover:opacity-90 disabled:opacity-40 flex items-center gap-2"
               style={{ background: "oklch(0.38 0.2 260)" }}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              Enregistrer & Envoyer par email
+              {poSubmitting ? "Enregistrement..." : "Enregistrer & Envoyer par email"}
             </button>
           </div>
         </div>

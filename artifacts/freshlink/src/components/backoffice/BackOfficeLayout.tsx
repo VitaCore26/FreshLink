@@ -15,6 +15,12 @@ import type { AppLang } from "@/lib/lang"
 // instead of letting the whole page go white
 // ─────────────────────────────────────────────────────────────
 interface EBState { hasError: boolean; msg: string }
+// Chunk périmé après déploiement (nom de fichier hashé qui n'existe plus côté
+// serveur) → "Failed to fetch dynamically imported module". Un rechargement
+// récupère le nouvel index.html avec les bonnes références — un seul essai
+// automatique par session pour éviter une boucle si le problème est autre.
+const STALE_CHUNK_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i
+const RELOAD_GUARD_KEY = "fl_chunk_reload_once"
 class PanelErrorBoundary extends Component<{ children: React.ReactNode; label: string }, EBState> {
   constructor(props: { children: React.ReactNode; label: string }) {
     super(props)
@@ -26,6 +32,14 @@ class PanelErrorBoundary extends Component<{ children: React.ReactNode; label: s
   componentDidCatch(err: unknown, info: React.ErrorInfo) {
     console.error("[PanelErrorBoundary] ERROR:", err)
     console.error("[PanelErrorBoundary] STACK:", info?.componentStack)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (STALE_CHUNK_RE.test(msg)) {
+      try {
+        if (sessionStorage.getItem(RELOAD_GUARD_KEY)) return
+        sessionStorage.setItem(RELOAD_GUARD_KEY, "1")
+      } catch { /* noop */ }
+      window.location.reload()
+    }
   }
   render() {
     if (this.state.hasError) {

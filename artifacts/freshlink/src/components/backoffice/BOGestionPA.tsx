@@ -36,11 +36,17 @@ export default function BOGestionPA({ user }: { user: User }) {
   }, [from, to])
 
   const hasPA = (a: Article) => (Number(a.prixAchat) || 0) > 0
-  const filtered = articles.filter(a => {
-    if (onlyMissing && hasPA(a)) return false
-    if (search) { const q = search.toLowerCase(); if (!((a.nom || "").toLowerCase().includes(q) || (a.id || "").toLowerCase().includes(q))) return false }
-    return true
-  })
+  const filtered = articles
+    .filter(a => {
+      // Le scope "commandés" n'était appliqué qu'à l'export Excel, jamais à
+      // la liste affichée — l'utilisateur voyait tous les articles même en
+      // ayant explicitement choisi "Articles commandés".
+      if (scope === "ordered" && !orderedIds.has(a.id)) return false
+      if (onlyMissing && hasPA(a)) return false
+      if (search) { const q = search.toLowerCase(); if (!((a.nom || "").toLowerCase().includes(q) || (a.id || "").toLowerCase().includes(q))) return false }
+      return true
+    })
+    .sort((a, b) => (a.nom ?? "").localeCompare(b.nom ?? ""))
   const missingCount = articles.filter(a => !hasPA(a)).length
 
   const setPA = (id: string, val: string) => {
