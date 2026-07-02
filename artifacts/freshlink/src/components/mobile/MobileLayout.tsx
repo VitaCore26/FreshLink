@@ -56,6 +56,16 @@ export default function MobileLayout({ user: initialUser, onLogout }: Props) {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off) }
   }, [])
 
+  // Un toggle BO (ex: "Photo achat obligatoire") doit être prioritaire côté
+  // mobile sans que l'utilisateur ait à se déconnecter/reconnecter — l'app
+  // reste ouverte des heures sur le terrain. Rafraîchit process/workflow/
+  // alertes/email config toutes les 2 min tant que la session est active.
+  useEffect(() => {
+    const tick = () => { import("@/lib/supabase/db").then(({ hydrateConfigs }) => hydrateConfigs()).catch(() => {}) }
+    const t = setInterval(tick, 120_000)
+    return () => clearInterval(t)
+  }, [])
+
   // ── Active role (supports multi-role) ──────────────────────────────────────
   const activeRole: UserRole = user.activeRole ?? user.role
 

@@ -429,7 +429,7 @@ const NAV_GROUPS: NavGroup[] = NAV_GROUP_DEF.map(g => ({
   items: g.ids.map(id => NAV_ITEM_MAP[id]).filter(Boolean) as NavItem[],
 }))
 
-const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
+const PANELS: Record<Tab, (u: User, nav: (tab: Tab) => void) => React.ReactNode> = {
   dashboard:         (u) => <BODashboard user={u} />,
   messagerie:        (u) => <MessagerieChannel user={u} />,
   achat:             (_u) => <BOAchat />,
@@ -440,7 +440,7 @@ const PANELS: Record<Tab, (u: User) => React.ReactNode> = {
   zones_secteurs:    (u) => <BOZonesSecteurs user={u} />,
   dispatch:          (u) => <BODispatch user={u} />,
   fournisseurs:      (u) => <BOFournisseurs user={u} />,
-  preparation:       (u) => <BOBonPreparation user={u} />,
+  preparation:       (u, nav) => <BOBonPreparation user={u} onValidated={() => nav("bon_livraison")} />,
   rapport_livraison: (u) => <BORapportLivraison user={u} />,
   stock:             (u) => <BOStock user={u} />,
   retour:            (_u) => <BORetour />,
@@ -905,7 +905,7 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
         <main className="flex-1 overflow-auto bg-slate-50">
           <div className="p-4 lg:p-6 min-h-full">
             <PanelErrorBoundary key={activeTab} label={allItems.find(i => i.id === activeTab)?.label ?? activeTab}>
-              {PANELS[activeTab]?.(user) ?? (
+              {PANELS[activeTab]?.(user, setActiveTab) ?? (
                 <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
                   Section non disponible
                 </div>

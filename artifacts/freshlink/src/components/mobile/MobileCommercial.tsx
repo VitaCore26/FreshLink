@@ -16,7 +16,7 @@ interface LigneForm {
 }
 
 type CommTab = "nouvelle" | "mes_commandes" | "habitudes"
-type ArticleSort = "rotation" | "stock" | "tous"
+type ArticleSort = "rotation" | "stock" | "tous" | "famille"
 
 // How many ms before a commande becomes locked (1 hour)
 const EDIT_WINDOW_MS = 60 * 60 * 1000
@@ -96,13 +96,13 @@ export default function MobileCommercial({ user }: Props) {
   }
   const [showHeureLivraison, setShowHeureLivraison] = useState(false)
   const [newClient, setNewClient] = useState({
-    nom: "", secteur: user.secteur || "", zone: "",
-    type: "epicerie" as Client["type"], typeAutre: "",
+    nom: "", secteur: user.secteur || "", zone: "Casablanca",
+    type: "marchand" as Client["type"], typeAutre: "",
     taille: "150-300kg" as Client["taille"],
     typeProduits: "moyenne" as Client["typeProduits"],
     rotation: "journalier" as Client["rotation"],
     telephone: "", email: "", adresse: "",
-    categorie: undefined as "chr" | "marchand" | "particulier" | undefined,
+    categorie: "marchand" as "chr" | "marchand" | "particulier" | undefined,
     heureLivraison: lastHeureLivraison(),
   })
 
@@ -169,6 +169,7 @@ export default function MobileCommercial({ user }: Props) {
     }
     if (articleSort === "rotation") list.sort((a, b) => (globalRotation[b.id] ?? 0) - (globalRotation[a.id] ?? 0))
     else if (articleSort === "stock") list.sort((a, b) => (Number(b.stockDisponible) || 0) - (Number(a.stockDisponible) || 0))
+    else if (articleSort === "famille") list.sort((a, b) => (a.famille ?? "").localeCompare(b.famille ?? "") || (a.nom ?? "").localeCompare(b.nom ?? ""))
     else list.sort((a, b) => (a.nom ?? "").localeCompare(b.nom ?? ""))
     return list
   }, [allArticlesDedup, articleSearch, articleSort, globalRotation])
@@ -440,6 +441,25 @@ export default function MobileCommercial({ user }: Props) {
     document.body.removeChild(link)
   }
 
+  // Refaire le recensement GPS d'un client déjà existant (adresse changée,
+  // premier recensement imprécis, nouveau point de vente…).
+  const [recensementLoadingId, setRecensementLoadingId] = useState<string | null>(null)
+  const recenserClientGPS = (c: Client) => {
+    if (!navigator.geolocation) { alert("Géolocalisation indisponible sur cet appareil."); return }
+    setRecensementLoadingId(c.id)
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const updates = { gpsLat: pos.coords.latitude, gpsLng: pos.coords.longitude }
+        store.updateClient(c.id, updates)
+        setClients(store.getClients())
+        import("@/lib/supabase/db").then(db => db.upsertClient({ ...c, ...updates })).catch(() => {})
+        setRecensementLoadingId(null)
+      },
+      () => { alert("Impossible d'obtenir la position — vérifiez l'autorisation de localisation."); setRecensementLoadingId(null) },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    )
+  }
+
   const handleAddClient = () => {
     if (!newClient.nom.trim()) return
     const client: Client = {
@@ -462,6 +482,11 @@ export default function MobileCommercial({ user }: Props) {
       prevendeurId: user.id,
       categorie: newClient.categorie,
       heureLivraison: newClient.heureLivraison,
+      // Alimente aussi defaultHeureLivraison — c'est CE champ que l'écran
+      // "Nouvelle commande" relit pour pré-remplir l'heure automatiquement
+      // (voir plus bas) ; sans ça la valeur saisie ici ne servirait à rien
+      // avant la toute première commande de ce client.
+      defaultHeureLivraison: newClient.heureLivraison,
     }
     store.addClient(client)
     // Sync le nouveau client vers Supabase (back-office)
@@ -472,9 +497,9 @@ export default function MobileCommercial({ user }: Props) {
     setSelectedClientId(client.id)
     setShowAddClient(false)
     setShowHeureLivraison(false)
-    setNewClient({ nom: "", secteur: user.secteur || "", zone: "", type: "epicerie", typeAutre: "",
+    setNewClient({ nom: "", secteur: user.secteur || "", zone: "Casablanca", type: "marchand", typeAutre: "",
       taille: "150-300kg", typeProduits: "moyenne", rotation: "journalier",
-      telephone: "", email: "", adresse: "", categorie: undefined, heureLivraison: newClient.heureLivraison })
+      telephone: "", email: "", adresse: "", categorie: "marchand", heureLivraison: newClient.heureLivraison })
   }
 
   // Returns the quantity in BASE units (kg/piece/...) regardless of input mode
@@ -973,6 +998,16 @@ export default function MobileCommercial({ user }: Props) {
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
                     </div>
                   )}
+                  <div role="button" tabIndex={0} title="Refaire le recensement GPS (position actuelle)"
+                    onClick={e => { e.stopPropagation(); recenserClientGPS(c) }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); recenserClientGPS(c) } }}
+                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 cursor-pointer select-none">
+                    {recensementLoadingId === c.id ? (
+                      <div className="w-3.5 h-3.5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    )}
+                  </div>
                 </div>
               </button>
             )
@@ -1025,7 +1060,16 @@ export default function MobileCommercial({ user }: Props) {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-foreground">Secteur</label>
-              <select value={newClient.secteur} onChange={e => setNewClient({ ...newClient, secteur: e.target.value })}
+              <select value={newClient.secteur} onChange={e => {
+                const secteur = e.target.value
+                // Zone auto-déduite du secteur : zone la plus fréquente parmi
+                // les clients existants de ce même secteur (pas de GPS payant).
+                const zonesDuSecteur = store.getClients().filter(c => c.secteur === secteur && c.zone).map(c => c.zone)
+                const zoneAuto = zonesDuSecteur.length
+                  ? [...zonesDuSecteur].sort((a, b) => zonesDuSecteur.filter(z => z === b).length - zonesDuSecteur.filter(z => z === a).length)[0]
+                  : newClient.zone
+                setNewClient({ ...newClient, secteur, zone: zoneAuto })
+              }}
                 className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="">— Choisir —</option>
                 {/* Secteurs/zones unifiés : prédéfinis + perso + déjà utilisés */}
@@ -1233,6 +1277,7 @@ export default function MobileCommercial({ user }: Props) {
             { key: "stock",    label: "Trier par stock" },
             { key: "rotation", label: "Best sellers" },
             { key: "tous",     label: "Alphabetique" },
+            { key: "famille",  label: "Par famille" },
           ] as { key: ArticleSort; label: string }[]).map(s => (
             <button key={s.key} onClick={() => setArticleSort(s.key)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${articleSort === s.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>

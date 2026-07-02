@@ -245,31 +245,39 @@ export default function BODispatch({ user }: Props) {
           const cmd = store.getCommandes().find(c => c.id === cid)
           if (cmd && cmd.statut === "en_transit") {
             store.updateCommande(cid, { statut: "livre" })
-            const lignes = cmd.lignes.map(l => {
-              let qte = l.quantite // repli : pas de préparation numérique pour cette tournée
-              for (const prep of preps) {
-                const pl = prep.lignes.find(pl => pl.articleId === l.articleId)
-                const ordered = pl?.qtesParClient[cmd.clientId]
-                if (!pl || !ordered) continue
-                // Écart préparé vs commandé sur cet article -> répercuté au prorata
-                // sur la part de ce client (qtePrepared fait foi, jamais qteCommandee).
-                const ratio = pl.qteCommandee > 0 ? pl.qtePrepared / pl.qteCommandee : 1
-                qte = ordered * ratio
-                break
-              }
-              const prixU = l.prixVente ?? l.prixUnitaire ?? 0
-              return { articleNom: l.articleNom, quantite: qte, prixUnitaire: prixU, total: qte * prixU }
-            })
-            const total = lignes.reduce((s, l) => s + l.total, 0)
-            const tva = 0.20
-            store.addBonLivraison({
-              id: store.genBL(), date: store.today(), tripId: id,
-              commandeId: cid, clientNom: cmd.clientNom, secteur: cmd.secteur, zone: cmd.zone,
-              livreurNom: trip.livreurNom, prevendeurNom: cmd.commercialNom,
-              lignes,
-              montantTotal: total, tva, montantTTC: total * (1 + tva),
-              statut: "émis", statutLivraison: "livre", valideMagasinier: false,
-            })
+            // Le BL a normalement déjà été généré (un par client) dès la
+            // validation de la préparation — ici on ne fait que le marquer
+            // livré, jamais un doublon. Le repli "créer un BL" ne sert que
+            // si aucune préparation numérique n'a jamais existé pour cette
+            // tournée (ex. ancien flux papier sans passage par la prépa).
+            const existingBL = store.getBonsLivraison().find(bl => bl.commandeId === cid && bl.tripId === id)
+            if (existingBL) {
+              store.updateBonLivraison(existingBL.id, { statutLivraison: "livre" })
+            } else {
+              const lignes = cmd.lignes.map(l => {
+                let qte = l.quantite
+                for (const prep of preps) {
+                  const pl = prep.lignes.find(pl => pl.articleId === l.articleId)
+                  const ordered = pl?.qtesParClient[cmd.clientId]
+                  if (!pl || !ordered) continue
+                  const ratio = pl.qteCommandee > 0 ? pl.qtePrepared / pl.qteCommandee : 1
+                  qte = ordered * ratio
+                  break
+                }
+                const prixU = l.prixVente ?? l.prixUnitaire ?? 0
+                return { articleNom: l.articleNom, quantite: qte, prixUnitaire: prixU, total: qte * prixU }
+              })
+              const total = lignes.reduce((s, l) => s + l.total, 0)
+              const tva = 0.20
+              store.addBonLivraison({
+                id: store.genBL(), date: store.today(), tripId: id,
+                commandeId: cid, clientId: cmd.clientId, clientNom: cmd.clientNom, secteur: cmd.secteur, zone: cmd.zone,
+                livreurNom: trip.livreurNom, prevendeurNom: cmd.commercialNom,
+                lignes,
+                montantTotal: total, tva, montantTTC: total * (1 + tva),
+                statut: "émis", statutLivraison: "livre", valideMagasinier: false,
+              })
+            }
           }
         })
       }

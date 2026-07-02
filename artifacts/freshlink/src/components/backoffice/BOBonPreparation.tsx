@@ -8,7 +8,7 @@ import {
   type SequenceModePrep,
 } from "@/lib/store"
 
-interface Props { user: User }
+interface Props { user: User; onValidated?: () => void }
 
 const MODE_LABELS: Record<ModePreparation, { label: string; desc: string }> = {
   par_trip:    { label: "Par Trip",    desc: "Un bon global pour tout le chargement du trip" },
@@ -125,6 +125,20 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
   .sig .sig-label{font-size:8pt;font-weight:600;color:#374151;margin-bottom:3px}
   .sig .sig-line{border-bottom:1px solid #9ca3af;height:44px;width:140px}
   .watermark{font-size:7pt;color:#d1d5db;text-align:right;margin-top:10px}
+  /* BLOC PAR CLIENT — 1 ou 2 clients par page selon le nombre de lignes */
+  .client-block{page-break-inside:avoid;margin-bottom:16px;border:1px solid #d1d5db;border-radius:6px;overflow:hidden}
+  .client-block.page-break{page-break-before:always}
+  .client-block-head{background:#1e3a5f;color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
+  .client-block-head .cb-name{font-size:10pt;font-weight:800}
+  .client-block-head .cb-meta{font-size:7.5pt;opacity:.85}
+  table.cbtable{width:100%;border-collapse:collapse;font-size:9pt}
+  table.cbtable thead tr{background:#eef2f7}
+  table.cbtable thead th{padding:6px 10px;text-align:left;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:#374151}
+  table.cbtable thead th.r{text-align:right}
+  table.cbtable tbody tr{border-top:1px solid #e5e7eb}
+  table.cbtable tbody td{padding:6px 10px}
+  table.cbtable tfoot tr{background:#f0fdf4;font-weight:900;border-top:2px solid #166534}
+  table.cbtable tfoot td{padding:6px 10px}
   @media print{body{padding:12px 16px}.no-print{display:none}}
 </style>
 </head><body>
@@ -191,55 +205,43 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
   </tfoot>
 </table>
 
-<!-- SECTION 2 : RÉPARTITION PAR CLIENT (séquencé) -->
+<!-- SECTION 2 : RÉPARTITION PAR CLIENT (séquencé) — 1 client par page, ou 2
+     si les deux ont peu de lignes, pour optimiser la lecture au picking -->
 <div class="section-title">2. Répartition par client — Séquence de livraison (${seqMode === "horaire" ? "ordre horaire" : "itinéraire GPS"})</div>
-<table class="matrix">
-  <thead>
-    <tr>
-      <th style="width:180px">Client / Secteur</th>
-      <th style="width:60px">Heure</th>
-      ${allArticleIds.map(id => {
-        const l = bon.lignes.find(lg => lg.articleId === id)
-        return `<th class="r" style="max-width:80px;white-space:normal">${l?.articleNom || id}<br/><span style="font-weight:400;font-size:7pt">${l?.unite || ""}</span></th>`
-      }).join("")}
-      <th class="r" style="width:65px">Total kg</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${orderedClients.map((ci, idx) => {
-      const rowTotal = allArticleIds.reduce((s, artId) => {
-        const ligne = bon.lignes.find(l => l.articleId === artId)
-        return s + (ligne?.qtesParClient[ci.clientId] ?? 0)
-      }, 0)
-      return `
-      <tr>
-        <td>
-          <span class="client-seq">${idx + 1}</span>
-          <strong>${ci.clientNom}</strong>
-          <br/><span class="client-zone">${ci.secteur}${ci.zone ? " — " + ci.zone : ""}</span>
-        </td>
-        <td><span class="client-heure">${ci.heurelivraison || "—"}</span></td>
-        ${allArticleIds.map(artId => {
-          const ligne = bon.lignes.find(l => l.articleId === artId)
-          const qty = ligne?.qtesParClient[ci.clientId] ?? 0
-          if (qty === 0) return `<td class="qty-empty">—</td>`
-          return `<td class="qty-cell">${qty.toFixed(1)}</td>`
-        }).join("")}
-        <td class="qty-total">${rowTotal.toFixed(1)}</td>
-      </tr>`
-    }).join("")}
-  </tbody>
-  <tfoot>
-    <tr style="background:#166534;color:#fff;font-weight:900">
-      <td colspan="2" style="padding:7px 10px">TOTAL PAR ARTICLE</td>
-      ${allArticleIds.map(artId => {
-        const ligne = bon.lignes.find(l => l.articleId === artId)
-        return `<td style="text-align:right;padding:7px 8px">${(ligne?.qteCommandee ?? 0).toFixed(1)}</td>`
-      }).join("")}
-      <td style="text-align:right;padding:7px 10px">${bon.lignes.reduce((s, l) => s + l.qteCommandee, 0).toFixed(1)}</td>
-    </tr>
-  </tfoot>
-</table>
+${(() => {
+  // Précalcule les lignes par client, puis décide du saut de page : max 2
+  // clients par page, et jamais 2 si leur total de lignes dépasse ~14
+  // (au-delà, un seul client suffit à remplir la page proprement).
+  const perClient = orderedClients.map((ci, idx) => ({
+    ci, idx,
+    lignes: allArticleIds
+      .map(artId => bon.lignes.find(l => l.articleId === artId))
+      .filter((l): l is typeof bon.lignes[number] => !!l && (l.qtesParClient[ci.clientId] ?? 0) > 0),
+  }))
+  let clientsOnPage = 0
+  let linesOnPage = 0
+  return perClient.map(({ ci, idx, lignes }) => {
+    const rowTotal = lignes.reduce((s, l) => s + (l.qtesParClient[ci.clientId] ?? 0), 0)
+    const breakBefore = clientsOnPage > 0 && (clientsOnPage >= 2 || linesOnPage + lignes.length > 14)
+    if (breakBefore) { clientsOnPage = 0; linesOnPage = 0 }
+    clientsOnPage += 1
+    linesOnPage += lignes.length
+    return `
+    <div class="client-block${breakBefore ? " page-break" : ""}">
+      <div class="client-block-head">
+        <span class="cb-name"><span class="client-seq">${idx + 1}</span>${ci.clientNom}</span>
+        <span class="cb-meta">${ci.secteur}${ci.zone ? " — " + ci.zone : ""}${ci.heurelivraison ? " · " + ci.heurelivraison : ""}</span>
+      </div>
+      <table class="cbtable">
+        <thead><tr><th>Article</th><th class="r" style="width:110px">Quantité</th></tr></thead>
+        <tbody>
+          ${lignes.map(l => `<tr><td>${l.articleNom}${(l as unknown as { articleNomAr?: string }).articleNomAr ? ` <span style="font-family:'Noto Sans Arabic',Arial,sans-serif;color:#6b7280;direction:rtl">/ ${(l as unknown as { articleNomAr?: string }).articleNomAr}</span>` : ""}</td><td class="r">${(l.qtesParClient[ci.clientId] ?? 0).toFixed(1)} ${l.unite}</td></tr>`).join("")}
+        </tbody>
+        <tfoot><tr><td>TOTAL</td><td class="r">${rowTotal.toFixed(1)} kg</td></tr></tfoot>
+      </table>
+    </div>`
+  }).join("")
+})()}
 
 <!-- SIGNATURES -->
 <div class="sigs">
@@ -255,7 +257,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export default function BOBonPreparation({ user }: Props) {
+export default function BOBonPreparation({ user, onValidated }: Props) {
   const [bons, setBons] = useState<BonPreparation[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
   const [commandes, setCommandes] = useState<Commande[]>([])
@@ -449,6 +451,8 @@ export default function BOBonPreparation({ user }: Props) {
       setTripId(""); setSelectedClients([])
       if (format === "papier") {
         bonsCreated.forEach((bon, i) => setTimeout(() => openPrintPrep(bon, commandes), 350 * (i + 1)))
+        // Impression papier lancée -> bascule directement vers l'écran des BL.
+        onValidated?.()
       } else {
         const b = store.getBonsPreparation().find(bp => bp.id === bonsCreated[0].id)
         if (b) setViewing(b)
@@ -484,6 +488,8 @@ export default function BOBonPreparation({ user }: Props) {
     setTripId(""); setSelectedClients([])
     if (format === "papier") {
       setTimeout(() => openPrintPrep(bon, commandes), 300)
+      // Impression papier lancée -> bascule directement vers l'écran des BL.
+      onValidated?.()
     } else {
       const b = store.getBonsPreparation().find(bp => bp.id === bon.id)
       if (b) setViewing(b)
@@ -503,11 +509,15 @@ export default function BOBonPreparation({ user }: Props) {
     if (viewing?.id === bonId) setViewing({ ...arr[idx] })
   }
 
-  const validateAll = (bonId: string) => {
+  const validateAll = async (bonId: string) => {
     const arr = store.getBonsPreparation()
     const idx = arr.findIndex(b => b.id === bonId)
     if (idx < 0) return
-    arr[idx].lignes = arr[idx].lignes.map(l => ({ ...l, qtePrepared: l.qteCommandee, valide: true }))
+    // Ne jamais écraser une ligne déjà validée manuellement (qtePrepared saisi
+    // par l'admin via validateLigne) — sinon "Valider toute la prépa" annule
+    // silencieusement les écarts déjà corrigés. Seules les lignes jamais
+    // touchées sont complétées à la quantité commandée.
+    arr[idx].lignes = arr[idx].lignes.map(l => l.valide ? l : { ...l, qtePrepared: l.qteCommandee, valide: true })
     arr[idx].statut = "valide"
     arr[idx].validatedAt = new Date().toISOString()
     arr[idx].validatedBy = user.id
@@ -536,8 +546,21 @@ export default function BOBonPreparation({ user }: Props) {
       store.saveCommandes(updatedCmds)
     }
 
+    // Génère un BL individuel par client à partir de la préparation validée
+    // (jamais un BL global fusionné) — même logique que MobilePreparation.
+    // Attendu AVANT la redirection : sinon l'écran BL s'ouvrirait avant que
+    // les BL n'existent encore en store.
+    try {
+      const m = await import("../mobile/MobilePreparation")
+      m.autoGenerateBLs(arr[idx], user.id, user.name)
+    } catch { /* noop */ }
+
     refresh()
     if (viewing?.id === bonId) setViewing({ ...arr[idx] })
+    setViewing(null)
+    // Dès la validation numérique, contrôle final direct sur le BL — pas
+    // besoin de repasser par la liste des préparations.
+    onValidated?.()
   }
 
   const deleteBon = (id: string) => {

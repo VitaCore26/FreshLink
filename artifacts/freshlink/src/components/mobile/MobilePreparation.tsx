@@ -11,96 +11,90 @@ function StatusBadge({ s }: { s: BonPreparation["statut"] }) {
   return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${map[s]}`}>{labels[s]}</span>
 }
 
-// Auto-generate a BonLivraison from a validated BonPreparation
-// Always generates a BL even if no commande is linked (uses bon.lignes directly)
-function autoGenerateBL(bon: BonPreparation, operateurId: string, operateurNom: string): BonLivraison | null {
-  // Find the related trip if any
+// Auto-generate un BonLivraison INDIVIDUEL PAR CLIENT depuis une préparation
+// validée (jamais un BL global fusionné — chaque client doit avoir son propre
+// document, factures et retours étant gérés par client, pas par tournée).
+export function autoGenerateBLs(bon: BonPreparation, operateurId: string, operateurNom: string): BonLivraison[] {
   const trips = store.getTrips()
   const trip = bon.tripId ? trips.find(t => t.id === bon.tripId) : null
-
-  // Find commandes linked to this bon — accept all statuts except refused/returned
   const commandes = store.getCommandes()
-  const bonCommandes = commandes.filter(c =>
-    bon.clientIds.includes(c.clientId) &&
-    c.statut !== "refuse" && c.statut !== "retour"
-  )
-
-  // Build lignes BL from preparation — always from bon.lignes (qtePrepared or qteCommandee)
-  const lignesBL: BonLivraison["lignes"] = bon.lignes.map(l => {
-    const qte = (l.qtePrepared > 0 ? l.qtePrepared : l.qteCommandee) || l.qteCommandee
-    let prixUnitaire = 0
-    for (const cmd of bonCommandes) {
-      const cl = cmd.lignes.find(cl => cl.articleId === l.articleId)
-      if (cl) { prixUnitaire = cl.prixVente ?? cl.prixUnitaire ?? 0; break }
-    }
-    return { articleNom: l.articleNom, unite: l.unite, quantite: qte, prixUnitaire, total: qte * prixUnitaire }
-  })
-
-  // Aggregate client/trip info
-  const firstCmd = bonCommandes[0]
-  const clientNom = firstCmd?.clientNom ?? (bon.clientsInfo?.[0]?.clientNom ?? bon.nom ?? "Multi-clients")
-  const secteur = firstCmd?.secteur ?? (bon.clientsInfo?.[0]?.secteur ?? "")
-  const zone = firstCmd?.zone ?? (bon.clientsInfo?.[0]?.zone ?? "")
-  const livreurNom = trip?.livreurNom ?? "Non assigne"
-  const prevendeurId = firstCmd?.commercialId ?? ""
-  const prev = store.getUsers().find(u => u.id === prevendeurId)
-  const prevendeurNom = prev?.name ?? firstCmd?.commercialNom ?? operateurNom
-
-  const montantTotal = lignesBL.reduce((s, l) => s + l.total, 0)
-  const tva = 0
-  const montantTTC = montantTotal
-
-  // Avoid duplicates — check by bon.id prefix in BL id or by tripId+clientNom
   const existingBLs = store.getBonsLivraison()
   const tripKey = bon.tripId ?? `PREP-${bon.id}`
-  const alreadyExists = existingBLs.some(bl => {
-    const blTripId = (bl as unknown as { tripId?: string }).tripId ?? ""
-    return blTripId === tripKey && bl.clientNom === clientNom
-  })
-  if (alreadyExists) return null
 
-  // Generate numero compatible with BOBonLivraison format
+  // Un client par entrée de bon.clientsInfo (ou, à défaut, par clientIds) —
+  // jamais une seule ligne agrégeant tous les clients de la préparation.
+  const clientEntries = (bon.clientsInfo?.length ? bon.clientsInfo.map(ci => ({ clientId: ci.clientId, clientNom: ci.clientNom, secteur: ci.secteur, zone: ci.zone }))
+    : bon.clientIds.map(id => {
+        const c = commandes.find(cm => cm.clientId === id)
+        return { clientId: id, clientNom: c?.clientNom ?? id, secteur: c?.secteur ?? "", zone: c?.zone ?? "" }
+      }))
+
   const y = new Date().getFullYear()
-  const blsThisYear = existingBLs.filter(b => {
-    const blNum = (b as unknown as { numero?: string }).numero ?? b.id
-    return blNum.includes(`BL-${y}`)
-  })
-  const numero = `BL-${y}-${String(blsThisYear.length + 1).padStart(4, "0")}`
+  let seqThisYear = existingBLs.filter(b => ((b as unknown as { numero?: string }).numero ?? b.id).includes(`BL-${y}`)).length
+  const created: BonLivraison[] = []
 
-  // Build BL object — include BOBonLivraison-compatible fields so it renders in back-office
-  const blId = store.genBL()
-  const newBL = {
-    id: blId,
-    date: store.today(),
-    tripId: tripKey,
-    commandeId: firstCmd?.id ?? bon.id,
-    clientNom,
-    secteur,
-    zone,
-    livreurNom,
-    prevendeurNom,
-    lignes: lignesBL,
-    montantTotal,
-    tva,
-    montantTTC,
-    statut: "émis" as const,
-    statutLivraison: "premier_passage" as const,
-    // BOBonLivraison-compatible extra fields
-    numero,
-    createdBy: operateurId,
-    updatedAt: new Date().toISOString(),
-  } as BonLivraison
+  for (const ce of clientEntries) {
+    const alreadyExists = existingBLs.some(bl => {
+      const blTripId = (bl as unknown as { tripId?: string }).tripId ?? ""
+      return blTripId === tripKey && (bl.clientId === ce.clientId || bl.clientNom === ce.clientNom)
+    })
+    if (alreadyExists) continue
 
-  // Persist in unified store key (fl_bons_livraison)
-  store.saveBonsLivraison([...existingBLs, newBL])
-  return newBL
+    const cmd = commandes.find(c => c.clientId === ce.clientId && c.statut !== "refuse" && c.statut !== "retour")
+
+    // Quantité par client : qtePrepared de l'article réparti au prorata de la
+    // part de CE client (qtesParClient), jamais le total agrégé de la prépa.
+    const lignesBL: BonLivraison["lignes"] = bon.lignes
+      .filter(l => (l.qtesParClient[ce.clientId] ?? 0) > 0)
+      .map(l => {
+        const ordered = l.qtesParClient[ce.clientId] ?? 0
+        const ratio = l.qteCommandee > 0 ? l.qtePrepared / l.qteCommandee : 1
+        const qte = Math.round(ordered * ratio * 100) / 100
+        const cl = cmd?.lignes.find(cl => cl.articleId === l.articleId)
+        const prixUnitaire = cl?.prixVente ?? cl?.prixUnitaire ?? 0
+        return { articleNom: l.articleNom, unite: l.unite, quantite: qte, prixUnitaire, total: qte * prixUnitaire }
+      })
+    if (lignesBL.length === 0) continue
+
+    const livreurNom = trip?.livreurNom ?? "Non assigne"
+    const prev = store.getUsers().find(u => u.id === cmd?.commercialId)
+    const prevendeurNom = prev?.name ?? cmd?.commercialNom ?? operateurNom
+    const montantTotal = lignesBL.reduce((s, l) => s + l.total, 0)
+
+    seqThisYear += 1
+    const newBL = {
+      id: store.genBL(),
+      date: store.today(),
+      tripId: tripKey,
+      commandeId: cmd?.id ?? `${bon.id}-${ce.clientId}`,
+      clientId: ce.clientId,
+      clientNom: ce.clientNom,
+      secteur: ce.secteur,
+      zone: ce.zone,
+      livreurNom,
+      prevendeurNom,
+      lignes: lignesBL,
+      montantTotal,
+      tva: 0,
+      montantTTC: montantTotal,
+      statut: "émis" as const,
+      statutLivraison: "premier_passage" as const,
+      numero: `BL-${y}-${String(seqThisYear).padStart(4, "0")}`,
+      createdBy: operateurId,
+      updatedAt: new Date().toISOString(),
+    } as BonLivraison
+    created.push(newBL)
+  }
+
+  if (created.length) store.saveBonsLivraison([...existingBLs, ...created])
+  return created
 }
 
 export default function MobilePreparation({ user }: Props) {
   const [bons, setBons] = useState<BonPreparation[]>([])
   const [activeBon, setActiveBon] = useState<BonPreparation | null>(null)
   const [localQtys, setLocalQtys] = useState<Record<string, number>>({})
-  const [generatedBL, setGeneratedBL] = useState<BonLivraison | null>(null)
+  const [generatedBLs, setGeneratedBLs] = useState<BonLivraison[]>([])
   // Pesée brut → net (même logique que la réception : poids brut − tares contenants)
   const [contenants, setContenants] = useState<ContenantTare[]>([])
   const [showPesee, setShowPesee] = useState<Record<string, boolean>>({})
@@ -178,10 +172,10 @@ export default function MobilePreparation({ user }: Props) {
     arr[idx].validatedBy = user.id
     store.saveBonsPreparation(arr)
 
-    // Auto-generate Bon de Livraison instantly after validation
+    // Auto-generate un BL par client instantanement apres validation
     // Works for both digital and paper formats — no manual re-entry required
-    const bl = autoGenerateBL(arr[idx], user.id, user.name)
-    if (bl) setGeneratedBL(bl)
+    const bls = autoGenerateBLs(arr[idx], user.id, user.name)
+    setGeneratedBLs(bls)
 
     refresh()
   }
@@ -352,34 +346,39 @@ export default function MobilePreparation({ user }: Props) {
                 <p className="text-xs text-green-600 mt-0.5">{new Date(activeBon.validatedAt).toLocaleString("fr-MA")}</p>
               )}
             </div>
-            {/* BL auto-generated notification */}
-            {generatedBL && (
-              <div className="flex items-start gap-3 rounded-xl border-2 border-blue-400 bg-blue-50 px-3 py-2.5 mt-1">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-black text-blue-900 uppercase tracking-wide">BL genere automatiquement</p>
-                  <p className="text-sm font-bold text-blue-800 mt-0.5">{generatedBL.id}</p>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] text-blue-700 font-medium">
-                    <span>{generatedBL.clientNom}</span>
-                    <span>•</span>
-                    <span>{generatedBL.montantTotal.toLocaleString("fr-MA")} DH</span>
-                    <span>•</span>
-                    <span>{generatedBL.lignes.length} article(s)</span>
+            {/* BL auto-generes — un par client, jamais un seul BL fusionne */}
+            {generatedBLs.length > 0 && (
+              <div className="flex flex-col gap-2 mt-1">
+                <p className="text-xs font-black text-blue-900 uppercase tracking-wide px-1">
+                  {generatedBLs.length} BL genere{generatedBLs.length > 1 ? "s" : ""} automatiquement — controle final requis
+                </p>
+                {generatedBLs.map(bl => (
+                  <div key={bl.id} className="flex items-start gap-3 rounded-xl border-2 border-blue-400 bg-blue-50 px-3 py-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-blue-800">{bl.id}</p>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-blue-700 font-medium">
+                        <span>{bl.clientNom}</span>
+                        <span>•</span>
+                        <span>{bl.montantTotal.toLocaleString("fr-MA")} DH</span>
+                        <span>•</span>
+                        <span>{bl.lignes.length} article(s)</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setGeneratedBLs(prev => prev.filter(b => b.id !== bl.id))} className="text-blue-400 hover:text-blue-700 p-1 shrink-0">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                   </div>
-                  <p className="text-[10px] text-blue-600 mt-0.5 italic">
-                    {activeBon.format === "papier"
-                      ? "Saisie papier — lignes auto-importees du bon de preparation sans ressaisie"
-                      : "Saisie numerique — quantites reelles preparees utilisees"
-                    }
-                  </p>
-                </div>
-                <button onClick={() => setGeneratedBL(null)} className="text-blue-400 hover:text-blue-700 p-1 shrink-0">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                ))}
+                <p className="text-[10px] text-blue-600 italic px-1">
+                  {activeBon.format === "papier"
+                    ? "Saisie papier — lignes auto-importees du bon de preparation sans ressaisie"
+                    : "Saisie numerique — quantites reelles preparees utilisees"}
+                </p>
               </div>
             )}
           </div>
