@@ -141,6 +141,7 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [loading, setLoading]             = useState(true)
   const [search, setSearch]               = useState("")
   const [filterStatut, setFilterStatut]   = useState("tous")
+  const [flowStage, setFlowStage]         = useState<"tous" | "recues" | "preparation" | "assignees" | "livrees">("tous")
   const [filterSource, setFilterSource]   = useState("tous")
   const [filterZone, setFilterZone]       = useState("tous")
   const [filterCategorie, setFilterCategorie] = useState("tous")
@@ -392,8 +393,17 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const zones = [...new Set(cmds.map(c => c.zone).filter(Boolean))] as string[]
   const categories = [...new Set(cmds.map(c => c.categorie).filter(Boolean))] as string[]
 
+  // ── Flux logistique : Reçues -> En préparation -> Assignées -> Livrées ──────
+  const FLOW_STAGES: Record<string, string[]> = {
+    recues:       ["en_attente", "en_attente_approbation", "valide", "nouveau", "a_confirmer"],
+    preparation:  ["en_preparation", "prepare"],
+    assignees:    ["charge", "en_transit", "en_cours"],
+    livrees:      ["livre"],
+  }
+
   // ── Filtrage ─────────────────────────────────────────────────────────────────
   const filtered = cmds.filter(c => {
+    if (flowStage !== "tous" && !FLOW_STAGES[flowStage]?.includes(c.statut)) return false
     if (filterSource !== "tous" && c.source !== filterSource) return false
     if (filterStatut !== "tous" && c.statut !== filterStatut) return false
     if (filterZone !== "tous" && c.zone !== filterZone) return false
@@ -450,6 +460,27 @@ export default function BOCommandesUnifiees({ user }: Props) {
             Actualiser
           </button>
         </div>
+      </div>
+
+      {/* ── Flux logistique : Reçues -> En préparation -> Assignées -> Livrées ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {([
+          { stage: "recues" as const,      label: "📥 Reçues",         active: "bg-slate-600 border-slate-600" },
+          { stage: "preparation" as const, label: "📦 En préparation", active: "bg-violet-600 border-violet-600" },
+          { stage: "assignees" as const,   label: "🚚 Assignées",      active: "bg-sky-600 border-sky-600" },
+          { stage: "livrees" as const,     label: "✅ Livrées",        active: "bg-emerald-600 border-emerald-600" },
+        ]).map(({ stage, label, active: activeClass }) => {
+          const count = cmds.filter(c => FLOW_STAGES[stage]?.includes(c.statut)).length
+          const active = flowStage === stage
+          return (
+            <button key={stage} onClick={() => setFlowStage(active ? "tous" : stage)}
+              className={`flex flex-col items-start gap-0.5 px-4 py-3 rounded-2xl border transition-colors text-left ${
+                active ? `${activeClass} text-white` : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+              <span className={`text-xs font-semibold ${active ? "text-white/90" : "text-slate-500"}`}>{label}</span>
+              <span className={`text-2xl font-black ${active ? "text-white" : "text-slate-800"}`}>{count}</span>
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Modal : nouvelle commande (création manuelle) ── */}

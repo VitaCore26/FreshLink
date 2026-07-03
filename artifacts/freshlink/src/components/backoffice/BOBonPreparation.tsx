@@ -264,6 +264,8 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
   const [articles, setArticles] = useState<Article[]>([])
   const [showNew, setShowNew] = useState(false)
   const [viewing, setViewing] = useState<BonPreparation | null>(null)
+  const [retiringId, setRetiringId] = useState<string | null>(null)
+  const [validatingId, setValidatingId] = useState<string | null>(null)
 
   // form
   const [nom, setNom] = useState("")
@@ -510,9 +512,11 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
   }
 
   const validateAll = async (bonId: string) => {
+    if (validatingId) return // anti double-clic — jamais deux validations/deux jeux de BL
+    setValidatingId(bonId)
     const arr = store.getBonsPreparation()
     const idx = arr.findIndex(b => b.id === bonId)
-    if (idx < 0) return
+    if (idx < 0) { setValidatingId(null); return }
     // Ne jamais écraser une ligne déjà validée manuellement (qtePrepared saisi
     // par l'admin via validateLigne) — sinon "Valider toute la prépa" annule
     // silencieusement les écarts déjà corrigés. Seules les lignes jamais
@@ -558,9 +562,44 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
     refresh()
     if (viewing?.id === bonId) setViewing({ ...arr[idx] })
     setViewing(null)
+    setValidatingId(null)
     // Dès la validation numérique, contrôle final direct sur le BL — pas
     // besoin de repasser par la liste des préparations.
     onValidated?.()
+  }
+
+  // Retire un client (et ses commandes) d'une préparation NON validée. Sort
+  // la commande du flux de préparation (repasse "valide" = à préparer/
+  // réassigner). Aucun stock virtuel à restaurer : ce système ne réserve
+  // jamais de stock à l'entrée en préparation (garde volontairement
+  // supprimée — voir BODispatch.tsx, le contrôle se fait physiquement au
+  // chargement), donc rien n'a été décrémenté à annuler ici.
+  const retirerClientDeLaPrep = (bonId: string, clientId: string) => {
+    if (retiringId) return // anti double-clic
+    const arr = store.getBonsPreparation()
+    const idx = arr.findIndex(b => b.id === bonId)
+    if (idx < 0 || arr[idx].statut === "valide") return
+    setRetiringId(clientId)
+    const bon = arr[idx]
+    arr[idx] = {
+      ...bon,
+      clientIds: bon.clientIds.filter(id => id !== clientId),
+      clientsInfo: bon.clientsInfo?.filter(ci => ci.clientId !== clientId),
+      lignes: bon.lignes.map(l => {
+        const retire = l.qtesParClient[clientId] ?? 0
+        if (retire === 0) return l
+        const { [clientId]: _omit, ...rest } = l.qtesParClient
+        return { ...l, qtesParClient: rest, qteCommandee: Math.max(0, l.qteCommandee - retire), qtePrepared: Math.max(0, l.qtePrepared - retire) }
+      }).filter(l => Object.keys(l.qtesParClient).length > 0),
+    }
+    store.saveBonsPreparation(arr)
+    // Commandes de ce client dans cette prépa → repassent "valide" (à préparer/réassigner)
+    const cmds = store.getCommandes()
+    const linked = cmds.filter(c => c.clientId === clientId && c.statut === "en_preparation")
+    if (linked.length) store.saveCommandes(cmds.map(c => linked.some(l => l.id === c.id) ? { ...c, statut: "valide" as const } : c))
+    setRetiringId(null)
+    refresh()
+    if (viewing?.id === bonId) setViewing(arr[idx])
   }
 
   const deleteBon = (id: string) => {
@@ -748,7 +787,13 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
                     </div>
                   ))}
                 </div>
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex justify-end items-center gap-2">
+                  {bon.statut !== "valide" && (
+                    <button onClick={() => retirerClientDeLaPrep(bon.id, ci.clientId)} disabled={retiringId === ci.clientId}
+                      className="text-xs font-semibold text-red-500 hover:text-red-700 disabled:opacity-50">
+                      {retiringId === ci.clientId ? "Retrait…" : "Retirer de la préparation"}
+                    </button>
+                  )}
                   <span className="text-sm font-black text-foreground px-3 py-1 bg-green-50 rounded-xl border border-green-200">
                     Total : {clientTotal.toFixed(1)} kg
                   </span>
@@ -765,10 +810,10 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
               className="flex-1 py-3 rounded-2xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted">
               Fermer
             </button>
-            <button onClick={() => validateAll(bon.id)}
-              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white"
+            <button onClick={() => validateAll(bon.id)} disabled={!!validatingId}
+              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
               style={{ background: "oklch(0.40 0.16 155)" }}>
-              Valider toute la prépa
+              {validatingId === bon.id ? "Validation…" : "Valider toute la prépa"}
             </button>
           </div>
         )}

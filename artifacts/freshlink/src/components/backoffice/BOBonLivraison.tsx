@@ -35,6 +35,7 @@ export interface BonLivraison {
   id: string
   numero: string         // "BL-2025-0047"
   commandeId?: string
+  commandeIds?: string[] // toutes les commandes regroupées sur ce BL (client unique, plusieurs commandes)
   clientId: string
   clientNom: string
   clientAdresse?: string
@@ -1679,6 +1680,12 @@ export default function BOBonLivraison({ user }: { user: User }) {
                         </span>
                         {(bl as unknown as { prepId?: string }).prepId && (
                           <span className="block text-[9px] text-violet-500 font-semibold mt-0.5">Depuis prep.</span>
+                        )}
+                        {/* Numéro(s) de commande d'origine — obligatoire, même en cas de regroupement */}
+                        {(bl.commandeIds?.length ? bl.commandeIds : bl.commandeId ? [bl.commandeId] : []).length > 0 && (
+                          <span className="block text-[9px] text-slate-400 font-mono mt-0.5">
+                            Cmd: {(bl.commandeIds?.length ? bl.commandeIds : [bl.commandeId]).join(", ")}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">

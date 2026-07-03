@@ -284,6 +284,11 @@ export function printBL(bl: BonLivraison, company?: CompanyConfig) {
     <div class="lh-accent"></div>
     <div class="lh-num">${blId}</div>
     <div class="lh-date">${dateStr}</div>
+    ${(() => {
+      const ids = bl.commandeIds?.length ? bl.commandeIds : (bl.commandeId ? [bl.commandeId] : [])
+      if (!ids.length) return ""
+      return `<div style="margin-top:4px;font-size:10px;font-weight:700;color:${accent}">Commande${ids.length > 1 ? "s" : ""} d'origine : ${ids.join(", ")}</div>`
+    })()}
     <div style="margin-top:8px"><span class="badge b-green">LIVRÉ</span></div>
   </div>
 </div>
@@ -634,6 +639,8 @@ interface BOBLLigne {
 interface BOBonLivraison {
   id:                    string
   numero:                string
+  commandeId?:           string
+  commandeIds?:          string[]  // toutes les commandes regroupées — affichage obligatoire sur le BL
   clientNom:             string
   clientAdresse?:        string
   livreurNom?:           string
@@ -700,6 +707,11 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts, company?: CompanyCon
     <div class="lh-accent"></div>
     <div class="lh-num">${bl.numero}</div>
     <div class="lh-date">${dateStr}</div>
+    ${(() => {
+      const ids = bl.commandeIds?.length ? bl.commandeIds : (bl.commandeId ? [bl.commandeId] : [])
+      if (!ids.length) return ""
+      return `<div style="margin-top:4px;font-size:10px;font-weight:700;color:${accent}">Commande${ids.length > 1 ? "s" : ""} d'origine : ${ids.join(", ")}</div>`
+    })()}
     <div style="margin-top:8px"><span class="badge ${bl.statut==="livre"||bl.statut==="Livré"?"b-green":bl.statut==="partiel"?"b-amber":"b-blue"}">${(bl.statut??"ÉMIS").toUpperCase()}</span></div>
   </div>
 </div>

@@ -12,8 +12,10 @@ function StatusBadge({ s }: { s: BonPreparation["statut"] }) {
 }
 
 // Auto-generate un BonLivraison INDIVIDUEL PAR CLIENT depuis une préparation
-// validée (jamais un BL global fusionné — chaque client doit avoir son propre
-// document, factures et retours étant gérés par client, pas par tournée).
+// validée — jamais un BL mélangeant deux clients différents. Exception : si
+// UN client a plusieurs commandes dans cette préparation, elles sont
+// REGROUPÉES sur un seul et même BL (commandeIds liste tous les numéros
+// d'origine — jamais un seul commandeId qui en oublierait deux sur trois).
 export function autoGenerateBLs(bon: BonPreparation, operateurId: string, operateurNom: string): BonLivraison[] {
   const trips = store.getTrips()
   const trip = bon.tripId ? trips.find(t => t.id === bon.tripId) : null
@@ -40,7 +42,10 @@ export function autoGenerateBLs(bon: BonPreparation, operateurId: string, operat
     })
     if (alreadyExists) continue
 
-    const cmd = commandes.find(c => c.clientId === ce.clientId && c.statut !== "refuse" && c.statut !== "retour")
+    // TOUTES les commandes de ce client dans cette prépa — pas seulement la
+    // première trouvée — pour ne perdre aucun numéro de commande d'origine.
+    const cmdsClient = commandes.filter(c => c.clientId === ce.clientId && c.statut !== "refuse" && c.statut !== "retour")
+    const cmd = cmdsClient[0]
 
     // Quantité par client : qtePrepared de l'article réparti au prorata de la
     // part de CE client (qtesParClient), jamais le total agrégé de la prépa.
@@ -50,8 +55,12 @@ export function autoGenerateBLs(bon: BonPreparation, operateurId: string, operat
         const ordered = l.qtesParClient[ce.clientId] ?? 0
         const ratio = l.qteCommandee > 0 ? l.qtePrepared / l.qteCommandee : 1
         const qte = Math.round(ordered * ratio * 100) / 100
-        const cl = cmd?.lignes.find(cl => cl.articleId === l.articleId)
-        const prixUnitaire = cl?.prixVente ?? cl?.prixUnitaire ?? 0
+        // Cherche le prix dans N'IMPORTE LAQUELLE des commandes groupées.
+        let prixUnitaire = 0
+        for (const c of cmdsClient) {
+          const cl = c.lignes.find(cl => cl.articleId === l.articleId)
+          if (cl) { prixUnitaire = cl.prixVente ?? cl.prixUnitaire ?? 0; break }
+        }
         return { articleNom: l.articleNom, unite: l.unite, quantite: qte, prixUnitaire, total: qte * prixUnitaire }
       })
     if (lignesBL.length === 0) continue
@@ -62,11 +71,13 @@ export function autoGenerateBLs(bon: BonPreparation, operateurId: string, operat
     const montantTotal = lignesBL.reduce((s, l) => s + l.total, 0)
 
     seqThisYear += 1
+    const commandeIds = cmdsClient.length ? cmdsClient.map(c => c.id) : [`${bon.id}-${ce.clientId}`]
     const newBL = {
       id: store.genBL(),
       date: store.today(),
       tripId: tripKey,
-      commandeId: cmd?.id ?? `${bon.id}-${ce.clientId}`,
+      commandeId: commandeIds[0],
+      commandeIds,
       clientId: ce.clientId,
       clientNom: ce.clientNom,
       secteur: ce.secteur,
@@ -157,11 +168,13 @@ export default function MobilePreparation({ user }: Props) {
     refresh()
   }
 
+  const [validating, setValidating] = useState(false)
   const validateAll = () => {
-    if (!activeBon) return
+    if (!activeBon || validating) return // anti double-clic — jamais deux validations/deux jeux de BL
+    setValidating(true)
     const arr = store.getBonsPreparation()
     const idx = arr.findIndex(b => b.id === activeBon.id)
-    if (idx < 0) return
+    if (idx < 0) { setValidating(false); return }
     arr[idx].lignes = arr[idx].lignes.map(l => ({
       ...l,
       qtePrepared: localQtys[l.articleId] ?? l.qteCommandee,
@@ -177,6 +190,7 @@ export default function MobilePreparation({ user }: Props) {
     const bls = autoGenerateBLs(arr[idx], user.id, user.name)
     setGeneratedBLs(bls)
 
+    setValidating(false)
     refresh()
   }
 
@@ -330,10 +344,10 @@ export default function MobilePreparation({ user }: Props) {
         {/* Footer */}
         {activeBon.statut !== "valide" && (
           <div className="px-4 py-4 border-t border-border bg-card shrink-0">
-            <button onClick={validateAll}
-              className="w-full py-4 rounded-2xl text-base font-bold text-white"
+            <button onClick={validateAll} disabled={validating}
+              className="w-full py-4 rounded-2xl text-base font-bold text-white disabled:opacity-50"
               style={{ background: "oklch(0.40 0.16 155)" }}>
-              Valider toute la preparation ({total - validated} restants)
+              {validating ? "Validation…" : `Valider toute la preparation (${total - validated} restants)`}
             </button>
           </div>
         )}

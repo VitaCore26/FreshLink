@@ -193,8 +193,11 @@ export default function BODispatch({ user }: Props) {
   // Note: stock guard removed — affectation autorisee meme sans stock disponible
   // Le controleur de chargement vérifie les quantités réelles au départ
 
+  const [creatingTrip, setCreatingTrip] = useState(false)
   const handleCreateTrip = () => {
     if (!selectedLivreurId || selectedCmds.length === 0) return
+    if (creatingTrip) return // anti double-clic — jamais deux tournées/doubles affectations
+    setCreatingTrip(true)
     const livreur = livreurs.find(l => l.id === selectedLivreurId)
     if (!livreur) return
     const cmds = commandes.filter(c => selectedCmds.includes(c.id))
@@ -228,6 +231,7 @@ export default function BODispatch({ user }: Props) {
     selectedCmds.forEach(id => store.updateCommande(id, { statut: "en_transit" }))
     setShowTripForm(false)
     setSelectedLivreurId(""); setVehicule(""); setSelectedCmds([])
+    setCreatingTrip(false)
     refresh()
   }
 
@@ -250,7 +254,7 @@ export default function BODispatch({ user }: Props) {
             // livré, jamais un doublon. Le repli "créer un BL" ne sert que
             // si aucune préparation numérique n'a jamais existé pour cette
             // tournée (ex. ancien flux papier sans passage par la prépa).
-            const existingBL = store.getBonsLivraison().find(bl => bl.commandeId === cid && bl.tripId === id)
+            const existingBL = store.getBonsLivraison().find(bl => bl.tripId === id && (bl.commandeIds?.includes(cid) ?? bl.commandeId === cid))
             if (existingBL) {
               store.updateBonLivraison(existingBL.id, { statutLivraison: "livre" })
             } else {
@@ -271,7 +275,7 @@ export default function BODispatch({ user }: Props) {
               const tva = 0.20
               store.addBonLivraison({
                 id: store.genBL(), date: store.today(), tripId: id,
-                commandeId: cid, clientId: cmd.clientId, clientNom: cmd.clientNom, secteur: cmd.secteur, zone: cmd.zone,
+                commandeId: cid, commandeIds: [cid], clientId: cmd.clientId, clientNom: cmd.clientNom, secteur: cmd.secteur, zone: cmd.zone,
                 livreurNom: trip.livreurNom, prevendeurNom: cmd.commercialNom,
                 lignes,
                 montantTotal: total, tva, montantTTC: total * (1 + tva),
@@ -327,6 +331,23 @@ export default function BODispatch({ user }: Props) {
       printFeuilleRoute(data, company)
     }
     setPrintOptionsTripId(null)
+  }
+
+  // Retire une commande d'une tournée planifiée : repasse en "valide" (à
+  // assigner) pour être réaffectée à un autre livreur/tournée. Interdit une
+  // fois la tournée démarrée (le chargement physique a peut-être déjà eu
+  // lieu) — le garde canRunTrip côté planifié suffit pour l'UI, mais on
+  // revérifie ici pour bloquer un appel direct hors bouton.
+  const [desassigningId, setDesassigningId] = useState<string | null>(null)
+  const desassignerCommande = (tripId: string, cid: string) => {
+    if (desassigningId) return // anti double-clic
+    const trip = trips.find(t => t.id === tripId)
+    if (!trip || trip.statut !== "planifié") return
+    setDesassigningId(cid)
+    store.updateTrip(tripId, { commandeIds: trip.commandeIds.filter(id => id !== cid), itineraire: trip.itineraire.filter(i => commandes.find(c => c.id === cid)?.clientNom !== i.clientNom) })
+    store.updateCommande(cid, { statut: "valide" })
+    setDesassigningId(null)
+    refresh()
   }
 
   const loadTripMap = async (trip: Trip, el: HTMLDivElement) => {
@@ -637,7 +658,7 @@ export default function BODispatch({ user }: Props) {
                     Annuler
                   </button>
                   <button onClick={handleCreateTrip}
-                    disabled={!selectedLivreurId || selectedCmds.length === 0}
+                    disabled={creatingTrip || !selectedLivreurId || selectedCmds.length === 0}
                     className="px-5 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
                     style={{ background: "oklch(0.38 0.2 260)" }}>
                     Créer ({selectedCmds.length})
@@ -669,8 +690,12 @@ export default function BODispatch({ user }: Props) {
                     {trip.commandeIds.map(cid => {
                       const cmd = commandes.find(c => c.id === cid)
                       return cmd ? (
-                        <span key={cid} className="px-2 py-0.5 bg-muted rounded-lg text-xs text-foreground">
+                        <span key={cid} className="flex items-center gap-1 px-2 py-0.5 bg-muted rounded-lg text-xs text-foreground">
                           {cmd.clientNom}
+                          {trip.statut === "planifié" && (
+                            <button onClick={() => desassignerCommande(trip.id, cid)} title="Désassigner cette commande"
+                              className="text-muted-foreground hover:text-red-600 leading-none">×</button>
+                          )}
                         </span>
                       ) : null
                     })}

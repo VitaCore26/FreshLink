@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { store, type Article, type User, type Client, type Commande, type Visite, DELAI_RECOUVREMENT_LABELS, type DelaiRecouvrement, MODALITE_LABELS, type ModalitePaiement, getAllSecteurs, VILLES_MAROC, ROLE_LABELS } from "@/lib/store"
 import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
+import SwipeToDelete from "@/components/ui/SwipeToDelete"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
 
 interface Props { user: User }
@@ -1989,8 +1990,8 @@ export default function MobileCommercial({ user }: Props) {
                 const tonn  = lignesCmd.reduce((s, l) => s + (Number(l.quantite) || 0), 0)
                 const editable = canEdit(cmd)
                 const isActive = editCmd?.id === cmd.id
-                return (
-                  <div key={cmd.id} className={`rounded-xl border p-4 flex flex-col gap-2.5 ${isActive ? "border-primary/50 bg-primary/3" : "border-border bg-card"}`}>
+                const card = (
+                  <div className={`rounded-xl border p-4 flex flex-col gap-2.5 ${isActive ? "border-primary/50 bg-primary/3" : "border-border bg-card"}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-foreground">{cmd.clientNom}</p>
@@ -2047,6 +2048,11 @@ export default function MobileCommercial({ user }: Props) {
                     </div>
                   </div>
                 )
+                return editable ? (
+                  <SwipeToDelete key={cmd.id} onDelete={() => handleDeleteCommande(cmd.id)} label="Retirer" confirmLabel="Confirmer">
+                    {card}
+                  </SwipeToDelete>
+                ) : <div key={cmd.id}>{card}</div>
               })}
                     </div>
                   ))

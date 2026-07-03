@@ -672,7 +672,8 @@ export interface BonLivraison {
   id: string
   date: string
   tripId: string
-  commandeId: string
+  commandeId: string          // back-compat — première commande regroupée
+  commandeIds?: string[]      // TOUTES les commandes regroupées sur ce BL (1 client = 1 BL, jamais 2 clients différents)
   clientId?: string
   clientNom: string
   secteur: string
