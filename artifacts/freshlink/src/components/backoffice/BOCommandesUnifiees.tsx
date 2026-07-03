@@ -149,6 +149,10 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [filterDateFin, setFilterDateFin]     = useState("")
   const [selected, setSelected]           = useState<CmdUnifiee | null>(null)
   const [updating, setUpdating]           = useState(false)
+  // Sélection multiple — clé "table-id" pour distinguer fl_commandes / fl_commandes_web
+  const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set())
+  const [bulkNewStatut, setBulkNewStatut] = useState("")
+  const [bulkBusy, setBulkBusy]           = useState(false)
   const [msg, setMsg]                     = useState<{ ok: boolean; text: string } | null>(null)
   // ── Création manuelle d'une commande (BO) ──────────────────────────────────
   const [showNew, setShowNew]             = useState(false)
@@ -282,6 +286,77 @@ export default function BOCommandesUnifiees({ user }: Props) {
     } catch {
       setMsg({ ok: false, text: "❌ Erreur lors de la suppression." })
     }
+    setTimeout(() => setMsg(null), 4000)
+  }
+
+  // ── Sélection multiple ───────────────────────────────────────────────────────
+  const rowKey = (cmd: CmdUnifiee) => `${cmd.table}-${cmd.id}`
+  const toggleSelect = (cmd: CmdUnifiee) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      const k = rowKey(cmd)
+      if (next.has(k)) next.delete(k); else next.add(k)
+      return next
+    })
+  }
+  const bulkUpdateStatut = async (newStatut: string) => {
+    if (bulkBusy || !newStatut || selectedCmds.length === 0) return // anti double-clic
+    setBulkBusy(true)
+    try {
+      // Grouper par table — sync-write cible une seule table par appel
+      const byTable = new Map<string, CmdUnifiee[]>()
+      selectedCmds.forEach(c => byTable.set(c.table, [...(byTable.get(c.table) ?? []), c]))
+      for (const [table, cmdsInTable] of byTable) {
+        const upserts = cmdsInTable.map(c => ({
+          id: c.id,
+          payload: { ...(c.rawPayload ?? {}), statut: newStatut, traite_par: user.name, traite_at: new Date().toISOString() },
+          updated_at: new Date().toISOString(),
+        }))
+        const res = await fetch("/api/sync-write", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table, upserts }),
+        })
+        const json = await res.json()
+        if (!json.ok) throw new Error((json.errors || []).join(", "))
+      }
+      const changedKeys = new Set(selectedCmds.map(rowKey))
+      setCmds(prev => prev.map(c => changedKeys.has(rowKey(c)) ? { ...c, statut: newStatut } : c))
+      setMsg({ ok: true, text: `✅ ${selectedCmds.length} commande(s) → ${getStatutCfg(newStatut, selectedCmds[0].source).label}` })
+      setSelectedIds(new Set())
+      setBulkNewStatut("")
+    } catch {
+      setMsg({ ok: false, text: "❌ Erreur lors de la mise à jour groupée." })
+    }
+    setBulkBusy(false)
+    setTimeout(() => setMsg(null), 4000)
+  }
+
+  const bulkDelete = async () => {
+    if (bulkBusy || selectedCmds.length === 0) return // anti double-clic
+    if (!confirm(`⚠️ Supprimer définitivement ${selectedCmds.length} commande(s) sélectionnée(s) ?\n\nCette action est irréversible.`)) return
+    setBulkBusy(true)
+    try {
+      const byTable = new Map<string, CmdUnifiee[]>()
+      selectedCmds.forEach(c => byTable.set(c.table, [...(byTable.get(c.table) ?? []), c]))
+      const erpIds = selectedCmds.filter(c => c.source === "erp").map(c => c.id)
+      if (erpIds.length) store.saveCommandes(store.getCommandes().filter(c => !erpIds.includes(c.id)))
+      for (const [table, cmdsInTable] of byTable) {
+        const res = await fetch("/api/sync-write", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table, deletes: cmdsInTable.map(c => c.id) }),
+        })
+        const json = await res.json()
+        if (!json.ok) throw new Error((json.errors || []).join(", "))
+      }
+      const changedKeys = new Set(selectedCmds.map(rowKey))
+      setCmds(prev => prev.filter(c => !changedKeys.has(rowKey(c))))
+      setMsg({ ok: true, text: `✅ ${selectedCmds.length} commande(s) supprimée(s).` })
+      setSelectedIds(new Set())
+      setSelected(null)
+    } catch {
+      setMsg({ ok: false, text: "❌ Erreur lors de la suppression groupée." })
+    }
+    setBulkBusy(false)
     setTimeout(() => setMsg(null), 4000)
   }
 
@@ -422,6 +497,12 @@ export default function BOCommandesUnifiees({ user }: Props) {
     }
     return true
   })
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(rowKey(c)))
+  const toggleSelectAll = () => {
+    setSelectedIds(allFilteredSelected ? new Set() : new Set(filtered.map(rowKey)))
+  }
+  const selectedCmds = filtered.filter(c => selectedIds.has(rowKey(c)))
 
   // ── Compteurs ─────────────────────────────────────────────────────────────────
   const webCount  = cmds.filter(c => c.source === "web").length
@@ -684,6 +765,36 @@ export default function BOCommandesUnifiees({ user }: Props) {
         <span className="text-xs text-slate-400 ml-auto">{filtered.length} résultat{filtered.length > 1 ? "s" : ""}</span>
       </div>
 
+      {/* ── Barre d'actions groupées ── */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 rounded-xl border border-border bg-slate-50">
+          <button onClick={toggleSelectAll}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border bg-white hover:bg-slate-100">
+            {allFilteredSelected ? "☑ Tout désélectionner" : "☐ Tout sélectionner"}
+          </button>
+          {selectedIds.size > 0 && (
+            <>
+              <span className="text-xs font-bold text-slate-600">{selectedIds.size} sélectionnée(s)</span>
+              <div className="flex items-center gap-1.5 ml-2">
+                <select value={bulkNewStatut} onChange={e => setBulkNewStatut(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-border text-xs bg-white">
+                  <option value="">— Changer le statut —</option>
+                  {NEXT_ERP.map(s => <option key={s} value={s}>{STATUTS_ERP[s]?.label ?? s}</option>)}
+                </select>
+                <button onClick={() => bulkUpdateStatut(bulkNewStatut)} disabled={bulkBusy || !bulkNewStatut}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40">
+                  {bulkBusy ? "…" : "Appliquer"}
+                </button>
+              </div>
+              <button onClick={bulkDelete} disabled={bulkBusy}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 ml-1">
+                {bulkBusy ? "…" : `🗑 Supprimer (${selectedIds.size})`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── Table ── */}
       {loading ? (
         <div className="py-16 text-center text-slate-400 text-sm">⏳ Chargement des commandes...</div>
@@ -694,6 +805,10 @@ export default function BOCommandesUnifiees({ user }: Props) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                <th className="px-4 py-3 w-8">
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                </th>
                 <th className="text-left px-4 py-3 font-semibold">Réf.</th>
                 <th className="text-left px-4 py-3 font-semibold">Date</th>
                 <th className="text-left px-4 py-3 font-semibold">Client</th>
@@ -720,6 +835,10 @@ export default function BOCommandesUnifiees({ user }: Props) {
                     className={`border-b border-border hover:bg-slate-50 cursor-pointer transition-colors ${i % 2 === 0 ? "" : "bg-slate-50/40"}`}
                     onClick={() => setSelected(cmd)}
                   >
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(rowKey(cmd))} onChange={() => toggleSelect(cmd)}
+                        className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                    </td>
                     {/* Réf */}
                     <td className="px-4 py-3 font-mono text-xs font-bold text-green-700 whitespace-nowrap">
                       {cmd.numero.slice(0, 16)}
