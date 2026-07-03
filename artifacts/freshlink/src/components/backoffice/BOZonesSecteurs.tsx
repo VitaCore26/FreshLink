@@ -65,6 +65,15 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
     else z.secteurs.push(secteur)
     return c
   })
+  // Affectation rapide depuis le pool de secteurs : une liste à sélection (1
+  // zone à la fois, cas le plus courant) — retire des autres zones et affecte
+  // à la zone choisie. Le mode many-to-many ci-dessus reste possible depuis
+  // chaque carte de zone pour les cas où un secteur doit être dans plusieurs.
+  const setSecteurZoneUnique = (secteur: string, zid: string) => update(c => {
+    c.zones.forEach(z => { z.secteurs = z.secteurs.filter(s => s !== secteur) })
+    if (zid) { const z = c.zones.find(x => x.id === zid); if (z) z.secteurs.push(secteur) }
+    return c
+  })
 
   // ── Gestion des ZONES elles-mêmes (créer/supprimer) ─────────────────────────
   const addZone = () => update(c => {
@@ -129,20 +138,32 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
       {/* ── Gestion à part des secteurs (pool maître) ───────────────────────── */}
       <div className="rounded-2xl border border-border bg-card p-4 mb-5">
         <p className="font-bold text-foreground text-sm mb-2">📋 Secteurs ({cfg.allSecteurs.length})</p>
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex flex-col gap-1.5 mb-3">
           {cfg.allSecteurs.length === 0 && <span className="text-xs text-muted-foreground italic">Aucun secteur. Ajoutez-en ci-dessous.</span>}
-          {cfg.allSecteurs.map(s => (
-            <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-muted text-sm">
-              {editMaster?.old === s ? (
-                <input autoFocus value={editMaster.val} onChange={e => setEditMaster({ old: s, val: e.target.value })}
-                  onKeyDown={e => { if (e.key === "Enter") renameMaster(); if (e.key === "Escape") setEditMaster(null) }} onBlur={renameMaster}
-                  className="px-1 py-0.5 rounded border border-border bg-background text-foreground text-sm w-28" />
-              ) : (
-                <button onClick={() => setEditMaster({ old: s, val: s })} className="text-foreground" title="Renommer">📍 {s}</button>
-              )}
-              <button onClick={() => deleteMaster(s)} className="text-red-500 hover:text-red-700 text-xs" title="Supprimer">✕</button>
-            </span>
-          ))}
+          {cfg.allSecteurs.map(s => {
+            const zonesDuSecteur = cfg.zones.filter(z => z.secteurs.includes(s))
+            return (
+              <div key={s} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-muted flex-wrap">
+                {editMaster?.old === s ? (
+                  <input autoFocus value={editMaster.val} onChange={e => setEditMaster({ old: s, val: e.target.value })}
+                    onKeyDown={e => { if (e.key === "Enter") renameMaster(); if (e.key === "Escape") setEditMaster(null) }} onBlur={renameMaster}
+                    className="px-1 py-0.5 rounded border border-border bg-background text-foreground text-sm w-28" />
+                ) : (
+                  <button onClick={() => setEditMaster({ old: s, val: s })} className="text-sm text-foreground" title="Renommer">📍 {s}</button>
+                )}
+                {/* Liste à sélection pour affecter ce secteur à une zone */}
+                <select value={zonesDuSecteur[0]?.id ?? ""} onChange={e => setSecteurZoneUnique(s, e.target.value)}
+                  className="px-2 py-1 rounded-lg border border-border bg-background text-foreground text-xs">
+                  <option value="">— Aucune zone —</option>
+                  {cfg.zones.map(z => <option key={z.id} value={z.id}>{z.label}</option>)}
+                </select>
+                {zonesDuSecteur.length > 1 && (
+                  <span className="text-[10px] text-amber-600">+ {zonesDuSecteur.slice(1).map(z => z.label).join(", ")}</span>
+                )}
+                <button onClick={() => deleteMaster(s)} className="text-red-500 hover:text-red-700 text-xs ml-auto" title="Supprimer">✕</button>
+              </div>
+            )
+          })}
         </div>
         <div className="flex gap-1.5 max-w-sm">
           <input value={newMaster} onChange={e => setNewMaster(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addMaster() }}
