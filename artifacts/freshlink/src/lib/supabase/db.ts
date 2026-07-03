@@ -527,6 +527,23 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
           // global récent a été détecté (alors on honore le vidage volontaire).
           if (items.length === 0 && localCount > 0 && !resetActive) {
             console.warn(`[sync] ${table}: distant vide ignoré — ${localCount} ligne(s) locale(s) préservée(s)`)
+            // Rattrapage immédiat pour fl_caisse_entries : cette table n'a été
+            // ajoutée à la synchro qu'après coup (bug historique — les
+            // écritures de caisse ne remontaient jamais vers Supabase). Sans
+            // ce push explicite, les données déjà piégées en local
+            // n'auraient été repoussées qu'à la PROCHAINE écriture sur ce
+            // même appareil — potentiellement jamais si l'appareil n'est
+            // plus utilisé pour la caisse. On les pousse donc une fois ici.
+            if (table === "fl_caisse_entries") {
+              try {
+                const local = getLocal() as { id: string }[]
+                await fetch("/api/sync-write", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ table, upserts: local.map(e => ({ id: e.id, payload: e, updated_at: new Date().toISOString() })) }),
+                })
+                console.warn(`[sync] ${table}: rattrapage — ${local.length} ligne(s) locale(s) poussée(s) vers Supabase`)
+              } catch { /* best-effort — le write-through habituel reprendra au prochain changement */ }
+            }
             return
           }
           suppressAutoSync(() => save(items))
