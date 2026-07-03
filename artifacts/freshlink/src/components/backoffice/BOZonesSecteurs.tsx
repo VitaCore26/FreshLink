@@ -27,7 +27,22 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
     ...teamLeadsReels.filter(u => !TEAM_LEADS.some(tl => tl.id === u.id)).map(u => ({ id: u.id, name: u.name })),
   ]
 
-  useEffect(() => { loadZonesConfig().then(c => { setCfg(c); setLoading(false) }) }, [])
+  useEffect(() => {
+    loadZonesConfig().then(c => {
+      // Le pool "allSecteurs" démarre vide (config explicite) et ne se
+      // remplissait jamais tout seul — un admin sur un ERP déjà en
+      // production avec des clients existants voyait "Secteurs (0)" alors
+      // que des dizaines de secteurs étaient déjà utilisés sur les fiches
+      // clients. On les repêche ici pour pré-remplir le pool (pas
+      // sauvegardé automatiquement — juste affiché, à confirmer via
+      // "Enregistrer").
+      const secteursClients = [...new Set(store.getClients().map(cl => cl.secteur).filter(Boolean))]
+      const manquants = secteursClients.filter(s => !c.allSecteurs.includes(s))
+      if (manquants.length) c.allSecteurs = [...c.allSecteurs, ...manquants].sort()
+      setCfg(c)
+      setLoading(false)
+    })
+  }, [])
   const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 4000) }
   const update = (fn: (c: ZonesConfig) => ZonesConfig) => setCfg(c => (c ? fn(structuredClone(c)) : c))
 

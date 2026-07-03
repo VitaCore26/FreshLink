@@ -326,6 +326,13 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
   const saveChg = () => {
     if (isReadOnly) { toast("Compte demo : lecture seule"); return }
     if (!chgForm.libelle || chgForm.montant <= 0) return
+    // Contrôle caisse négative AVANT toute écriture — une charge nouvelle
+    // implique une sortie caisse immédiate ; on ne veut jamais créer la
+    // charge sans sa contrepartie caisse (état incohérent).
+    if (!editChgId && store.getCaisseSolde() - chgForm.montant < 0) {
+      toast(`Solde caisse insuffisant (${store.getCaisseSolde().toFixed(2)} DH) pour cette sortie de ${chgForm.montant.toFixed(2)} DH.`)
+      return
+    }
     if (editChgId) store.updateCharge(editChgId, chgForm)
     else store.addCharge({ ...chgForm, id: store.genId() })
     // Auto-ajout en caisse sortie
@@ -339,7 +346,8 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
   const saveCai = () => {
     if (isReadOnly) { toast("Compte demo : lecture seule"); return }
     if (!caiForm.libelle || caiForm.montant <= 0) return
-    store.addCaisseEntry({ ...caiForm, id: store.genId() })
+    const r = store.addCaisseEntry({ ...caiForm, id: store.genId() })
+    if (!r.ok) { toast(r.error ?? "Caisse insuffisante"); return }
     setCaiForm(EMPTY_CAI); setShowCaiForm(false); refresh()
   }
 
@@ -357,6 +365,10 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
     const sal = salaries.find(s => s.id === paiSalarieId)
     if (!sal || !paiMois) return
     const salaireNet = sal.salaireBrut - paiAvance
+    if (store.getCaisseSolde() - salaireNet < 0) {
+      toast(`Solde caisse insuffisant (${store.getCaisseSolde().toFixed(2)} DH) pour ce salaire de ${salaireNet.toFixed(2)} DH.`)
+      return
+    }
     const p: PaiementSalaire = {
       id: store.genId(), salarieId: sal.id, salarieNom: `${sal.prenom} ${sal.nom}`,
       mois: paiMois, salaireBrut: sal.salaireBrut, avance: paiAvance, salaireNet,

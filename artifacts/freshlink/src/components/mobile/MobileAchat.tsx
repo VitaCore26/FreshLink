@@ -311,6 +311,21 @@ export default function MobileAchat({ user }: Props) {
       alert("Photo obligatoire — veuillez prendre ou importer une photo de la marchandise.")
       return
     }
+    // Plafond cash achat/jour/fournisseur (seuil de déductibilité fiscale
+    // CGI Maroc) — secteur informel = paiement quasi-systématiquement en
+    // espèces ; on cumule le montant réglé aujourd'hui pour ce fournisseur.
+    const montantPayeAuj = Number(poDetail.montantPaye) || 0
+    if (montantPayeAuj > 0 && poDetail.fournisseurId) {
+      const cfg = store.getFiscalConfig()
+      const today = store.today()
+      const dejaRegleAuj = store.getPurchaseOrders()
+        .filter(p => p.fournisseurId === poDetail.fournisseurId && p.date === today && p.id !== poModalId)
+        .reduce((s, p) => s + (Number((p as unknown as { montantPaye?: number }).montantPaye) || 0), 0)
+      const cumulApres = dejaRegleAuj + montantPayeAuj
+      if (cumulApres > cfg.plafondCashAchatJour && !confirm(
+        `⚠️ Ce fournisseur atteindra ${cumulApres.toFixed(2)} DH réglés en espèces aujourd'hui, au-dessus du seuil de déductibilité fiscale (${cfg.plafondCashAchatJour} DH/jour). Continuer quand même ?`
+      )) return
+    }
     setPoSaving(true)
     const qty = Number(poDetail.quantite)
     const pu = Number(poDetail.prixUnitaire)

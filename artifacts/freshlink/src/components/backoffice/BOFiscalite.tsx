@@ -160,11 +160,14 @@ export default function BOFiscalite({ user }: Props) {
       {showCfg && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 grid grid-cols-2 md:grid-cols-5 gap-3">
           {([
-            ["tauxTVA", "TVA (%)"],
+            ["tauxTVA", "TVA (%) — 0 = fruits/légumes frais exonérés"],
             ["tauxCotisationMinimale", "Cotisation minimale IS (% du CA)"],
             ["tauxChargesPatronales", "Charges patronales (% du brut)"],
             ["seuilAlerteMasseSalariale", "Seuil alerte masse salariale (% du CA)"],
             ["joursOuvresParMois", "Jours ouvrés / mois"],
+            ["tauxDroitTimbre", "Droit de timbre espèces (%)"],
+            ["plafondCashAchatJour", "Plafond cash achat/jour/fournisseur (DH)"],
+            ["plafondCashVenteFacture", "Plafond cash vente/facture (DH)"],
           ] as [keyof FiscalConfig, string][]).map(([key, label]) => (
             <div key={key} className="flex flex-col gap-1">
               <label className="text-[11px] font-semibold text-slate-500">{label}</label>

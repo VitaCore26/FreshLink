@@ -339,6 +339,9 @@ interface FactInvoice {
   statut: "impayee" | "payee"
   blIds: string[]
   lignes?: FactLigne[]
+  modeReglement?: "especes" | "cheque" | "virement" | "effet"
+  droitTimbre?: number     // 0,25% du TTC si espèces (CGI Maroc), 0 sinon
+  montantAvecTimbre?: number
 }
 
 export default function BOCash({ user }: { user: User }) {
@@ -359,6 +362,8 @@ export default function BOCash({ user }: { user: User }) {
   const [view, setView] = useState<"cash" | "facturation">("cash")
   const [factClient, setFactClient] = useState("")              // clé client sélectionnée (clientId || clientNom)
   const [factSelected, setFactSelected] = useState<Set<string>>(new Set())
+  const [factModeReglement, setFactModeReglement] = useState<"especes" | "cheque" | "virement" | "effet">("especes")
+  const fiscalCfg = store.getFiscalConfig()
   const [invoices, setInvoices] = useState<FactInvoice[]>([])   // factures existantes (numérotation + récap)
   const [factBusy, setFactBusy] = useState(false)
   const [factMsg, setFactMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -470,6 +475,10 @@ export default function BOCash({ user }: { user: User }) {
   const factClientBLs = factClient ? facturables.filter(b => clientKey(b) === factClient) : []
   const selectedBLs = factClientBLs.filter(b => factSelected.has(b.id))
   const selectedTotal = selectedBLs.reduce((s, b) => s + blTTC(b), 0)
+  // Droit de timbre 0,25% — uniquement si règlement espèces (CGI Maroc).
+  const factDroitTimbre = factModeReglement === "especes" ? Math.round(selectedTotal * (fiscalCfg.tauxDroitTimbre / 100) * 100) / 100 : 0
+  const factTotalAvecTimbre = selectedTotal + factDroitTimbre
+  const factDepassePlafond = factModeReglement === "especes" && selectedTotal > fiscalCfg.plafondCashVenteFacture
 
   const toggleFactBL = (id: string) =>
     setFactSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -488,6 +497,11 @@ export default function BOCash({ user }: { user: User }) {
 
   const handleRegrouper = async () => {
     if (selectedBLs.length === 0 || factBusy) return
+    // Plafond légal cash/facture/client (CGI Maroc) — avertissement, pas un
+    // blocage dur (le règlement effectif peut être fractionné ensuite).
+    if (factDepassePlafond && !confirm(
+      `⚠️ Cette facture (${fmtDH(selectedTotal)}) dépasse le plafond légal de règlement espèces par client (${fmtDH(fiscalCfg.plafondCashVenteFacture)}).\n\nContinuer quand même ?`
+    )) return
     setFactBusy(true)
     setFactMsg(null)
     const first = selectedBLs[0]
@@ -500,9 +514,12 @@ export default function BOCash({ user }: { user: User }) {
       articleNom: l.articleNom, quantite: l.quantite, unite: (l as { unite?: string }).unite,
       prixUnitaire: l.prixUnitaire, total: l.total, blId: b.id,
     })))
+    // Droit de timbre 0,25% (CGI Maroc) — uniquement si règlement espèces.
+    const droitTimbre = factModeReglement === "especes" ? Math.round(montantTTC * (fiscalCfg.tauxDroitTimbre / 100) * 100) / 100 : 0
     const payload: FactInvoice = {
       id, numero, clientId: first.clientId, clientNom: first.clientNom, date: store.today(),
       montantHT, tva: tvaTotal, montantTTC, statut: "impayee", blIds: selectedBLs.map(b => b.id), lignes,
+      modeReglement: factModeReglement, droitTimbre, montantAvecTimbre: montantTTC + droitTimbre,
     }
     const now = new Date().toISOString()
     try {
@@ -527,11 +544,24 @@ export default function BOCash({ user }: { user: User }) {
         body: JSON.stringify({ table: "fl_bons_livraison", upserts: blUpserts }),
       }).catch(() => { /* BL local-only : le factureId reste posé en localStorage */ })
 
-      // 3. Rafraîchir l'état local
+      // 3. Droit de timbre (espèces) — écriture caisse dédiée, imputable au
+      // compte 4457 (État, impôts et taxes assimilés) lors de la déclaration TVA.
+      if (droitTimbre > 0) {
+        store.addCaisseEntry({
+          id: store.genId(), date: store.today(),
+          libelle: `Droit de timbre 0,25% — Facture ${numero} (${first.clientNom})`,
+          type: "entree", categorie: "vente", montant: droitTimbre,
+          reference: `TIMBRE-${id}`, createdBy: user.id,
+        })
+      }
+
+      // 4. Rafraîchir l'état local
       setBls(store.getBonsLivraison())
       setInvoices(prev => [payload, ...prev])
       setFactSelected(new Set())
-      setFactMsg({ ok: true, text: `Facture ${numero} créée — ${selectedBLs.length} BL regroupés (${fmtDH(montantTTC)}).` })
+      setFactMsg({ ok: true, text: droitTimbre > 0
+        ? `Facture ${numero} créée — ${selectedBLs.length} BL regroupés (${fmtDH(montantTTC)} + ${fmtDH(droitTimbre)} droit de timbre = ${fmtDH(montantTTC + droitTimbre)}).`
+        : `Facture ${numero} créée — ${selectedBLs.length} BL regroupés (${fmtDH(montantTTC)}).` })
     } catch (e) {
       setFactMsg({ ok: false, text: `Erreur : ${String(e)}` })
     } finally {
@@ -857,20 +887,40 @@ export default function BOCash({ user }: { user: User }) {
               </div>
 
               {/* Barre d'action */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-4 border-t border-border" style={{ background: "oklch(0.93 0.012 245)" }}>
-                <div className="text-sm font-sans">
-                  <span className="font-bold text-foreground">{selectedBLs.length}</span>
-                  <span className="text-muted-foreground"> BL sélectionné{selectedBLs.length > 1 ? "s" : ""} · Total facture </span>
-                  <span className="font-extrabold text-primary">{fmtDH(selectedTotal)}</span>
+              <div className="flex flex-col gap-3 px-4 py-4 border-t border-border" style={{ background: "oklch(0.93 0.012 245)" }}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-sm font-sans">
+                    <span className="font-bold text-foreground">{selectedBLs.length}</span>
+                    <span className="text-muted-foreground"> BL sélectionné{selectedBLs.length > 1 ? "s" : ""} · Total facture </span>
+                    <span className="font-extrabold text-primary">{fmtDH(selectedTotal)}</span>
+                    {factDroitTimbre > 0 && (
+                      <span className="text-muted-foreground"> + timbre <span className="font-bold text-amber-700">{fmtDH(factDroitTimbre)}</span> = <span className="font-extrabold text-primary">{fmtDH(factTotalAvecTimbre)}</span></span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select value={factModeReglement} onChange={e => setFactModeReglement(e.target.value as typeof factModeReglement)}
+                      className="px-3 py-2 rounded-xl border border-border bg-background text-sm">
+                      <option value="especes">Espèces</option>
+                      <option value="cheque">Chèque</option>
+                      <option value="virement">Virement</option>
+                      <option value="effet">Effet</option>
+                    </select>
+                    <button
+                      onClick={handleRegrouper}
+                      disabled={selectedBLs.length === 0 || factBusy}
+                      className="px-5 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+                      style={{ background: "oklch(0.38 0.2 260)" }}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      {factBusy ? "Génération…" : "Regrouper en facture"}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={handleRegrouper}
-                  disabled={selectedBLs.length === 0 || factBusy}
-                  className="px-5 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
-                  style={{ background: "oklch(0.38 0.2 260)" }}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {factBusy ? "Génération…" : "Regrouper en facture"}
-                </button>
+                {factModeReglement === "especes" && factDroitTimbre > 0 && (
+                  <p className="text-[11px] text-amber-700">ℹ️ Droit de timbre {fiscalCfg.tauxDroitTimbre}% appliqué automatiquement (règlement espèces).</p>
+                )}
+                {factDepassePlafond && (
+                  <p className="text-[11px] text-red-600 font-semibold">⚠️ Dépasse le plafond légal cash/facture/client ({fmtDH(fiscalCfg.plafondCashVenteFacture)}) — confirmation requise.</p>
+                )}
               </div>
             </div>
           )}

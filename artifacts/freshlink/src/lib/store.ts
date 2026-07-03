@@ -1262,19 +1262,25 @@ export const DEFAULT_PROCESS_CONFIG: ProcessConfig = {
 // fiduciaire avant toute déclaration réelle. Le module BOFiscalite les
 // applique aux données réelles de l'ERP (CA, tonnage, masse salariale).
 export interface FiscalConfig {
-  tauxTVA: number                    // % — 20 standard Maroc
+  tauxTVA: number                    // % — 0 par défaut : fruits/légumes frais non transformés = hors champ TVA (CGI Maroc)
   tauxCotisationMinimale: number     // % du CA HT — plancher IS (~0.25 à 0.5%)
   tauxChargesPatronales: number      // % du brut — CNSS+AMO+formation patronales (~20-21%)
   seuilAlerteMasseSalariale: number  // % — ratio masse salariale/CA au-delà duquel on alerte
   joursOuvresParMois: number         // pour l'extrapolation CA/tonnage
+  tauxDroitTimbre: number            // % du TTC — droit de timbre 0,25% sur règlement espèces (CGI Maroc)
+  plafondCashAchatJour: number       // DH/jour/fournisseur — seuil de déductibilité fiscale des achats espèces
+  plafondCashVenteFacture: number    // DH/facture/client — plafond légal cash sur les ventes
 }
 
 export const DEFAULT_FISCAL_CONFIG: FiscalConfig = {
-  tauxTVA: 20,
+  tauxTVA: 0,
   tauxCotisationMinimale: 0.5,
   tauxChargesPatronales: 20.5,
   seuilAlerteMasseSalariale: 20,
   joursOuvresParMois: 26,
+  tauxDroitTimbre: 0.25,
+  plafondCashAchatJour: 5000,
+  plafondCashVenteFacture: 10000,
 }
 
 export const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
@@ -2613,7 +2619,25 @@ export const store = {
   // --- Caisse ---
   getCaisseEntries: (): CaisseEntry[] => getLS("fl_caisse", []),
   saveCaisseEntries: (e: CaisseEntry[]) => setLS("fl_caisse", e),
-  addCaisseEntry: (e: CaisseEntry) => { const arr = store.getCaisseEntries(); arr.push(e); store.saveCaisseEntries(arr) },
+  // Solde caisse à l'instant T = somme des entrées - somme des sorties.
+  getCaisseSolde: (): number => {
+    const entries = store.getCaisseEntries()
+    return entries.reduce((s, e) => s + (e.type === "entree" ? e.montant : -e.montant), 0)
+  },
+  // Contrôle caisse négative (hard lock) : toute sortie espèces qui ferait
+  // passer le solde sous zéro est refusée — jamais de caisse négative à
+  // l'instant T. Retourne { ok:false } au lieu de lancer une exception pour
+  // que l'appelant affiche un message clair sans try/catch.
+  addCaisseEntry: (e: CaisseEntry): { ok: boolean; error?: string; solde?: number } => {
+    if (e.type === "sortie") {
+      const soldeActuel = store.getCaisseSolde()
+      if (soldeActuel - e.montant < 0) {
+        return { ok: false, error: `Solde caisse insuffisant (${soldeActuel.toFixed(2)} DH) pour cette sortie de ${e.montant.toFixed(2)} DH — la caisse ne peut jamais être négative.`, solde: soldeActuel }
+      }
+    }
+    const arr = store.getCaisseEntries(); arr.push(e); store.saveCaisseEntries(arr)
+    return { ok: true }
+  },
   deleteCaisseEntry: (id: string) => { store.saveCaisseEntries(store.getCaisseEntries().filter(e => e.id !== id)); deleteSynced("fl_caisse_entries", [id]) },
 
   // --- Reserve caisse historique ---
