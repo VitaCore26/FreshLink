@@ -755,6 +755,19 @@ export interface PurchaseOrder {
   daGenere?: boolean         // true once DA has been auto-generated
   daId?: string              // reference to the generated DA
   genereAuto?: boolean       // true = auto-generated from besoinNet
+
+  // ── Flux d'achat (conformité CGI Maroc — secteur fruits/légumes) ────────────
+  // 3 circuits distincts, comptabilisés différemment :
+  //  - marche_gros       : bordereau/carreau de gros, taxe communale 7% en
+  //                        CHARGE (classe 6), jamais de TVA récupérable.
+  //  - agriculteur_direct : auto-facturation interne, TVA 0% (exonéré),
+  //                        nom + CIN agriculteur obligatoires.
+  //  - societe_structuree : fournisseur avec ICE, TVA 0% (exonéré, fruits/
+  //                        légumes frais non transformés).
+  typeFlux?: "marche_gros" | "agriculteur_direct" | "societe_structuree"
+  taxeCommunale?: number       // DH — 7% du total, marché de gros uniquement
+  agriculteurNom?: string      // obligatoire si typeFlux = agriculteur_direct
+  agriculteurCIN?: string      // obligatoire si typeFlux = agriculteur_direct
 }
 
 // Demande d'Achat (DA) — created automatically when all acheteurs refuse a PO

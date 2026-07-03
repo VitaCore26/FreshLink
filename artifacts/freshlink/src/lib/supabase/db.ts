@@ -21,7 +21,7 @@ import type {
   User, Client, Article, Fournisseur, Livreur, MotifRetour,
   Commande, Visite, BonAchat, PurchaseOrder, Reception,
   Trip, BonLivraison, Retour, BonPreparation,
-  TransfertStock, Message, Notice,
+  TransfertStock, Message, Notice, CaisseEntry,
 } from "@/lib/store"
 
 // ── Helpers JSONB ─────────────────────────────────────────────────────────────
@@ -500,6 +500,9 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
     ["fl_bons_preparation", (d) => store.saveBonsPreparation(d as BonPreparation[]),() => store.getBonsPreparation()],
     ["fl_messages",         (d) => store.saveMessages(d as Message[]),            () => store.getMessages()],
     ["fl_notices",          (d) => store.saveNotices(d as Notice[]),              () => store.getNotices()],
+    // fl_caisse_entries (Supabase) <-> fl_caisse (clé locale, store.ts) —
+    // absent jusqu'ici : la caisse ne se synchronisait jamais cross-device.
+    ["fl_caisse_entries",   (d) => store.saveCaisseEntries(d as CaisseEntry[]),   () => store.getCaisseEntries()],
   ]
 
   // Requêtes parallèles — toutes les tables en même temps (x10 plus rapide)

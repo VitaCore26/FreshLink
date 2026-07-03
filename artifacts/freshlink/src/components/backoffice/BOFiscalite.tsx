@@ -8,6 +8,8 @@ interface Props { user: User }
 interface CmdLigne { articleId?: string; quantite?: number; prixVente?: number; prixUnitaire?: number; total?: number }
 interface CmdRow { id: string; payload: { date?: string; lignes?: CmdLigne[]; clientNom?: string } }
 interface BLRow { id: string; payload: { date?: string; montantTTC?: number; montantTotal?: number } }
+interface InvoicePayload { numero?: string; date?: string; clientNom?: string; montantHT?: number; tva?: number; montantTTC?: number; modeReglement?: string; droitTimbre?: number; montantAvecTimbre?: number }
+interface CaisseRow { id: string; date: string; libelle: string; type: "entree" | "sortie"; categorie: string; montant: number; reference?: string }
 
 async function fetchTable<T>(table: string): Promise<T[]> {
   try {
@@ -28,6 +30,8 @@ export default function BOFiscalite({ user }: Props) {
   const [bls, setBls] = useState<BLRow[]>([])
   const [articles, setArticles] = useState<Article[]>([])
   const [salaries, setSalaries] = useState<Salarie[]>([])
+  const [invoices, setInvoices] = useState<{ id: string; payload: InvoicePayload }[]>([])
+  const [caisse, setCaisse] = useState<CaisseRow[]>([])
   const [cfg, setCfg] = useState<FiscalConfig>(store.getFiscalConfig())
   const [showCfg, setShowCfg] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -43,11 +47,15 @@ export default function BOFiscalite({ user }: Props) {
       fetchTable<BLRow>("fl_bons_livraison"),
       fetchTable<{ id: string; payload: Article }>("fl_articles"),
       fetchTable<{ id: string; payload: Salarie }>("fl_salaries"),
-    ]).then(([c, b, a, s]) => {
+      fetchTable<{ id: string; payload: InvoicePayload }>("fl_invoices"),
+      fetchTable<{ id: string; payload: Omit<CaisseRow, "id"> }>("fl_caisse_entries"),
+    ]).then(([c, b, a, s, inv, cai]) => {
       setCommandes(c.filter(r => r.payload && !String(r.id).startsWith("__")))
       setBls(b.filter(r => r.payload && !String(r.id).startsWith("__")))
       setArticles(a.filter(r => r.payload).map(r => ({ ...r.payload, id: r.id })))
       setSalaries(s.filter(r => r.payload).map(r => ({ ...r.payload, id: r.id })))
+      setInvoices(inv.filter(r => r.payload && !String(r.id).startsWith("__")))
+      setCaisse(cai.filter(r => r.payload).map(r => ({ ...r.payload, id: r.id })))
       setLoading(false)
     })
   }
@@ -116,6 +124,47 @@ export default function BOFiscalite({ user }: Props) {
   }, [cmdInPeriod, blInPeriod, articleById, salaries, cfg])
 
   const confianceFaible = stats.nbJours > 0 && stats.nbJours < 7
+
+  // ── Journal TVA trimestriel ──────────────────────────────────────────────
+  const trimestreOf = (d: string) => { const dt = new Date(d); return `${dt.getFullYear()}-T${Math.floor(dt.getMonth() / 3) + 1}` }
+  const [trimestre, setTrimestre] = useState<string>(() => trimestreOf(new Date().toISOString()))
+  const trimestresDisponibles = useMemo(() => {
+    const set = new Set<string>()
+    invoices.forEach(i => { if (i.payload.date) set.add(trimestreOf(i.payload.date)) })
+    set.add(trimestreOf(new Date().toISOString()))
+    return [...set].sort().reverse()
+  }, [invoices])
+  const journalTVA = useMemo(() => {
+    const factures = invoices.filter(i => i.payload.date && trimestreOf(i.payload.date) === trimestre)
+    const ventesExoneres = factures.reduce((s, i) => s + (Number(i.payload.montantHT) || 0), 0)
+    const droitTimbreCumule = factures.reduce((s, i) => s + (Number(i.payload.droitTimbre) || 0), 0)
+    const nbFacturesEspeces = factures.filter(i => i.payload.modeReglement === "especes").length
+    return { factures, ventesExoneres, droitTimbreCumule, nbFactures: factures.length, nbFacturesEspeces }
+  }, [invoices, trimestre])
+
+  // ── Livre de caisse chronologique ────────────────────────────────────────
+  const [caisseFrom, setCaisseFrom] = useState("")
+  const [caisseTo, setCaisseTo] = useState("")
+  const livreCaisse = useMemo(() => {
+    const filtered = caisse
+      .filter(e => (!caisseFrom || e.date >= caisseFrom) && (!caisseTo || e.date <= caisseTo))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    let solde = 0
+    const rows = filtered.map(e => {
+      solde += e.type === "entree" ? e.montant : -e.montant
+      return { ...e, soldeApres: solde }
+    })
+    return { rows, soldeFinal: solde }
+  }, [caisse, caisseFrom, caisseTo])
+
+  const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n")
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const recommandations = useMemo(() => {
     const r: { level: "warn" | "info" | "ok"; text: string }[] = []
@@ -269,6 +318,97 @@ export default function BOFiscalite({ user }: Props) {
               <span>{r.text}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* ── Journal TVA trimestriel ─────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <h3 className="text-sm font-bold text-slate-800">Journal TVA trimestriel</h3>
+          <div className="flex items-center gap-2">
+            <select value={trimestre} onChange={e => setTrimestre(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs">
+              {trimestresDisponibles.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={() => exportCSV(
+              `journal_tva_${trimestre}.csv`,
+              ["N° Facture", "Date", "Client", "Montant HT (0% exo)", "Mode règlement", "Droit de timbre (0,25%)", "Total avec timbre"],
+              journalTVA.factures.map(i => [i.payload.numero ?? i.id, i.payload.date ?? "", i.payload.clientNom ?? "", i.payload.montantHT ?? 0, i.payload.modeReglement ?? "-", i.payload.droitTimbre ?? 0, i.payload.montantAvecTimbre ?? i.payload.montantTTC ?? 0])
+            )} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800">
+              📤 Exporter CSV
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
+          <div><p className="text-slate-400 text-[11px]">Factures émises</p><p className="font-bold text-base">{journalTVA.nbFactures}</p></div>
+          <div><p className="text-slate-400 text-[11px]">Ventes à 0% (exonéré)</p><p className="font-bold text-base">{fmtDH(journalTVA.ventesExoneres)}</p></div>
+          <div><p className="text-slate-400 text-[11px]">Droit de timbre cumulé</p><p className="font-bold text-base text-amber-700">{fmtDH(journalTVA.droitTimbreCumule)}</p></div>
+          <div><p className="text-slate-400 text-[11px]">Dont réglées espèces</p><p className="font-bold text-base">{journalTVA.nbFacturesEspeces}</p></div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-slate-400 border-b border-slate-100">
+              <th className="py-1.5 pr-3">N° Facture</th><th className="py-1.5 pr-3">Date</th><th className="py-1.5 pr-3">Client</th>
+              <th className="py-1.5 pr-3 text-right">HT (0%)</th><th className="py-1.5 pr-3">Règlement</th><th className="py-1.5 pr-3 text-right">Timbre</th>
+            </tr></thead>
+            <tbody>
+              {journalTVA.factures.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-slate-400">Aucune facture sur ce trimestre.</td></tr>}
+              {journalTVA.factures.map(i => (
+                <tr key={i.id} className="border-b border-slate-50">
+                  <td className="py-1.5 pr-3 font-mono">{i.payload.numero ?? i.id}</td>
+                  <td className="py-1.5 pr-3">{i.payload.date}</td>
+                  <td className="py-1.5 pr-3">{i.payload.clientNom}</td>
+                  <td className="py-1.5 pr-3 text-right">{fmtDH(Number(i.payload.montantHT) || 0)}</td>
+                  <td className="py-1.5 pr-3">{i.payload.modeReglement ?? "-"}</td>
+                  <td className="py-1.5 pr-3 text-right">{i.payload.droitTimbre ? fmtDH(i.payload.droitTimbre) : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Livre de caisse chronologique ───────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <h3 className="text-sm font-bold text-slate-800">Livre des opérations de caisse</h3>
+          <div className="flex items-center gap-2">
+            <input type="date" value={caisseFrom} onChange={e => setCaisseFrom(e.target.value)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs" />
+            <input type="date" value={caisseTo} onChange={e => setCaisseTo(e.target.value)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs" />
+            <button onClick={() => exportCSV(
+              `livre_caisse_${caisseFrom || "debut"}_${caisseTo || "fin"}.csv`,
+              ["Date", "Libellé", "Type", "Catégorie", "Montant", "Référence", "Solde après"],
+              livreCaisse.rows.map(r => [r.date, r.libelle, r.type, r.categorie, r.montant, r.reference ?? "", r.soldeApres])
+            )} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800">
+              📤 Exporter CSV
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-2 text-sm">
+          <span className="text-slate-400">{livreCaisse.rows.length} opération(s)</span>
+          <span className="font-bold">Solde : <span className={livreCaisse.soldeFinal >= 0 ? "text-emerald-700" : "text-red-600"}>{fmtDH(livreCaisse.soldeFinal)}</span></span>
+        </div>
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-white"><tr className="text-left text-slate-400 border-b border-slate-100">
+              <th className="py-1.5 pr-3">Date</th><th className="py-1.5 pr-3">Libellé</th><th className="py-1.5 pr-3">Catégorie</th>
+              <th className="py-1.5 pr-3 text-right">Montant</th><th className="py-1.5 pr-3 text-right">Solde après</th>
+            </tr></thead>
+            <tbody>
+              {livreCaisse.rows.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-slate-400">Aucune opération sur cette période.</td></tr>}
+              {livreCaisse.rows.map(r => (
+                <tr key={r.id} className="border-b border-slate-50">
+                  <td className="py-1.5 pr-3 whitespace-nowrap">{r.date}</td>
+                  <td className="py-1.5 pr-3">{r.libelle}</td>
+                  <td className="py-1.5 pr-3">{r.categorie}</td>
+                  <td className={`py-1.5 pr-3 text-right font-semibold ${r.type === "entree" ? "text-emerald-700" : "text-red-600"}`}>
+                    {r.type === "entree" ? "+" : "-"}{fmtDH(r.montant)}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-bold">{fmtDH(r.soldeApres)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

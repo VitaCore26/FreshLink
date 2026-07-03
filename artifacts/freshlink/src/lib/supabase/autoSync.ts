@@ -21,8 +21,16 @@ const SYNCED_KEYS = new Set<string>([
   "fl_users", "fl_clients", "fl_articles", "fl_fournisseurs", "fl_commandes",
   "fl_bons_achat", "fl_purchase_orders", "fl_receptions", "fl_bons_livraison",
   "fl_retours", "fl_trips", "fl_bons_preparation", "fl_messages", "fl_notices",
-  "fl_visites", "fl_demandes_achat", "fl_non_achats",
+  "fl_visites", "fl_demandes_achat", "fl_non_achats", "fl_caisse",
 ])
+
+// La clé localStorage ne correspond pas toujours 1:1 au nom de la table
+// Supabase — "fl_caisse" (store.ts getCaisseEntries/setLS) vit côté serveur
+// dans "fl_caisse_entries" (nom déjà utilisé par deleteSynced ailleurs).
+// Sans cette table, TOUTE la caisse restait piégée en localStorage,
+// jamais synchronisée cross-device — bug critique sur des données
+// financières (aucune sauvegarde centrale, perte possible au vidage cache).
+const TABLE_NAME_OVERRIDE: Record<string, string> = { fl_caisse: "fl_caisse_entries" }
 
 // Configs (objets uniques, PAS des tableaux) : process, workflow, alertes, emails.
 // Stockés en base comme une ligne unique id="config" → propagation cross-device.
@@ -97,7 +105,7 @@ async function flushKey(key: string, raw: string): Promise<void> {
     const res = await fetch("/api/sync-write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: key, upserts }),
+      body: JSON.stringify({ table: TABLE_NAME_OVERRIDE[key] ?? key, upserts }),
     })
     const json = await res.json() as { ok: boolean }
     if (json.ok) snapshots[key] = next   // succès → le snapshot avance

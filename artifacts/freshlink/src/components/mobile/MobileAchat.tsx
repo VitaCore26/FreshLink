@@ -247,6 +247,11 @@ export default function MobileAchat({ user }: Props) {
     photoAchat: "",       // photo obligatoire avant validation
     chargeIds: [] as string[],  // plusieurs charges par article (chariot, manutention…)
     chargeMontants: {} as Record<number, string>,  // override par ligne — vide = valeur par défaut du BO
+    // Flux d'achat (conformité CGI Maroc) — marché de gros / agriculteur
+    // direct / société structurée, comptabilisés différemment.
+    typeFlux: "marche_gros" as "marche_gros" | "agriculteur_direct" | "societe_structuree",
+    agriculteurNom: "",
+    agriculteurCIN: "",
   })
   const [chargesArticle, setChargesArticle] = useState(store.getChargesArticle())
   const [poSaving, setPoSaving] = useState(false)
@@ -299,6 +304,9 @@ export default function MobileAchat({ user }: Props) {
       photoAchat: "",
       chargeIds: (po.chargeArticleId ?? art?.chargeArticleId) ? [po.chargeArticleId ?? art?.chargeArticleId ?? ""] : [],
       chargeMontants: {},
+      typeFlux: "marche_gros",
+      agriculteurNom: "",
+      agriculteurCIN: "",
     })
     setPoModalId(po.id)
   }
@@ -309,6 +317,12 @@ export default function MobileAchat({ user }: Props) {
     const photoObligatoire = store.getProcessConfig().photoAchatObligatoire !== false
     if (photoObligatoire && !poDetail.photoAchat) {
       alert("Photo obligatoire — veuillez prendre ou importer une photo de la marchandise.")
+      return
+    }
+    // Auto-facturation "Production Agricole" — nom + CIN de l'agriculteur
+    // obligatoires (traçabilité fiscale, flux exonéré de TVA).
+    if (poDetail.typeFlux === "agriculteur_direct" && (!poDetail.agriculteurNom.trim() || !poDetail.agriculteurCIN.trim())) {
+      alert("Nom et CIN de l'agriculteur obligatoires pour ce flux (auto-facturation Production Agricole).")
       return
     }
     // Plafond cash achat/jour/fournisseur (seuil de déductibilité fiscale
@@ -343,6 +357,9 @@ export default function MobileAchat({ user }: Props) {
       })
       .filter((c): c is { id: string; nom: string; montant: number } => !!c)
     const chargeMontant = selectedCharges.reduce((s, c) => s + (Number(c.montant) || 0), 0)
+    // Taxe communale 7% — marché de gros uniquement, comptabilisée comme une
+    // CHARGE (classe 6), jamais comme de la TVA récupérable.
+    const taxeCommunale = poDetail.typeFlux === "marche_gros" ? Math.round(total * 0.07 * 100) / 100 : undefined
     store.updatePurchaseOrder(poModalId, {
       statut: "envoyé",
       quantite: qty,
@@ -359,6 +376,10 @@ export default function MobileAchat({ user }: Props) {
       chargeMontant,
       coutRevientUnitaire: pu + chargeMontant,
       totalCharges: chargeMontant * qty,
+      typeFlux: poDetail.typeFlux,
+      taxeCommunale,
+      agriculteurNom: poDetail.typeFlux === "agriculteur_direct" ? poDetail.agriculteurNom.trim() : undefined,
+      agriculteurCIN: poDetail.typeFlux === "agriculteur_direct" ? poDetail.agriculteurCIN.trim() : undefined,
     })
 
     // Auto-create credit fournisseur si paiement impaye ou partiel
@@ -1476,6 +1497,40 @@ export default function MobileAchat({ user }: Props) {
                     <p className="text-[10px] text-slate-400 mt-1">Modifier ce champ recalcule automatiquement la quantité totale ci-dessus.</p>
                   </div>
                 ) : null}
+
+                {/* Flux d'achat (conformité CGI Maroc) */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Type d&apos;achat</label>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {([
+                      ["marche_gros", "Marché de gros", "Bordereau/carreau — taxe communale 7% en charge"],
+                      ["agriculteur_direct", "Agriculteur direct", "Auto-facturation — TVA 0%, CIN obligatoire"],
+                      ["societe_structuree", "Société structurée", "Fournisseur avec ICE — TVA 0%"],
+                    ] as [typeof poDetail.typeFlux, string, string][]).map(([val, label, desc]) => (
+                      <button key={val} type="button" onClick={() => setPoDetail(p => ({ ...p, typeFlux: val }))}
+                        className={`text-left px-3 py-2 rounded-xl border ${poDetail.typeFlux === val ? "border-green-500 bg-green-50" : "border-slate-200 bg-white"}`}>
+                        <p className="text-sm font-bold text-slate-800">{label}</p>
+                        <p className="text-[10px] text-slate-500">{desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {poDetail.typeFlux === "marche_gros" && (
+                    <p className="text-[10px] text-slate-400 mt-1">Taxe communale 7% calculée automatiquement sur le total ({(((Number(poDetail.quantite) || 0) * (Number(poDetail.prixUnitaire) || 0)) * 0.07).toFixed(2)} DH).</p>
+                  )}
+                  {poDetail.typeFlux === "agriculteur_direct" && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <input type="text" placeholder="Nom agriculteur *" value={poDetail.agriculteurNom}
+                        onChange={e => setPoDetail(p => ({ ...p, agriculteurNom: e.target.value }))}
+                        className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm" />
+                      <input type="text" placeholder="CIN *" value={poDetail.agriculteurCIN}
+                        onChange={e => setPoDetail(p => ({ ...p, agriculteurCIN: e.target.value }))}
+                        className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm" />
+                    </div>
+                  )}
+                  {poDetail.typeFlux === "societe_structuree" && !fournisseurs.find(f => f.id === poDetail.fournisseurId)?.ice && poDetail.fournisseurId && (
+                    <p className="text-[10px] text-amber-600 mt-1">⚠️ Ce fournisseur n&apos;a pas d&apos;ICE renseigné — complétez sa fiche pour ce flux.</p>
+                  )}
+                </div>
 
                 {/* Charges par article (plusieurs possibles) — charge | coût + "+" */}
                 <div>
