@@ -1257,6 +1257,25 @@ export const DEFAULT_PROCESS_CONFIG: ProcessConfig = {
   modeCrossdocking: false,
 }
 
+// ── Fiscalité & Fiduciaire (Maroc) — taux configurables, à valider avec le
+// fiduciaire avant toute déclaration réelle. Le module BOFiscalite les
+// applique aux données réelles de l'ERP (CA, tonnage, masse salariale).
+export interface FiscalConfig {
+  tauxTVA: number                    // % — 20 standard Maroc
+  tauxCotisationMinimale: number     // % du CA HT — plancher IS (~0.25 à 0.5%)
+  tauxChargesPatronales: number      // % du brut — CNSS+AMO+formation patronales (~20-21%)
+  seuilAlerteMasseSalariale: number  // % — ratio masse salariale/CA au-delà duquel on alerte
+  joursOuvresParMois: number         // pour l'extrapolation CA/tonnage
+}
+
+export const DEFAULT_FISCAL_CONFIG: FiscalConfig = {
+  tauxTVA: 20,
+  tauxCotisationMinimale: 0.5,
+  tauxChargesPatronales: 20.5,
+  seuilAlerteMasseSalariale: 20,
+  joursOuvresParMois: 26,
+}
+
 export const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
   {
     id: "order_placement",
@@ -3157,6 +3176,8 @@ export const store = {
   // --- Process config ---
   getProcessConfig: (): ProcessConfig => ({ ...DEFAULT_PROCESS_CONFIG, ...getLS<Partial<ProcessConfig>>("fl_process_config", {}) }),
   saveProcessConfig: (c: ProcessConfig) => setLS("fl_process_config", c),
+  getFiscalConfig: (): FiscalConfig => ({ ...DEFAULT_FISCAL_CONFIG, ...getLS<Partial<FiscalConfig>>("fl_fiscal_config", {}) }),
+  saveFiscalConfig: (c: FiscalConfig) => setLS("fl_fiscal_config", c),
 
   // --- Inventory Logs ---
   getInventoryLogs: (): InventoryLog[] => getLS("fl_inventory_logs", []),

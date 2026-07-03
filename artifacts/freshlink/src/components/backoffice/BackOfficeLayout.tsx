@@ -85,6 +85,7 @@ const BOPurchaseOrders       = React.lazy(() => import("./BOPurchaseOrders"))
 const BOUsers                = React.lazy(() => import("./BOUsers"))
 const BOSettings             = React.lazy(() => import("./BOSettings"))
 const BOFinance              = React.lazy(() => import("./BOFinance"))
+const BOFiscalite            = React.lazy(() => import("./BOFiscalite"))
 const BOArticles             = React.lazy(() => import("./BOArticles"))
 const BOGestionPA            = React.lazy(() => import("./BOGestionPA"))
 const BOWhatsApp             = React.lazy(() => import("./BOWhatsApp"))
@@ -161,7 +162,7 @@ export type Tab =
   | "stock" | "retour" | "cash"
   | "recap" | "rapport_livraison" | "preparation"
   | "fournisseurs" | "articles"
-  | "finance" | "whatsapp"
+  | "finance" | "fiscalite" | "whatsapp"
   | "users" | "database" | "settings" | "gsheets"
   | "comptes_externes"
   | "prospection" | "credit_fournisseur" | "agents_ia"
@@ -366,6 +367,7 @@ const NAV_GROUPS_RAW: NavGroup[] = [
     label: "Finance & Contrôle", labelAr: "المالية والرقابة",
     items: [
       { id: "finance",               label: "Finance & Caisse",       labelAr: "المالية والصندوق",  permKey: "canViewFinance",                    icon: <Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 11v-1m0-8h.01M20 12a8 8 0 11-16 0 8 8 0 0116 0z" /> },
+      { id: "fiscalite",             label: "Fiscalite & Fiduciaire", labelAr: "الضرائب والمحاسبة", permKey: "canViewFinance",                    icon: <Icon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
       { id: "cash",                  label: "Cash & BL",              labelAr: "النقديات",          permKey: "canViewCash",                       icon: <Icon d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /> },
       { id: "caisse_acheteur",       label: "Caisse Acheteur",        labelAr: "صندوق المشتري",     permKey: "canViewFinance",                    icon: <Icon d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /> },
       { id: "analyse_credit",        label: "Analyse Crédit",         labelAr: "تحليل الائتمان",    permKey: "canViewFinance",                    icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
@@ -433,7 +435,7 @@ const NAV_GROUP_DEF: { label: string; labelAr: string; ids: string[] }[] = [
   { label: "Marketing & E-commerce",      labelAr: "التسويق والمتجر الإلكتروني", ids: ["marketplace", "promo_codes", "loyalty", "gifts_v3", "loterie", "shop_analytics"] },
   { label: "Clients & Comptes Web",       labelAr: "الزبائن والحسابات",    ids: ["comptes_externes", "demandes_comptes"] },
   { label: "Logistique & Transport",      labelAr: "اللوجستيك والنقل",     ids: ["dispatch", "preparation", "bon_livraison", "retour", "trip_charges", "cout_livraison", "gps_tracker"] },
-  { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
+  { label: "Finance & Contrôle de Gestion", labelAr: "المالية ومراقبة التسيير", ids: ["finance", "fiscalite", "cash", "caisse_acheteur", "analyse_credit", "finance_cdg", "performance_incentives", "investissement"] },
   { label: "Ressources Humaines",         labelAr: "الموارد البشرية",      ids: ["rh_productivite", "rh_comptabilite", "hr_documents", "template_editor", "agents_ia"] },
   { label: "Administration & Système",    labelAr: "الإدارة والنظام",      ids: ["users", "roles_permissions", "device_access", "depots", "web_integration", "camera_perms", "cutoffs", "database", "liens_externes", "settings", "gsheets", "import_externe"] },
 ]
@@ -460,6 +462,7 @@ const PANELS: Record<Tab, (u: User, nav: (tab: Tab) => void) => React.ReactNode>
   retour:            (_u) => <BORetour />,
   articles:          (u) => <BOArticles user={u} />,
   finance:           (u) => <BOFinance user={u} />,
+  fiscalite:         (u) => <BOFiscalite user={u} />,
   whatsapp:          (u) => <BOWhatsApp user={u} />,
   cash:              (u) => <BOCash user={u} />,
   recap:             (_u) => <BORecap />,

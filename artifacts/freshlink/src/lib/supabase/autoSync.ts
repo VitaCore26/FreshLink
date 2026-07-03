@@ -27,7 +27,7 @@ const SYNCED_KEYS = new Set<string>([
 // Configs (objets uniques, PAS des tableaux) : process, workflow, alertes, emails.
 // Stockés en base comme une ligne unique id="config" → propagation cross-device.
 const CONFIG_KEYS = new Set<string>([
-  "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config",
+  "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config", "fl_fiscal_config",
 ])
 
 type Row = { id: string; [k: string]: unknown }
