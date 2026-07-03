@@ -5,6 +5,8 @@
 //  (garantie par la structure : secteurPrevendeur est une map secteur→prévendeur).
 // ════════════════════════════════════════════════════════════════════════════
 
+import { store } from "@/lib/store"
+
 export interface ZoneCfg { id: string; label: string; teamLeadId: string; secteurs: string[] }
 export interface ZonesConfig { zones: ZoneCfg[]; secteurPrevendeur: Record<string, string>; allSecteurs: string[] }
 
@@ -62,7 +64,12 @@ export function secteursOfPrevendeur(cfg: ZonesConfig, prevendeurId: string): st
   return Object.entries(cfg.secteurPrevendeur).filter(([, id]) => id === prevendeurId).map(([s]) => s)
 }
 export function teamLeadName(id: string | null | undefined): string | null {
-  return TEAM_LEADS.find(t => t.id === id)?.name ?? null
+  if (!id) return null
+  const hardcoded = TEAM_LEADS.find(t => t.id === id)?.name
+  if (hardcoded) return hardcoded
+  // Team lead réel (team_leader / resp_commercial) choisi depuis BOZonesSecteurs —
+  // les 2 team leads codés en dur ci-dessus sont un legacy conservé pour compat.
+  return store.getUsers().find(u => u.id === id)?.name ?? null
 }
 
 /** À l'inscription ou la commande : résout toute la chaîne commerciale d'un secteur. */

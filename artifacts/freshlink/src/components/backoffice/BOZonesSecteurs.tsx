@@ -17,6 +17,15 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
   const canEdit = ["super_super_admin", "super_admin", "admin", "resp_commercial"].includes(user.role)
   const prevendeurs = store.getUsers().filter(u =>
     u.actif !== false && (u.role === "prevendeur" || (u.roles?.includes("prevendeur") ?? false)))
+  // Team leads réels (team_leader / resp_commercial actifs) — remplace la liste
+  // figée à 2 noms codés en dur, qui ne scalait pas au-delà de Zizi/Jariri.
+  const teamLeadsReels = store.getUsers().filter(u =>
+    u.actif !== false && (u.role === "team_leader" || u.role === "resp_commercial" ||
+      (u.roles?.includes("team_leader") ?? false) || (u.roles?.includes("resp_commercial") ?? false)))
+  const teamLeadOptions = [
+    ...TEAM_LEADS,
+    ...teamLeadsReels.filter(u => !TEAM_LEADS.some(tl => tl.id === u.id)).map(u => ({ id: u.id, name: u.name })),
+  ]
 
   useEffect(() => { loadZonesConfig().then(c => { setCfg(c); setLoading(false) }) }, [])
   const flash = (ok: boolean, text: string) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 4000) }
@@ -56,6 +65,17 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
     else z.secteurs.push(secteur)
     return c
   })
+
+  // ── Gestion des ZONES elles-mêmes (créer/supprimer) ─────────────────────────
+  const addZone = () => update(c => {
+    const id = `zone_${c.zones.length + 1}_${Math.random().toString(36).slice(2, 7)}`
+    c.zones.push({ id, label: "Nouvelle zone", teamLeadId: teamLeadOptions[0]?.id ?? "", secteurs: [] })
+    return c
+  })
+  const deleteZone = (zid: string) => {
+    if (!confirm("Supprimer cette zone ? Les secteurs qui lui étaient rattachés ne seront plus affectés à aucune zone.")) return
+    update(c => { c.zones = c.zones.filter(z => z.id !== zid); return c })
+  }
 
   const setLabel = (zid: string, label: string) => update(c => { const z = c.zones.find(x => x.id === zid); if (z) z.label = label; return c })
   const setLead  = (zid: string, tl: string)    => update(c => { const z = c.zones.find(x => x.id === zid); if (z) z.teamLeadId = tl; return c })
@@ -98,6 +118,7 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
           <p className="text-sm text-muted-foreground mt-0.5">Gérez le pool de secteurs, puis cochez ceux de chaque zone et affectez un prévendeur.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={addZone} className="px-4 py-2.5 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-sm font-bold">＋ Nouvelle zone</button>
           <button onClick={appliquerAuxClients} disabled={applying || saving} className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold disabled:opacity-50">{applying ? "…" : "👥 Appliquer aux clients"}</button>
           <button onClick={save} disabled={saving || applying} className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">{saving ? "…" : "💾 Enregistrer"}</button>
         </div>
@@ -134,10 +155,14 @@ export default function BOZonesSecteurs({ user }: { user: User }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {cfg.zones.map((z: ZoneCfg) => (
           <div key={z.id} className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3">
-            <input value={z.label} onChange={e => setLabel(z.id, e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm font-bold" />
+            <div className="flex items-center gap-2">
+              <input value={z.label} onChange={e => setLabel(z.id, e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm font-bold" />
+              <button onClick={() => deleteZone(z.id)} title="Supprimer cette zone"
+                className="shrink-0 w-9 h-9 rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 flex items-center justify-center">✕</button>
+            </div>
             <label className="text-xs font-semibold text-muted-foreground flex items-center gap-2">👤 Team Lead :
               <select value={z.teamLeadId} onChange={e => setLead(z.id, e.target.value)} className="flex-1 px-2 py-1.5 rounded-lg border border-border bg-background text-foreground text-sm">
-                {TEAM_LEADS.map(tl => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
+                {teamLeadOptions.map(tl => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
               </select>
             </label>
 
