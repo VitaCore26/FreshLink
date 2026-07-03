@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { store, type User, type Client, ROLE_LABELS, getAllSecteurs } from "@/lib/store"
+import { loadZonesConfig, zoneOfSecteur, type ZonesConfig } from "@/lib/commercial/zones"
 
 interface Props { user: User }
 
@@ -10,6 +11,9 @@ export default function BOAffectationCommerciale({ user }: Props) {
   const [users, setUsers]         = useState<User[]>([])
   const [saved, setSaved]         = useState(false)
   const [tab, setTab]             = useState<"clients" | "prevendeurs">("clients")
+  // Config Zones & Secteurs — même pool que l'écran dédié, pour ne plus avoir
+  // deux listes de secteurs déconnectées l'une de l'autre.
+  const [zonesCfg, setZonesCfg]   = useState<ZonesConfig | null>(null)
   // search
   const [searchClient, setSearchClient]       = useState("")
   const [filterSecteur, setFilterSecteur]     = useState("")
@@ -20,7 +24,7 @@ export default function BOAffectationCommerciale({ user }: Props) {
     setUsers(store.getUsers())
   }
 
-  useEffect(() => { reload() }, [])
+  useEffect(() => { reload(); loadZonesConfig().then(setZonesCfg) }, [])
 
   // derived lists
   const prevendeurs = useMemo(
@@ -35,9 +39,13 @@ export default function BOAffectationCommerciale({ user }: Props) {
     () => getAllSecteurs([
       ...clients.map(c => c.secteur),
       ...prevendeurs.map(u => u.secteur || ""),
+      ...(zonesCfg?.allSecteurs ?? []),
     ]).sort(),
-    [clients, prevendeurs]
+    [clients, prevendeurs, zonesCfg]
   )
+  // Zone d'un secteur (affichage seulement — la gestion se fait dans l'écran
+  // dédié Zones & Secteurs, Commercial & Ventes).
+  const zoneLabelOf = (secteur: string) => zonesCfg ? zoneOfSecteur(zonesCfg, secteur)?.label ?? null : null
 
   // ── filtered clients ──────────────────────────────────────────────────────
   const filteredClients = useMemo(() => {
@@ -255,6 +263,13 @@ export default function BOAffectationCommerciale({ user }: Props) {
                               />
                             )}
                           </div>
+                          {/* Zone commerciale rattachée à ce secteur (gérée dans
+                              Commercial & Ventes > Zones & Secteurs) */}
+                          {c.secteur && (
+                            zoneLabelOf(c.secteur)
+                              ? <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">🗺️ {zoneLabelOf(c.secteur)}</span>
+                              : <span className="inline-block mt-1 text-[10px] text-amber-600">⚠️ Secteur sans zone</span>
+                          )}
                         </td>
 
                         {/* Prevendeur selector */}
