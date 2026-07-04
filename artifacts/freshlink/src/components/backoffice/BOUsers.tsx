@@ -693,7 +693,7 @@ const DEFAULT_PERMS_BY_ROLE: Partial<Record<UserRole, PermFlags>> = {
 
 const EMPTY_USER: Omit<User, "id"> = {
   name: "", email: "", password: "1234", role: "prevendeur", accessType: undefined, secteur: "", depotId: undefined,
-  phone: "", actif: true,
+  phone: "", actif: true, isDemo: false,
   mustChangePassword: true,   // ← forcer changement mot de passe à la première connexion
   canViewAchat: false, canViewCommercial: false, canViewLogistique: false,
   canViewStock: false, canViewCash: false, canViewFinance: false, canViewRecap: false,
@@ -1353,7 +1353,7 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
     setEditing(u)
     setForm({
       name: u.name, email: u.email, password: u.password, role: u.role, accessType: u.accessType,
-      secteur: u.secteur || "", depotId: u.depotId, phone: u.phone || "", actif: u.actif,
+      secteur: u.secteur || "", depotId: u.depotId, phone: u.phone || "", actif: u.actif, isDemo: u.isDemo || false,
       canViewAchat: u.canViewAchat || false, canViewCommercial: u.canViewCommercial || false,
       canViewLogistique: u.canViewLogistique || false, canViewStock: u.canViewStock || false,
       canViewCash: u.canViewCash || false, canViewFinance: u.canViewFinance || false,
@@ -2596,6 +2596,22 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
                   </div>
                 </label>
               </div>
+
+              {/* Compte demo — reserve a Jawad */}
+              {isJawadUser && (
+                <label className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 cursor-pointer">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-amber-800">Compte demo</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Ecriture bloquee (lecture seule) et visible dans la liste de comptes demo sur l&apos;ecran de connexion.
+                    </p>
+                  </div>
+                  <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${form.isDemo ? "bg-amber-500" : "bg-muted"}`}
+                    onClick={() => setForm({ ...form, isDemo: !form.isDemo })}>
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${form.isDemo ? "left-6" : "left-1"}`} />
+                  </div>
+                </label>
+              )}
 
               {/* Statut */}
               <label className="flex items-center gap-3 cursor-pointer">

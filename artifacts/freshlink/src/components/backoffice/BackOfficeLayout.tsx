@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, Component } from "react"
 import LangSwitcher from "@/components/ui/LangSwitcher"
 import ThemeToggle from "@/components/ui/ThemeToggle"
 import BONotifications from "./BONotifications"
+import DismissibleBanner from "@/components/ui/DismissibleBanner"
 import type { User } from "@/lib/store"
 import { store, ROLE_LABELS, ROLE_COLORS, isDemoUser, isSuperSuperAdmin, JAWAD_ID } from "@/lib/store"
 import { useLang, T } from "@/lib/i18n"
@@ -897,23 +898,27 @@ export default function BackOfficeLayout({ user, onLogout }: Props) {
 
         {/* Jawad banner — accès Super Admin */}
         {isJawad && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-700 text-xs shrink-0">
-            <svg className="w-3.5 h-3.5 fill-amber-500 shrink-0" viewBox="0 0 24 24"><path d="M2 19h20l-2-10-5 5-3-8-3 8-5-5z" /></svg>
+          <DismissibleBanner
+            id="bo-jawad"
+            icon={<svg className="fill-amber-500" viewBox="0 0 24 24"><path d="M2 19h20l-2-10-5 5-3-8-3 8-5-5z" /></svg>}
+          >
             <span className="font-semibold">Super Admin</span>
-          </div>
+          </DismissibleBanner>
         )}
 
         {/* Demo banner */}
         {isDemo && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs shrink-0">
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>
-              <strong>Compte Demo</strong> — Modifications sauvegardees localement uniquement.{" "}
-              <span className="opacity-60">حساب تجريبي — التعديلات محلية فقط</span>
-            </span>
-          </div>
+          <DismissibleBanner
+            id="bo-demo"
+            icon={
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            }
+          >
+            <strong>Compte Demo</strong> — Modifications sauvegardees localement uniquement.{" "}
+            <span className="opacity-60">حساب تجريبي — التعديلات محلية فقط</span>
+          </DismissibleBanner>
         )}
 
 

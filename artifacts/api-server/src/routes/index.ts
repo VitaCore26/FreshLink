@@ -31,6 +31,7 @@ import extShopAdminPasswordRouter from "./ext/shopAdminPassword.js";
 import extWebIntegrationConfigRouter from "./ext/webIntegrationConfig.js";
 import extSecteursRouter from "./ext/secteurs.js";
 import portalTrackingRouter from "./portal/tracking.js";
+import aiChatRouter from "./aiChat.js";
 
 const router: IRouter = Router();
 
@@ -67,5 +68,6 @@ router.use("/ext/shop-admin-auth", extShopAdminAuthRouter);
 router.use("/ext/shop-admin-password", extShopAdminPasswordRouter);
 router.use("/ext/web-integration-config", extWebIntegrationConfigRouter);
 router.use("/portal/tracking", portalTrackingRouter);
+router.use("/ai-chat", aiChatRouter);
 
 export default router;

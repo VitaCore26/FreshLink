@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { store, type User, type UserRole, ROLE_LABELS, getUserInterface, passwordMatches } from "@/lib/store"
+import { store, type User, type UserRole, ROLE_LABELS, getUserInterface, passwordMatches, isDemoUser } from "@/lib/store"
 import FreshLinkLogo from "@/components/ui/FreshLinkLogo"
 import { sendEmail } from "@/lib/email"
 
@@ -88,53 +88,24 @@ async function authenticateBiometric(): Promise<StoredCredential | null> {
 
 interface Props { onLogin: (user: User, forceView?: "mobile" | "backoffice") => void }
 
-const DEMO_ACCOUNTS: {
-  label: string; identifier: string; password: string; role: UserRole; note?: string; group: string
-}[] = [
-  { group: "Direction",   label: "Resp. Commercial",     identifier: "responsable@freshlink.ma",  password: "1234",     role: "resp_commercial", note: "Commercial + comptes externes" },
-  { group: "Finance",     label: "Cash Man",              identifier: "cashman@freshlink.ma",      password: "cash2024", role: "cash_man",        note: "Caisse + encaissements" },
-  { group: "Finance",     label: "Financier",             identifier: "financier@freshlink.ma",    password: "fin2024",  role: "financier",       note: "Finance + recap complet" },
-  { group: "Commercial",  label: "Pre-vendeur",           identifier: "prevendeur@freshlink.ma",   password: "1234",     role: "prevendeur",      note: "Prise commandes terrain" },
-  { group: "Logistique",  label: "Resp. Logistique",     identifier: "logistique@freshlink.ma",   password: "1234",     role: "resp_logistique", note: "Stock + reception + dispatch" },
-  { group: "Logistique",  label: "Dispatcheur",           identifier: "dispatch@freshlink.ma",     password: "1234",     role: "dispatcheur",     note: "Affectation livreurs" },
-  { group: "Logistique",  label: "Magasinier",            identifier: "magasin@freshlink.ma",      password: "1234",     role: "magasinier",      note: "Gestion stock entrepot" },
-  { group: "Logistique",  label: "Acheteur",              identifier: "acheteur@freshlink.ma",     password: "1234",     role: "acheteur",        note: "Bons achat + SKU" },
-  { group: "Logistique",  label: "Ctrl Achat",            identifier: "ctrl.achat@freshlink.ma",   password: "ctrl1234", role: "ctrl_achat",      note: "Controle chargement" },
-  { group: "Logistique",  label: "Ctrl Prep",             identifier: "ctrl.prep@freshlink.ma",    password: "ctrl1234", role: "ctrl_prep",       note: "Controle preparation" },
-  { group: "Logistique",  label: "Livreur",               identifier: "livreur@freshlink.ma",      password: "1234",     role: "livreur",         note: "Livraison + BL + retours" },
-]
-
-const DEMO_GROUPS = ["Direction", "Finance", "Commercial", "Logistique"] as const
-type DemoGroup = typeof DEMO_GROUPS[number]
-
-const DEMO_EXTERNAL = [
-  {
-    subtype: "particulier" as ExternalType,
-    label: "Demo Client Particulier",
-    name: "Demo Client",
-    email: "client.demo@freshlink.ma",
-    phone: "0600000001",
-    note: "Particulier — accès portail client",
-  },
-  {
-    subtype: "marchand" as ExternalType,
-    label: "Demo Marchand",
-    name: "Demo Marchand",
-    email: "marchand.demo@freshlink.ma",
-    phone: "0600000003",
-    note: "Marchand — accès portail client",
-  },
-  {
-    subtype: "fournisseur" as ExternalType,
-    label: "Demo Fournisseur",
-    name: "Demo Fournisseur",
-    email: "fournisseur.demo@freshlink.ma",
-    phone: "0600000002",
-    note: "Fournisseur — accès portail fournisseur",
-  },
-]
-
 type ExternalType = "particulier" | "marchand" | "chr" | "fournisseur"
+
+// Comptes de démonstration : plus de liste codée en dur — la liste déroulante
+// de l'écran de connexion se construit dynamiquement à partir des comptes
+// marqués `isDemo` (case à cocher côté BO, réservée à Jawad). Tant qu'aucun
+// compte demo n'existe, le bloc reste masqué.
+const EXTERNAL_ROLES: UserRole[] = ["client", "client_proprietaire", "client_gerant", "fournisseur"]
+const DEMO_GROUP_FALLBACK = "Autres"
+const DEMO_ROLE_GROUP: Partial<Record<UserRole, string>> = {
+  super_super_admin: "Direction", super_admin: "Direction", admin: "Direction",
+  resp_commercial: "Direction", resp_achat: "Direction", rh_manager: "Direction",
+  it_admin: "Direction", auditeur: "Direction", investisseur: "Direction",
+  cash_man: "Finance", financier: "Finance", comptable: "Finance", charge_recouvrement: "Finance",
+  prevendeur: "Commercial", team_leader: "Commercial", suivi_commande: "Commercial",
+  resp_logistique: "Logistique", magasinier: "Logistique", dispatcheur: "Logistique", livreur: "Logistique",
+  acheteur: "Logistique", ctrl_achat: "Logistique", ctrl_prep: "Logistique", chef_depot: "Logistique", qualite: "Logistique",
+}
+const DEMO_GROUP_ORDER = ["Direction", "Finance", "Commercial", "Logistique", DEMO_GROUP_FALLBACK]
 
 function generatePassword(len = 10): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#"
@@ -176,8 +147,28 @@ export default function LoginPage({ onLogin }: Props) {
   const [forgotEmail, setForgotEmail] = useState("")
   const [forgotStatus, setForgotStatus] = useState<"idle" | "sending" | "sent" | "notfound">("idle")
   const [showDemo, setShowDemo] = useState(false)
-  const [selectedGroup, setSelectedGroup] = useState<DemoGroup>("Direction")
+  const [selectedGroup, setSelectedGroup] = useState<string>("")
   const [externalType, setExternalType] = useState<ExternalType>("particulier")
+  const [demoInternal, setDemoInternal] = useState<User[]>([])
+  const [demoExternal, setDemoExternal] = useState<User[]>([])
+
+  const refreshDemoAccounts = useCallback(() => {
+    const demo = store.getUsers().filter(isDemoUser)
+    setDemoInternal(demo.filter(u => !EXTERNAL_ROLES.includes(u.role)))
+    setDemoExternal(demo.filter(u => EXTERNAL_ROLES.includes(u.role)))
+  }, [])
+
+  useEffect(() => {
+    refreshDemoAccounts()
+    window.addEventListener("fl_store_updated", refreshDemoAccounts)
+    return () => window.removeEventListener("fl_store_updated", refreshDemoAccounts)
+  }, [refreshDemoAccounts])
+
+  const demoGroups = DEMO_GROUP_ORDER.filter(g =>
+    demoInternal.some(u => (DEMO_ROLE_GROUP[u.role] ?? DEMO_GROUP_FALLBACK) === g)
+  )
+  const activeGroup = demoGroups.includes(selectedGroup) ? selectedGroup : demoGroups[0]
+  const hasDemoAccounts = demoInternal.length > 0 || demoExternal.length > 0
 
   // ── Must-change-password flow ────────────────────────────────────────────────
   const [mustChangePwd, setMustChangePwd]     = useState<User | null>(null)
@@ -1028,102 +1019,92 @@ export default function LoginPage({ onLogin }: Props) {
             </div>
           )}
 
-          {/* Demo accounts */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
-            <button type="button" onClick={() => setShowDemo(v => !v)}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">
-              <span className="flex items-center gap-2">
-                <svg width="14" height="14" className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
-                Comptes de démonstration
-              </span>
-              <svg width="14" height="14" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showDemo ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showDemo && !clientMode && (
-              <div className="border-t border-slate-100">
-                <div className="flex bg-slate-50">
-                  {DEMO_GROUPS.map(g => (
-                    <button key={g} type="button" onClick={() => setSelectedGroup(g)}
-                      className={`flex-1 py-1.5 text-[10px] font-bold transition-colors border-b-2 ${selectedGroup === g ? "border-green-600 text-green-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
-                      {g}
-                    </button>
-                  ))}
-                </div>
-                <div className="p-1.5 flex flex-col gap-0.5 max-h-40 overflow-y-auto">
-                  {DEMO_ACCOUNTS.filter(a => a.group === selectedGroup).map(acc => (
-                    <button key={acc.identifier} type="button"
-                      onClick={() => {
-                        setIdentifier(acc.identifier); setPassword(acc.password)
-                        setClientMode(false); setError(""); setShowDemo(false)
-                      }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-green-50 transition-colors text-left">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0"
-                        style={{ background: "linear-gradient(135deg, #16a34a, #15803d)" }}>
-                        {acc.label.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-700 truncate">{acc.label}</p>
-                        <p className="text-[9px] text-slate-400 truncate">{acc.note}</p>
-                      </div>
-                      <span className="text-[9px] text-slate-300 font-mono shrink-0 bg-slate-100 px-1.5 py-0.5 rounded">{acc.password}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {showDemo && clientMode && (
-              <div className="border-t border-slate-100">
-                {/* Local-only notice */}
-                <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 border-b border-amber-100">
-                  <svg className="w-3 h-3 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          {/* Demo accounts — masqué tant qu'aucun compte n'est marqué "compte demo" */}
+          {hasDemoAccounts && (
+            <div className="rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+              <button type="button" onClick={() => setShowDemo(v => !v)}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+                <span className="flex items-center gap-2">
+                  <svg width="14" height="14" className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                   </svg>
-                  <p className="text-[9px] text-amber-600 font-semibold">Démo local uniquement — les comptes réels sont sur Supabase</p>
-                </div>
-                <div className="p-1.5 flex flex-col gap-1">
-                  {DEMO_EXTERNAL.map(acc => (
-                    <div key={acc.email} className="rounded-lg border border-slate-100 overflow-hidden">
-                      <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-50">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0"
-                          style={{ background: acc.subtype === "fournisseur" ? "#2563eb" : "#16a34a" }}>
-                          {acc.subtype === "fournisseur" ? "F" : "C"}
-                        </div>
-                        <p className="text-[10px] font-bold text-slate-700">{acc.label}</p>
-                        <span className={`ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
-                          acc.subtype === "fournisseur" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-                        }`}>{acc.subtype}</span>
-                      </div>
-                      <div className="p-1.5 flex flex-col gap-0.5">
-                        {[
-                          { icon: "👤", label: acc.name },
-                          { icon: "📧", label: acc.email },
-                          { icon: "📱", label: acc.phone },
-                        ].map(opt => (
-                          <button key={opt.label} type="button"
-                            onClick={() => {
-                              setIdentifier(opt.label)
-                              setExternalType(acc.subtype as ExternalType)
-                              setClientMode(true); setError(""); setShowDemo(false)
-                            }}
-                            className="w-full flex items-center gap-2 px-2 py-1 rounded-md hover:bg-green-50 transition-colors text-left">
-                            <span className="text-[10px]">{opt.icon}</span>
-                            <span className="text-[10px] font-mono text-slate-600">{opt.label}</span>
-                            <span className="ml-auto text-[8px] text-green-600 font-bold opacity-0 group-hover:opacity-100">Utiliser</span>
+                  Comptes de démonstration
+                </span>
+                <svg width="14" height="14" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showDemo ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showDemo && !clientMode && (
+                <div className="border-t border-slate-100">
+                  {demoInternal.length === 0 ? (
+                    <p className="px-3.5 py-3 text-[10px] text-slate-400 text-center">Aucun compte demo equipe.</p>
+                  ) : (
+                    <>
+                      <div className="flex bg-slate-50">
+                        {demoGroups.map(g => (
+                          <button key={g} type="button" onClick={() => setSelectedGroup(g)}
+                            className={`flex-1 py-1.5 text-[10px] font-bold transition-colors border-b-2 ${activeGroup === g ? "border-green-600 text-green-700 bg-white" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
+                            {g}
                           </button>
                         ))}
                       </div>
-                      <p className="text-[8px] text-slate-400 px-2.5 pb-1.5">{acc.note}</p>
-                    </div>
-                  ))}
+                      <div className="p-1.5 flex flex-col gap-0.5 max-h-40 overflow-y-auto">
+                        {demoInternal.filter(u => (DEMO_ROLE_GROUP[u.role] ?? DEMO_GROUP_FALLBACK) === activeGroup).map(u => (
+                          <button key={u.id} type="button"
+                            onClick={() => {
+                              setIdentifier(u.email); setPassword(u.password)
+                              setClientMode(false); setError(""); setShowDemo(false)
+                            }}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-green-50 transition-colors text-left">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0"
+                              style={{ background: "linear-gradient(135deg, #16a34a, #15803d)" }}>
+                              {u.name.charAt(0)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-700 truncate">{u.name}</p>
+                              <p className="text-[9px] text-slate-400 truncate">{ROLE_LABELS[u.role]}</p>
+                            </div>
+                            <span className="text-[9px] text-slate-300 font-mono shrink-0 bg-slate-100 px-1.5 py-0.5 rounded">{u.password}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+
+              {showDemo && clientMode && (
+                <div className="border-t border-slate-100">
+                  {demoExternal.length === 0 ? (
+                    <p className="px-3.5 py-3 text-[10px] text-slate-400 text-center">Aucun compte demo client/fournisseur.</p>
+                  ) : (
+                    <div className="p-1.5 flex flex-col gap-1">
+                      {demoExternal.map(u => (
+                        <button key={u.id} type="button"
+                          onClick={() => {
+                            setIdentifier(u.email)
+                            setExternalType(u.role === "fournisseur" ? "fournisseur" : ((u.subtype as ExternalType) || "particulier"))
+                            setClientMode(true); setError(""); setShowDemo(false)
+                          }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-100 hover:bg-green-50 transition-colors text-left">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0"
+                            style={{ background: u.role === "fournisseur" ? "#2563eb" : "#16a34a" }}>
+                            {u.role === "fournisseur" ? "F" : "C"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-slate-700 truncate">{u.name}</p>
+                            <p className="text-[9px] text-slate-400 truncate">{u.email}</p>
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-300 shrink-0">{u.password}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Forgot password modal */}
           {showForgot && (

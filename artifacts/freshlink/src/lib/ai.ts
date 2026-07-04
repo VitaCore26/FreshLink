@@ -10,8 +10,9 @@
 
 export interface MsgLike { role: string; text: string }
 
-// ── Anthropic direct API (fastest, most reliable) ─────────────────────────────
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY ?? ""
+// ── Anthropic via proxy serveur (/api/ai-chat) ────────────────────────────────
+// La clé ANTHROPIC_API_KEY reste côté serveur (SetEnv Hostinger) — jamais dans
+// le bundle client. Voir artifacts/api-server/src/routes/aiChat.ts.
 
 // ── OpenRouter fallback chain ─────────────────────────────────────────────────
 const OR_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -61,8 +62,8 @@ export async function callLLM(
     content: m.text,
   }))
 
-  // ── BlackBox AI first if configured ─────────────────────────────────────
-  const USE_BB_FIRST = (import.meta.env.VITE_AI_PROVIDER === "blackbox" || (!ANTHROPIC_KEY && BB_API_KEY && BB_API_KEY !== "xxx"))
+  // ── BlackBox AI first if explicitly configured ───────────────────────────
+  const USE_BB_FIRST = import.meta.env.VITE_AI_PROVIDER === "blackbox"
   if (USE_BB_FIRST && BB_API_KEY && BB_API_KEY !== "xxx") {
     try {
       const ctrl = new AbortController()
@@ -88,30 +89,27 @@ export async function callLLM(
     } catch { /* fall through */ }
   }
 
-  // ── Try Anthropic direct API if key is available ──────────────────────────
-  if (ANTHROPIC_KEY && attempt === 0) {
+  // ── Try Anthropic via server proxy (key never leaves the backend) ─────────
+  if (attempt === 0) {
     try {
       const ctrl = new AbortController()
       const t = setTimeout(() => ctrl.abort(), 25000)
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/ai-chat", {
         method: "POST",
+        credentials: "include",
         signal: ctrl.signal,
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens,
           system: systemPrompt,
           messages: recentHistory,
+          max_tokens,
+          temperature,
         }),
       })
       clearTimeout(t)
       if (res.ok) {
         const data = await res.json()
-        const text = data?.content?.[0]?.text?.trim()
+        const text = data?.text?.trim()
         if (text && text.length > 2) return text
       }
     } catch { /* fall through to OpenRouter */ }

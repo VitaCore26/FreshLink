@@ -134,10 +134,8 @@ body{font-family:'Inter','Helvetica Neue',Arial,sans-serif;color:#0f172a;backgro
 .lh{display:flex;align-items:flex-start;justify-content:space-between;
   padding:20px 0 16px;border-bottom:3px solid ${accent};margin-bottom:20px}
 .lh-brand{display:flex;align-items:center;gap:12px}
-.lh-logo{width:64px;height:64px;object-fit:contain}
+.lh-logo{width:84px;height:84px;object-fit:contain}
 .lh-co{display:flex;flex-direction:column;gap:2px}
-.lh-name{font-size:19px;font-weight:900;color:${accent};letter-spacing:-0.3px;line-height:1}
-.lh-name span{color:${gold}}
 .lh-tag{font-size:8px;font-weight:800;color:${gold};letter-spacing:1.8px;text-transform:uppercase;margin-top:2px}
 .lh-meta{font-size:9.5px;color:#475569;line-height:1.65;margin-top:3px}
 .lh-doc{text-align:right}
@@ -275,7 +273,6 @@ export function printBL(bl: BonLivraison, company?: CompanyConfig) {
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div class="lh-co">
-      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Fruits &amp; Légumes — Distribution Maroc</div>
       <div class="lh-meta">${cfg.adresse}<br>${cfg.ville}<br>Tél: ${cfg.telephone} — Email: ${cfg.email}<br>ICE: ${cfg.ice} — IF: ${cfg.if_fiscal} — RC: ${cfg.rc}</div>
     </div>
@@ -364,7 +361,6 @@ export function printFacture(bl: BonLivraison, factureNum: string, company?: Com
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div class="lh-co">
-      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Fruits &amp; Légumes — Distribution Maroc</div>
       <div class="lh-meta">${cfg.adresse}<br>${cfg.ville}<br>Tél: ${cfg.telephone}<br>ICE: ${cfg.ice} — IF: ${cfg.if_fiscal} — RC: ${cfg.rc}</div>
     </div>
@@ -425,7 +421,6 @@ export function printPurchaseOrder(po: PurchaseOrder, company?: CompanyConfig) {
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div class="lh-co">
-      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Acheteur — Fruits &amp; Légumes</div>
       <div class="lh-meta">${cfg.adresse}<br>${cfg.ville}<br>ICE: ${cfg.ice} — IF: ${cfg.if_fiscal} — RC: ${cfg.rc}</div>
     </div>
@@ -539,7 +534,6 @@ export function printFactureTransport(data: FactureTransportData, company?: Comp
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div class="lh-co">
-      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Donneur d'ordre — Transport &amp; Logistique</div>
       <div class="lh-meta">${cfg.adresse} — ${cfg.ville}<br>ICE: ${cfg.ice} — RC: ${cfg.rc}</div>
     </div>
@@ -710,7 +704,6 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts, company?: CompanyCon
   <div class="lh-brand">
     <img src="${logo}" class="lh-logo" onerror="this.style.display='none'" alt="${companyNom}"/>
     <div class="lh-co">
-      <div class="lh-name">${companyNom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Fruits &amp; Légumes — Distribution Réseau Maroc</div>
       <div class="lh-meta">${adresse}<br>Tél: ${telephone}${legalLine}</div>
     </div>
@@ -824,7 +817,6 @@ function buildFeuilleRouteHtml(data: FeuilleRouteData, company?: CompanyConfig):
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div class="lh-co">
-      <div class="lh-name">${cfg.nom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Feuille de route — Tournée ${num}</div>
     </div>
   </div>
@@ -907,9 +899,8 @@ td.gain{color:#15803d;font-weight:700;text-align:right}
 <div style="height:6px;background:linear-gradient(90deg,${accent},${gold});border-radius:3px;margin-bottom:18px"></div>
 <div class="slip-top">
   <div style="display:flex;align-items:center;gap:10px">
-    <img src="${cfg.logo}" style="width:50px;height:50px;object-fit:contain" onerror="this.style.display='none'" alt="${cfg.nom}"/>
+    <img src="${cfg.logo}" style="width:66px;height:66px;object-fit:contain" onerror="this.style.display='none'" alt="${cfg.nom}"/>
     <div>
-      <div style="font-size:17px;font-weight:900;color:${accent}">${cfg.nom}</div>
       <div style="font-size:9px;color:#64748b;margin-top:2px;line-height:1.5">${cfg.adresse} — ${cfg.ville}<br>ICE: ${cfg.ice} — RC: ${cfg.rc}</div>
     </div>
   </div>
@@ -1003,7 +994,6 @@ export function printHRDoc(data: HRDocData, company?: CompanyConfig) {
   <div class="lh-brand">
     <img src="${cfg.logo}" class="lh-logo" onerror="this.style.display='none'" alt="${compNom}"/>
     <div class="lh-co">
-      <div class="lh-name">${compNom.replace("Fresh","<span>Fresh</span>")}</div>
       <div class="lh-tag">Direction des Ressources Humaines</div>
       <div class="lh-meta">${cfg.adresse} — ${cfg.ville}<br>ICE: ${cfg.ice} — RC: ${cfg.rc}<br>Tél: ${cfg.telephone}</div>
     </div>

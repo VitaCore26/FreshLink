@@ -98,6 +98,9 @@ export interface User {
   // When `roles` is undefined/empty, fall back to the single `role` field.
   roles?: UserRole[]
   activeRole?: UserRole
+  // Compte de démonstration — écriture bloquée, visible dans la liste déroulante
+  // de connexion. Ne peut être coché qu'à la création par Jawad (super_super_admin).
+  isDemo?: boolean
 }
 
 // Matrice RBAC + assignation automatique des droits : voir lib/rolePermissions.ts
@@ -2299,6 +2302,7 @@ const DEMO_EMAILS = new Set([
 
 export function isDemoUser(user: User | null): boolean {
   if (!user) return false
+  if (user.isDemo === true) return true
   return DEMO_EMAILS.has((user.email ?? "").toLowerCase())
 }
 
