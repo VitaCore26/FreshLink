@@ -365,6 +365,8 @@ export default function BOCash({ user }: { user: User }) {
   const [factModeReglement, setFactModeReglement] = useState<"especes" | "cheque" | "virement" | "effet">("especes")
   const fiscalCfg = store.getFiscalConfig()
   const [invoices, setInvoices] = useState<FactInvoice[]>([])   // factures existantes (numérotation + récap)
+  const [factureSearch, setFactureSearch] = useState("")
+  const [factureSortMode, setFactureSortMode] = useState<"recent" | "alpha">("recent")
   const [factBusy, setFactBusy] = useState(false)
   const [factMsg, setFactMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -928,9 +930,25 @@ export default function BOCash({ user }: { user: User }) {
           {/* Factures récentes */}
           {invoices.length > 0 && (
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
-              <h3 className="px-4 py-3 font-semibold text-foreground font-sans text-sm uppercase tracking-wide text-muted-foreground border-b border-border">
-                Factures récentes
-              </h3>
+              <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-border">
+                <h3 className="font-semibold text-foreground font-sans text-sm uppercase tracking-wide text-muted-foreground">
+                  Factures {factureSearch ? "" : "récentes"} ({invoices.filter(inv => !factureSearch.trim() || inv.clientNom.toLowerCase().includes(factureSearch.trim().toLowerCase()) || (inv.numero ?? "").toLowerCase().includes(factureSearch.trim().toLowerCase())).length})
+                </h3>
+                <div className="flex items-center gap-2">
+                  <input value={factureSearch} onChange={e => setFactureSearch(e.target.value)} placeholder="🔍 Client ou N° facture…"
+                    className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
+                  <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
+                    <button type="button" onClick={() => setFactureSortMode("recent")}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${factureSortMode === "recent" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                      Récent
+                    </button>
+                    <button type="button" onClick={() => setFactureSortMode("alpha")}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${factureSortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                      A → Z
+                    </button>
+                  </div>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm font-sans">
                   <thead>
@@ -941,7 +959,11 @@ export default function BOCash({ user }: { user: User }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.slice(0, 12).map(inv => (
+                    {invoices
+                      .filter(inv => !factureSearch.trim() || inv.clientNom.toLowerCase().includes(factureSearch.trim().toLowerCase()) || (inv.numero ?? "").toLowerCase().includes(factureSearch.trim().toLowerCase()))
+                      .sort((a, b) => factureSortMode === "alpha" ? a.clientNom.localeCompare(b.clientNom, "fr") : String(b.date ?? "").localeCompare(String(a.date ?? "")))
+                      .slice(0, factureSearch ? undefined : 12)
+                      .map(inv => (
                       <tr key={inv.id} className="border-t border-border">
                         <td className="px-4 py-2.5 font-bold text-foreground whitespace-nowrap">{inv.numero}</td>
                         <td className="px-4 py-2.5 text-muted-foreground">{inv.clientNom}</td>

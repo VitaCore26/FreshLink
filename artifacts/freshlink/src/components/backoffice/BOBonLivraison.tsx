@@ -957,6 +957,7 @@ export default function BOBonLivraison({ user }: { user: User }) {
   const [filterTrip, setFilterTrip] = useState("")
   const [filterClient, setFilterClient] = useState("")
   const [filterLivreur, setFilterLivreur] = useState("")
+  const [sortMode, setSortMode] = useState<"date" | "alpha">("date")
   const [filterArticle, setFilterArticle] = useState("")
   const [showAdvFilters, setShowAdvFilters] = useState(false)
   const [showPrintSettings, setShowPrintSettings] = useState(false)
@@ -1356,7 +1357,9 @@ export default function BOBonLivraison({ user }: { user: User }) {
       (!filterLivreur || b.livreurNom === filterLivreur) &&
       (!filterTrip || (b as unknown as { tripId?: string }).tripId === filterTrip) &&
       (!filterArticle || (b.lignes ?? []).some(l => l.articleNom === filterArticle))
-  })
+  }).sort((a, b) => sortMode === "alpha"
+    ? (a.clientNom ?? "").localeCompare(b.clientNom ?? "", "fr")
+    : String(b.date ?? "").localeCompare(String(a.date ?? "")))
 
   const enCours   = useMemo(() => applyFilters(bls.filter(b => EN_COURS_STATUTS.includes(b.statut))), [bls, search, filterStatut, filterClient, filterLivreur, filterTrip, filterArticle])
   const historique = useMemo(() => applyFilters(bls.filter(b => HISTORIQUE_STATUTS.includes(b.statut))), [bls, search, filterStatut, filterClient, filterLivreur, filterTrip, filterArticle])
@@ -1711,6 +1714,16 @@ export default function BOBonLivraison({ user }: { user: User }) {
             <option value="">Tous statuts</option>
             {Object.entries(STATUT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          <div className="flex gap-1 p-1 rounded-xl bg-slate-100">
+            <button type="button" onClick={() => setSortMode("date")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "date" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+              Plus récent
+            </button>
+            <button type="button" onClick={() => setSortMode("alpha")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "alpha" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+              A → Z
+            </button>
+          </div>
           <button onClick={() => setShowAdvFilters(f => !f)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition-colors ${showAdvFilters || filterTrip || filterClient || filterLivreur || filterArticle ? "bg-blue-600 text-white border-blue-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

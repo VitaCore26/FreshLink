@@ -145,6 +145,7 @@ export default function BOCommandesUnifiees({ user }: Props) {
   const [filterSource, setFilterSource]   = useState("tous")
   const [filterZone, setFilterZone]       = useState("tous")
   const [filterCategorie, setFilterCategorie] = useState("tous")
+  const [sortMode, setSortMode] = useState<"date" | "alpha">("date")
   const [filterDateDebut, setFilterDateDebut] = useState("")
   const [filterDateFin, setFilterDateFin]     = useState("")
   const [selected, setSelected]           = useState<CmdUnifiee | null>(null)
@@ -496,7 +497,9 @@ export default function BOCommandesUnifiees({ user }: Props) {
       )
     }
     return true
-  })
+  }).sort((a, b) => sortMode === "alpha"
+    ? a.nom_client.localeCompare(b.nom_client, "fr")
+    : new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(rowKey(c)))
   const toggleSelectAll = () => {
@@ -752,6 +755,18 @@ export default function BOCommandesUnifiees({ user }: Props) {
           placeholder="Client, tél, réf, zone..."
           className="flex-1 min-w-44 px-3 py-2 rounded-xl border border-border text-sm bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-green-500"
         />
+
+        {/* Tri */}
+        <div className="flex gap-1 p-1 rounded-xl bg-slate-100">
+          <button type="button" onClick={() => setSortMode("date")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "date" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+            Plus récent
+          </button>
+          <button type="button" onClick={() => setSortMode("alpha")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "alpha" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+            A → Z
+          </button>
+        </div>
 
         {(search || filterStatut !== "tous" || filterSource !== "tous" || filterZone !== "tous" || filterCategorie !== "tous" || filterDateDebut || filterDateFin) && (
           <button

@@ -277,6 +277,8 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
   const [commandes, setCommandes] = useState<Commande[]>([])
   const [articles, setArticles] = useState<Article[]>([])
   const [showNew, setShowNew] = useState(false)
+  const [search, setSearch] = useState("")
+  const [sortMode, setSortMode] = useState<"recent" | "alpha">("recent")
   const [viewing, setViewing] = useState<BonPreparation | null>(null)
   const [retiringId, setRetiringId] = useState<string | null>(null)
   const [validatingId, setValidatingId] = useState<string | null>(null)
@@ -1115,7 +1117,7 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <p className="text-sm text-muted-foreground">{bons.length} bon(s)</p>
         <button onClick={() => setShowNew(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
@@ -1125,19 +1127,38 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
         </button>
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un bon…"
+          className="flex-1 min-w-[160px] px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none" />
+        <div className="flex gap-1 p-1 rounded-xl bg-muted/50">
+          <button type="button" onClick={() => setSortMode("recent")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "recent" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+            Plus récent
+          </button>
+          <button type="button" onClick={() => setSortMode("alpha")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+            A → Z
+          </button>
+        </div>
+      </div>
+
       {showNew && <NewBonForm />}
 
-      {bons.length === 0 ? (
+      {(() => {
+        const bonsFiltres = bons
+          .filter(b => !search.trim() || b.nom.toLowerCase().includes(search.trim().toLowerCase()))
+          .sort((a, b) => sortMode === "alpha" ? a.nom.localeCompare(b.nom, "fr") : b.date.localeCompare(a.date))
+        return bonsFiltres.length === 0 ? (
         <div className="bg-card rounded-2xl border border-border p-14 text-center text-muted-foreground">
           <svg className="w-14 h-14 mx-auto mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
           </svg>
-          <p className="font-medium">Aucun bon de préparation</p>
-          <p className="text-sm mt-1">Créez un bon pour organiser le picking du chargement</p>
+          <p className="font-medium">{bons.length === 0 ? "Aucun bon de préparation" : "Aucun résultat"}</p>
+          <p className="text-sm mt-1">{bons.length === 0 ? "Créez un bon pour organiser le picking du chargement" : "Essayez une autre recherche"}</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {[...bons].reverse().map(bon => {
+          {bonsFiltres.map(bon => {
             const ordClients = sortClients(bon.clientsInfo ?? [], bon.sequenceMode ?? "horaire")
             return (
               <div key={bon.id} className="bg-card rounded-2xl border border-border p-4">
@@ -1217,7 +1238,8 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
             )
           })}
         </div>
-      )}
+      )
+      })()}
     </div>
   )
 }
