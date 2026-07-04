@@ -303,6 +303,17 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
     return m
   }, [gfProducts])
 
+  // Repli par nom normalisé — les réceptions GestFlux ont très souvent
+  // produit_id = null (qualité de donnée côté système externe), ce qui
+  // rendait "PA GestFlux" systématiquement vide malgré des prix réels
+  // disponibles dans la table products. On retrouve le produit par son
+  // nom (reception.article ↔ products.nom_fr), comme déjà fait côté Iziry.
+  const gfProductByNormName = useMemo(() => {
+    const m: Record<string, GfProduct> = {}
+    gfProducts.forEach(p => { if (p.nom_fr) m[normName(p.nom_fr)] = p })
+    return m
+  }, [gfProducts])
+
   // ── Iziry articles by id ─────────────────────────────────────────────────
   const izArticleById = useMemo(() => {
     const m: Record<string, IzArticle> = {}
@@ -362,7 +373,8 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
       m[k] = prev
     })
     return Object.entries(m).map(([k, v]) => {
-      const gfProd  = gfProductById[v.produit_id]
+      // produit_id est très souvent null côté GestFlux — repli par nom.
+      const gfProd  = gfProductById[v.produit_id] ?? gfProductByNormName[k]
       const prixGf  = gfProd?.prix_achat ?? 0
       const prixIz  = izPrixByNorm[k] ?? 0
       // Apply approved mapping override
@@ -378,7 +390,7 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
     })
       .filter(r => familleFiltre === "toutes" || r.famille === familleFiltre)
       .sort((a, b) => (a.nomFl ?? a.article).localeCompare(b.nomFl ?? b.article, "fr"))
-  }, [gfFiltered, gfProductById, izPrixByNorm, flByNorm, mappings, familleFiltre])
+  }, [gfFiltered, gfProductById, gfProductByNormName, izPrixByNorm, flByNorm, mappings, familleFiltre])
 
   // ── Iziry Commandes ───────────────────────────────────────────────────────
   const cmdFiltered = useMemo(() => {
@@ -576,11 +588,11 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-sm font-black text-slate-800">Comparatif 3 Prix — GestFlux · Iziry · FreshLink</p>
-              <p className="text-[11px] text-slate-400">{gfAgg.length} articles · Rouge = notre PA supérieur (on achète plus cher) · Vert = avantage</p>
+              <p className="text-[11px] text-slate-400">{gfAgg.length} articles · GestFlux = PA achat (comparable) · Iziry = prix de VENTE à leurs clients (inclut leur marge, pas un prix d&apos;achat) · Rouge = notre PA supérieur · Vert = avantage</p>
             </div>
             <div className="flex gap-4 text-xs">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"/><span className="text-slate-500">PA GestFlux</span></span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block"/><span className="text-slate-500">Prix Iziry (moy.)</span></span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"/><span className="text-slate-500">PA GestFlux (achat)</span></span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block"/><span className="text-slate-500">Prix Vente Iziry (moy.)</span></span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-600 inline-block"/><span className="text-slate-500">Notre PA</span></span>
             </div>
           </div>
@@ -592,7 +604,7 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
                   <th className="px-3 py-2.5 text-right font-bold">Qté (kg)</th>
                   <th className="px-3 py-2.5 text-right font-bold">PA GestFlux</th>
                   <th className="px-3 py-2.5 text-center font-bold">Δ GF</th>
-                  <th className="px-3 py-2.5 text-right font-bold">Prix Iziry</th>
+                  <th className="px-3 py-2.5 text-right font-bold" title="Prix de VENTE d'Iziry à ses clients — pas un prix d'achat, marge incluse">Prix Vente Iziry</th>
                   <th className="px-3 py-2.5 text-center font-bold">Δ Iz</th>
                   <th className="px-3 py-2.5 text-right font-bold">Notre PA</th>
                   <th className="px-3 py-2.5 text-left font-bold">Article FL</th>
@@ -606,9 +618,9 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
                     <td className="px-4 py-2 font-medium text-slate-800 max-w-[180px] truncate" title={r.article}>{r.article}</td>
                     <td className="px-3 py-2 text-right font-mono text-slate-600">{fmt(r.qteGf, 1)}</td>
                     <td className="px-3 py-2 text-right">{prixCell(r.prixGf, "text-blue-700")}</td>
-                    <td className="px-3 py-2 text-center">{diffBadge(r.diffGf, "Notre PA vs GestFlux")}</td>
+                    <td className="px-3 py-2 text-center">{diffBadge(r.diffGf, "Notre PA vs GestFlux (achat)")}</td>
                     <td className="px-3 py-2 text-right">{prixCell(r.prixIz, "text-orange-600")}</td>
-                    <td className="px-3 py-2 text-center">{diffBadge(r.diffIz, "Notre PA vs Iziry")}</td>
+                    <td className="px-3 py-2 text-center">{diffBadge(r.diffIz, "Notre PA vs prix de VENTE Iziry — pas comparable 1:1, marge incluse")}</td>
                     <td className="px-3 py-2 text-right">{prixCell(r.paFl)}</td>
                     <td className="px-3 py-2 text-slate-500 max-w-[140px] truncate">
                       {r.nomFl ?? <span className="text-slate-300 italic">Non trouvé</span>}
@@ -806,7 +818,7 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
               <p className="text-sm font-black text-slate-800">Catalogue Iziry vs FreshLink — 3 prix</p>
               <p className="text-[11px] text-slate-400">
                 {artComp.length} articles · {artComp.filter(a => a.nomFl).length} matchés FreshLink ·
-                {artComp.filter(a => a.prixIz > 0).length} avec prix Iziry
+                {artComp.filter(a => a.prixIz > 0).length} avec prix de vente Iziry (pas un prix d&apos;achat — marge incluse, écart non comparable 1:1 à notre PA)
               </p>
             </div>
             <div className="flex gap-3 text-xs">
@@ -822,7 +834,7 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
                   <th className="px-3 py-2.5 text-left font-bold">Article Iziry</th>
                   <th className="px-3 py-2.5 text-left font-bold">Unité</th>
                   <th className="px-3 py-2.5 text-center font-bold">Actif</th>
-                  <th className="px-3 py-2.5 text-right font-bold">Prix Iziry (moy.)</th>
+                  <th className="px-3 py-2.5 text-right font-bold" title="Prix de VENTE d'Iziry à ses clients — pas un prix d'achat">Prix Vente Iziry (moy.)</th>
                   <th className="px-3 py-2.5 text-left font-bold">Article FreshLink</th>
                   <th className="px-3 py-2.5 text-right font-bold">Notre PA</th>
                   <th className="px-3 py-2.5 text-center font-bold">Écart</th>
