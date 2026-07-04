@@ -68,6 +68,15 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
   // All articles
   const allArticleIds = bon.lignes.map(l => l.articleId)
 
+  // Nombre d'UM (caisse, carton...) équivalent à une quantité — le magasinier
+  // voit tout de suite combien de caisses préparer, pas seulement le poids.
+  const articlesRef = store.getArticles()
+  const umLabelPrint = (articleId: string, qte: number): string => {
+    const art = articlesRef.find(a => a.id === articleId)
+    if (!art?.colisageParUM || art.colisageParUM <= 0) return "—"
+    return `${Math.round((qte / art.colisageParUM) * 10) / 10} ${art.um ?? "UM"}`
+  }
+
   const win = window.open("", "_blank", "width=1000,height=750")
   if (!win) return
 
@@ -184,6 +193,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
       <th>Article</th>
       <th class="r" style="width:90px">Total Cmd</th>
       <th class="r" style="width:80px">Unité</th>
+      <th class="r" style="width:80px">Nb UM</th>
       <th class="r" style="width:110px">Qté préparée</th>
     </tr>
   </thead>
@@ -194,6 +204,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
       <td class="bold">${l.articleNom}${(l as unknown as { articleNomAr?: string }).articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:9pt;font-weight:400;color:#6b7280;direction:rtl;display:block">${(l as unknown as { articleNomAr?: string }).articleNomAr}</span>` : ""}</td>
       <td class="r bold" style="color:#166534">${l.qteCommandee.toFixed(1)}</td>
       <td class="r" style="color:#6b7280">${l.unite}</td>
+      <td class="r bold" style="color:#166534">${umLabelPrint(l.articleId, l.qteCommandee)}</td>
       <td class="r"><span class="sign-box"></span>&nbsp;${l.unite}</td>
     </tr>`).join("")}
   </tbody>
@@ -202,6 +213,7 @@ function openPrintPrep(bon: BonPreparation, commandes: Commande[]) {
       <td colspan="2" style="padding:8px 10px">TOTAL GÉNÉRAL</td>
       <td class="r" style="padding:8px 10px;color:#166534">${bon.lignes.reduce((s, l) => s + l.qteCommandee, 0).toFixed(1)}</td>
       <td class="r" style="padding:8px 10px;color:#6b7280">kg</td>
+      <td></td>
       <td></td>
     </tr>
   </tfoot>
@@ -235,11 +247,11 @@ ${(() => {
         <span class="cb-meta">${ci.secteur}${ci.zone ? " — " + ci.zone : ""}${ci.heurelivraison ? " · " + ci.heurelivraison : ""}</span>
       </div>
       <table class="cbtable">
-        <thead><tr><th>Article</th><th class="r" style="width:110px">Quantité</th></tr></thead>
+        <thead><tr><th>Article</th><th class="r" style="width:90px">Nb UM</th><th class="r" style="width:110px">Quantité</th></tr></thead>
         <tbody>
-          ${lignes.map(l => `<tr><td>${l.articleNom}${(l as unknown as { articleNomAr?: string }).articleNomAr ? ` <span style="font-family:'Noto Sans Arabic',Arial,sans-serif;color:#6b7280;direction:rtl">/ ${(l as unknown as { articleNomAr?: string }).articleNomAr}</span>` : ""}</td><td class="r">${(l.qtesParClient[ci.clientId] ?? 0).toFixed(1)} ${l.unite}</td></tr>`).join("")}
+          ${lignes.map(l => `<tr><td>${l.articleNom}${(l as unknown as { articleNomAr?: string }).articleNomAr ? ` <span style="font-family:'Noto Sans Arabic',Arial,sans-serif;color:#6b7280;direction:rtl">/ ${(l as unknown as { articleNomAr?: string }).articleNomAr}</span>` : ""}</td><td class="r">${umLabelPrint(l.articleId, l.qtesParClient[ci.clientId] ?? 0)}</td><td class="r">${(l.qtesParClient[ci.clientId] ?? 0).toFixed(1)} ${l.unite}</td></tr>`).join("")}
         </tbody>
-        <tfoot><tr><td>TOTAL</td><td class="r">${rowTotal.toFixed(1)} kg</td></tr></tfoot>
+        <tfoot><tr><td>TOTAL</td><td></td><td class="r">${rowTotal.toFixed(1)} kg</td></tr></tfoot>
       </table>
     </div>`
   }).join("")
@@ -653,6 +665,16 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
     const seqMode = bon.sequenceMode ?? "horaire"
     const orderedClients = sortClients(bon.clientsInfo ?? [], seqMode)
 
+    // Nombre d'UM (caisse, carton...) équivalent à une quantité — même calcul
+    // que sur le BL imprimé, pour que le magasinier/préparateur voie tout de
+    // suite combien de caisses préparer, pas seulement le poids en kg.
+    const umLabel = (articleId: string, qte: number): string | null => {
+      const art = articles.find(a => a.id === articleId)
+      if (!art?.colisageParUM || art.colisageParUM <= 0) return null
+      const nb = Math.round((qte / art.colisageParUM) * 10) / 10
+      return `${nb} ${art.um ?? "UM"}`
+    }
+
     const doneCount = bon.lignes.filter(l => l.valide).length
     const pct = bon.lignes.length > 0 ? Math.round((doneCount / bon.lignes.length) * 100) : 0
 
@@ -724,6 +746,9 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
                   <p className="font-bold text-foreground text-sm">{ligne.articleNom}</p>
                   <p className="text-xs text-muted-foreground mb-2">
                     Total commandé : <strong>{ligne.qteCommandee.toFixed(1)} {ligne.unite}</strong>
+                    {umLabel(ligne.articleId, ligne.qteCommandee) && (
+                      <span className="ml-1.5 text-primary font-semibold">({umLabel(ligne.articleId, ligne.qteCommandee)})</span>
+                    )}
                   </p>
 
                   {/* Répartition par client (ordered) */}
@@ -741,6 +766,9 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
                           </div>
                           <div className="text-right">
                             <span className="text-xs font-bold text-green-700">{(ligne.qtesParClient[ci.clientId] ?? 0).toFixed(1)} {ligne.unite}</span>
+                            {umLabel(ligne.articleId, ligne.qtesParClient[ci.clientId] ?? 0) && (
+                              <span className="block text-[10px] text-primary font-semibold">{umLabel(ligne.articleId, ligne.qtesParClient[ci.clientId] ?? 0)}</span>
+                            )}
                             {ci.heurelivraison && (
                               <span className="block text-xs text-blue-600">{ci.heurelivraison}</span>
                             )}
@@ -811,6 +839,9 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
                     <div key={l.articleId} className="flex justify-between items-center px-3 py-2 bg-muted/40 rounded-xl">
                       <span className="text-sm text-foreground font-medium">{l.articleNom}</span>
                       <div className="flex items-center gap-1.5">
+                        {umLabel(l.articleId, l.qtesParClient[ci.clientId] ?? 0) && (
+                          <span className="text-xs text-primary font-semibold">{umLabel(l.articleId, l.qtesParClient[ci.clientId] ?? 0)}</span>
+                        )}
                         <input type="number" min={0} step={0.5}
                           defaultValue={l.qtesParClient[ci.clientId] ?? 0}
                           onBlur={e => {
