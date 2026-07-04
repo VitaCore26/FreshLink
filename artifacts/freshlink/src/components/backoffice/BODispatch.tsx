@@ -85,6 +85,8 @@ export default function BODispatch({ user }: Props) {
   const [selectedCmds, setSelectedCmds] = useState<string[]>([])
   const [filterZone, setFilterZone] = useState("")
   const [filterPrevendeur, setFilterPrevendeur] = useState("")
+  const [filterClient, setFilterClient] = useState("")
+  const [sortMode, setSortMode] = useState<"alpha" | "secteur">("alpha")
   const mapRefs = useRef<Record<string, HTMLDivElement>>({})
   const mapsLoaded = useRef<Set<string>>(new Set())
 
@@ -138,10 +140,30 @@ export default function BODispatch({ user }: Props) {
     !existingTripCmds.has(c.id) &&
     (c.statut === "valide" || c.statut === "en_attente" || c.statut === "en_attente_approbation")
   )
+  // Ancienneté d'une commande — J-1 (reçue hier pour livraison aujourd'hui)
+  // est le cycle normal, PAS un retard. En retard seulement à partir de J-2.
+  const joursDepuisCmd = (c: Commande) => {
+    const d = new Date(c.date); d.setHours(0, 0, 0, 0)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    return Math.round((today.getTime() - d.getTime()) / 86400000)
+  }
+  const estEnRetard = (c: Commande) => joursDepuisCmd(c) >= 2
+
   const filtered = availableCommandes.filter(c => {
     if (filterZone && !c.zone.toLowerCase().includes(filterZone.toLowerCase())) return false
     if (filterPrevendeur && !c.commercialNom.toLowerCase().includes(filterPrevendeur.toLowerCase())) return false
+    if (filterClient && !c.clientNom.toLowerCase().includes(filterClient.toLowerCase())) return false
     return true
+  }).sort((a, b) => {
+    // Les commandes en retard (J-2 et +) sont classées à la fin, quel que
+    // soit le tri choisi — la liste principale reste pour le flux normal.
+    const rA = estEnRetard(a) ? 1 : 0, rB = estEnRetard(b) ? 1 : 0
+    if (rA !== rB) return rA - rB
+    if (sortMode === "secteur") {
+      const s = (a.secteur || "").localeCompare(b.secteur || "", "fr")
+      if (s !== 0) return s
+    }
+    return a.clientNom.localeCompare(b.clientNom, "fr")
   })
   const zones = [...new Set(availableCommandes.map(c => c.zone).filter(Boolean))]
   const prevendeurs = [...new Set(availableCommandes.map(c => c.commercialNom))]
@@ -612,6 +634,20 @@ export default function BODispatch({ user }: Props) {
                   {prevendeurs.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input value={filterClient} onChange={e => setFilterClient(e.target.value)} placeholder="🔍 Rechercher un client…"
+                  className="flex-1 min-w-[160px] px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none" />
+                <div className="flex gap-1 p-1 rounded-xl bg-muted/50">
+                  <button type="button" onClick={() => setSortMode("alpha")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                    A → Z
+                  </button>
+                  <button type="button" onClick={() => setSortMode("secteur")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "secteur" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                    Par secteur
+                  </button>
+                </div>
+              </div>
 
               {/* Commandes list */}
               <div>
@@ -627,14 +663,17 @@ export default function BODispatch({ user }: Props) {
                 <div className="flex flex-col gap-2 max-h-64 overflow-y-auto rounded-xl border border-border p-2">
                   {filtered.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">Aucune commande validée</p>
-                  ) : filtered.map(c => (
+                  ) : filtered.map(c => {
+                    const retard = estEnRetard(c)
+                    const jours = joursDepuisCmd(c)
+                    return (
                     <label key={c.id}
-                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedCmds.includes(c.id) ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/40"}`}>
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedCmds.includes(c.id) ? "border-primary bg-primary/5" : retard ? "border-red-200 bg-red-50/60 hover:bg-red-50" : "border-transparent hover:bg-muted/40"}`}>
                       <input type="checkbox" checked={selectedCmds.includes(c.id)} onChange={() => toggleCmd(c.id)}
                         className="w-4 h-4 mt-0.5 rounded accent-primary shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-foreground">{c.clientNom}</p>
-                        <p className="text-xs text-muted-foreground">{c.zone} · {c.commercialNom} · {c.heurelivraison}</p>
+                        <p className={`font-semibold text-sm ${retard ? "text-red-700" : "text-foreground"}`}>{c.clientNom}</p>
+                        <p className="text-xs text-muted-foreground">{c.secteur ? `${c.secteur} · ` : ""}{c.zone} · {c.commercialNom} · {c.heurelivraison}</p>
                         <p className="text-xs text-muted-foreground">{c.lignes.map(l => `${l.articleNom} ×${l.quantite}`).join(", ")}</p>
                       </div>
                       <div className="text-right shrink-0">
@@ -642,9 +681,12 @@ export default function BODispatch({ user }: Props) {
                           {store.formatMAD(c.lignes.reduce((s, l) => s + l.quantite * l.prixVente, 0))}
                         </p>
                         {c.gpsLat && <span className="text-[10px] text-green-600 font-semibold">GPS</span>}
+                        {retard && (
+                          <p className="text-[10px] text-red-600 font-bold mt-0.5">⚠ {jours}j — {new Date(c.date).toLocaleDateString("fr-FR")}</p>
+                        )}
                       </div>
                     </label>
-                  ))}
+                  )})}
                 </div>
               </div>
 
