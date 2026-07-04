@@ -81,6 +81,8 @@ export default function BODispatch({ user }: Props) {
   const [editingLivreur, setEditingLivreur] = useState<Livreur | null>(null)
   const [livreurForm, setLivreurForm] = useState<Omit<Livreur, "id">>(EMPTY_LIVREUR)
   const [selectedLivreurId, setSelectedLivreurId] = useState("")
+  const [livreurSearch, setLivreurSearch] = useState("")
+  const [livreurSortMode, setLivreurSortMode] = useState<"recent" | "alpha">("alpha")
   const [vehicule, setVehicule] = useState("")
   const [selectedCmds, setSelectedCmds] = useState<string[]>([])
   const [filterZone, setFilterZone] = useState("")
@@ -1025,6 +1027,20 @@ export default function BODispatch({ user }: Props) {
 
           {/* Livreurs table */}
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="flex items-center gap-2 flex-wrap">
+              <input value={livreurSearch} onChange={e => setLivreurSearch(e.target.value)} placeholder="🔍 Rechercher un livreur…"
+                className="flex-1 min-w-[160px] px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none" />
+              <div className="flex gap-1 p-1 rounded-xl bg-muted/50">
+                <button type="button" onClick={() => setLivreurSortMode("alpha")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${livreurSortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  A → Z
+                </button>
+                <button type="button" onClick={() => setLivreurSortMode("recent")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${livreurSortMode === "recent" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  Plus récent
+                </button>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1035,9 +1051,13 @@ export default function BODispatch({ user }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {livreurs.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">Aucun livreur</td></tr>
-                  ) : livreurs.map((l, i) => (
+                  {(() => {
+                    const livreursFiltres = livreurs
+                      .filter(l => !livreurSearch.trim() || `${l.prenom} ${l.nom}`.toLowerCase().includes(livreurSearch.trim().toLowerCase()) || (l.telephone ?? "").includes(livreurSearch.trim()))
+                      .sort((a, b) => livreurSortMode === "alpha" ? `${a.prenom} ${a.nom}`.localeCompare(`${b.prenom} ${b.nom}`, "fr") : String(b.id).localeCompare(String(a.id)))
+                    return livreursFiltres.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">{livreurs.length === 0 ? "Aucun livreur" : "Aucun résultat"}</td></tr>
+                  ) : livreursFiltres.map((l, i) => (
                     <tr key={l.id} style={{ borderTop: "1px solid oklch(0.87 0.012 240)", background: i % 2 === 0 ? "white" : "oklch(0.975 0.003 240)" }}>
                       <td className="px-4 py-3">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${l.type === "interne" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
@@ -1074,7 +1094,8 @@ export default function BODispatch({ user }: Props) {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                  })()}
                 </tbody>
               </table>
             </div>

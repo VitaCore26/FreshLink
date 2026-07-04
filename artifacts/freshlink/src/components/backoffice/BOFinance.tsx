@@ -1101,7 +1101,7 @@ export default function BOFinance({ user }: { user: { id: string; name: string; 
                   ))}
                 </tr></thead>
                 <tbody>
-                  {salaries.map(s => (
+                  {salaries.slice().sort((a, b) => `${a.prenom} ${a.nom}`.localeCompare(`${b.prenom} ${b.nom}`, "fr")).map(s => (
                     <tr key={s.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">
                         <p className="font-semibold">{s.prenom} {s.nom}</p>

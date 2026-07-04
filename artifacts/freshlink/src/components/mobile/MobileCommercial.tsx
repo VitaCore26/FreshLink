@@ -136,6 +136,10 @@ export default function MobileCommercial({ user }: Props) {
 
   // Inline article selector state
   const [articleSearch, setArticleSearch] = useState("")
+  // Badges de stock (dispo/rupture) masqués par défaut — sur un catalogue de
+  // dizaines d'articles, ces badges répétés sur chaque ligne prenaient trop
+  // de place visuelle sur mobile. Le prévendeur peut les réafficher au besoin.
+  const [showStockBadges, setShowStockBadges] = useState(false)
   const [articleSort, setArticleSort] = useState<ArticleSort>("tous")
 
   // Global article rotation: how many times each article was ordered across ALL commandes
@@ -1284,6 +1288,11 @@ export default function MobileCommercial({ user }: Props) {
               </button>
             )}
           </div>
+          <button onClick={() => setShowStockBadges(v => !v)}
+            className={`mt-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${showStockBadges ? "bg-primary/10 border-primary text-primary" : "border-border text-muted-foreground"}`}>
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showStockBadges ? "M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" : "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"} /></svg>
+            {showStockBadges ? "Masquer le stock" : "Afficher le stock"}
+          </button>
         </div>
 
         {/* Sort toggles */}
@@ -1346,7 +1355,7 @@ export default function MobileCommercial({ user }: Props) {
                   <p className="text-sm font-bold text-foreground truncate">{a.nom}</p>
                   {a.nomAr && <p className="text-xs text-muted-foreground font-arabic" dir="rtl" lang="ar">{a.nomAr}</p>}
                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    {(() => {
+                    {showStockBadges && (() => {
                       const vs = store.getVirtualStock(a.id)
                       const ok = vs.available > 0
                       return (
@@ -1852,9 +1861,11 @@ export default function MobileCommercial({ user }: Props) {
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-700">
                               {hab.count}x commande(s)
                             </span>
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${stockOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                              {stockOk ? `${art.stockDisponible} ${art.unite} dispo` : "Rupture"}
-                            </span>
+                            {showStockBadges && (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${stockOk ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                                {stockOk ? `${art.stockDisponible} ${art.unite} dispo` : "Rupture"}
+                              </span>
+                            )}
                             <span className="text-[10px] text-muted-foreground">
                               Derniere: {hab.lastDate}
                             </span>
