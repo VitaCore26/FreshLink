@@ -182,6 +182,7 @@ export default function BoPurchaseOrders() {
   const [poSubmitting, setPoSubmitting] = useState(false)
   const [filterStatut, setFilterStatut] = useState<string>("tous")
   const [filterArticle, setFilterArticle] = useState<string>("")
+  const [sortMode, setSortMode] = useState<"recent" | "alpha">("recent")
   const [emailConfig] = useState(store.getEmailConfig().achat)
   const [poTab, setPoTab] = useState<"po" | "da">("po")
   const [autoGenMsg, setAutoGenMsg] = useState<string | null>(null)
@@ -283,7 +284,9 @@ export default function BoPurchaseOrders() {
     if (filterStatut !== "tous" && o.statut !== filterStatut) return false
     if (filterArticle && !o.articleNom.toLowerCase().includes(filterArticle.toLowerCase())) return false
     return true
-  })
+  }).sort((a, b) => sortMode === "alpha"
+    ? a.articleNom.localeCompare(b.articleNom, "fr")
+    : String(b.date ?? "").localeCompare(String(a.date ?? "")))
 
   const totalValeur = filtered.reduce((s, o) => s + o.total, 0)
   const countOuvert = orders.filter(o => o.statut === "ouvert").length
@@ -392,6 +395,17 @@ export default function BoPurchaseOrders() {
           onChange={e => setFilterArticle(e.target.value)}
           className="px-3 py-2.5 rounded-xl border border-border bg-card text-sm font-sans focus:outline-none focus:ring-2 focus:ring-primary w-48"
         />
+
+        <div className="flex gap-1 p-1 rounded-xl bg-muted/50">
+          <button type="button" onClick={() => setSortMode("recent")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "recent" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+            Plus récent
+          </button>
+          <button type="button" onClick={() => setSortMode("alpha")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${sortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+            A → Z
+          </button>
+        </div>
 
         <div className="flex-1" />
         <p className="text-sm text-muted-foreground font-sans">{filtered.length} résultat(s)</p>

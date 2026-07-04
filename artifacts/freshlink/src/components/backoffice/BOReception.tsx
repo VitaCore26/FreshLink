@@ -13,6 +13,8 @@ const RECEPTION_ALLOWED_ROLES = ["super_super_admin", "super_admin", "admin", "r
 
 export default function BOReception({ user }: { user: { id: string; name: string; role: string } }) {
   const [tab, setTab] = useState<SourceTab>("bons")
+  const [histSearch, setHistSearch] = useState("")
+  const [histSortMode, setHistSortMode] = useState<"recent" | "alpha">("recent")
   const [bonsValidés, setBonsValidés] = useState<BonAchat[]>([])
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [receptions, setReceptions] = useState<Reception[]>([])
@@ -506,9 +508,31 @@ export default function BOReception({ user }: { user: { id: string; name: string
       )}
 
       {/* ═══ HISTORIQUE ═══ */}
-      {tab === "historique" && (
+      {tab === "historique" && (() => {
+        const receptionsFiltrees = receptions
+          .filter(r => !histSearch.trim() || (r.fournisseurNom ?? "").toLowerCase().includes(histSearch.trim().toLowerCase()))
+          .sort((a, b) => histSortMode === "alpha"
+            ? (a.fournisseurNom ?? "").localeCompare(b.fournisseurNom ?? "", "fr")
+            : String(b.date ?? "").localeCompare(String(a.date ?? "")))
+        return (
         <div className="flex flex-col gap-3">
-          <h3 className="font-bold text-foreground">Historique des receptions ({receptions.length})</h3>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="font-bold text-foreground">Historique des receptions ({receptionsFiltrees.length})</h3>
+            <div className="flex items-center gap-2">
+              <input value={histSearch} onChange={e => setHistSearch(e.target.value)} placeholder="🔍 Fournisseur…"
+                className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none" />
+              <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
+                <button type="button" onClick={() => setHistSortMode("recent")}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${histSortMode === "recent" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  Récent
+                </button>
+                <button type="button" onClick={() => setHistSortMode("alpha")}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${histSortMode === "alpha" ? "bg-white shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  A → Z
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-2xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted">
@@ -519,9 +543,9 @@ export default function BOReception({ user }: { user: { id: string; name: string
                 </tr>
               </thead>
               <tbody>
-                {receptions.length === 0 ? (
+                {receptionsFiltrees.length === 0 ? (
                   <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Aucune reception</td></tr>
-                ) : receptions.map(r => (
+                ) : receptionsFiltrees.map(r => (
                   <tr key={r.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-3 font-mono text-xs">{r.date}</td>
                     <td className="px-4 py-3">
@@ -564,7 +588,8 @@ export default function BOReception({ user }: { user: { id: string; name: string
             </table>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ═══ MODALS ═══ */}
 
