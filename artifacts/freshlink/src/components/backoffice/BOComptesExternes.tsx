@@ -590,7 +590,7 @@ export default function BOComptesExternes({ user }: Props) {
     const matchCat  = !filterCat  || c.categorie === filterCat
     const matchType = !filterType || c.type === filterType
     return matchQ && matchCat && matchType
-  })
+  }).sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
 
   // Stats
   const withPortal   = clients.filter(c => getPortalUser(c.id)).length

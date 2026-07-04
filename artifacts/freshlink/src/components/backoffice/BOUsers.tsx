@@ -1338,7 +1338,7 @@ export default function BOUsers({ currentUser }: { currentUser: User }) {
     const matchScope = filterScope === "" ||
       (filterScope === "externe" ? isExternal(u) : !isExternal(u))
     return matchSearch && matchRole && matchScope
-  })
+  }).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "fr"))
   const nbInterne = users.filter(u => !isExternal(u)).length
   const nbExterne = users.filter(u => isExternal(u)).length
 

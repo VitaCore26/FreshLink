@@ -270,7 +270,7 @@ export default function BOArticles({ user }: { user: { id: string; name: string 
           ? famillesFiltre.includes(a.famille)
           : a.famille === famille
     return matchSearch && matchFamille
-  })
+  }).sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
 
   const openEdit = (a: Article) => {
     setEditArt(a)

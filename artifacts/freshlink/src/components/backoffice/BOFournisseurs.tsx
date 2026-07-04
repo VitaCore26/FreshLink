@@ -115,7 +115,7 @@ export default function BOFournisseurs({ user }: { user: { id: string; role: str
   const filtered = fournisseurs.filter(f =>
     !search || f.nom.toLowerCase().includes(search.toLowerCase()) ||
     (f.ville || "").toLowerCase().includes(search.toLowerCase())
-  )
+  ).sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
 
   const MODALITE_OPTIONS = Object.entries(MODALITE_LABELS) as [ModalitePaiement, string][]
 
