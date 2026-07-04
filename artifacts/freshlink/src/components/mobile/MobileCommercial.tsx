@@ -156,6 +156,7 @@ export default function MobileCommercial({ user }: Props) {
     const seen = new Set<string>()
     return articles.filter(a => {
       if (!a || !a.id || seen.has(a.id)) return false
+      if (a.actif === false) return false   // désactivé globalement → jamais proposé au prévendeur
       seen.add(a.id)
       return true
     })
