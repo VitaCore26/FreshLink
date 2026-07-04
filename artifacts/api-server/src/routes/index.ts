@@ -29,6 +29,7 @@ import extDemandeCompteRouter from "./ext/demandeCompte.js";
 import extShopAdminAuthRouter from "./ext/shopAdminAuth.js";
 import extShopAdminPasswordRouter from "./ext/shopAdminPassword.js";
 import extWebIntegrationConfigRouter from "./ext/webIntegrationConfig.js";
+import extSecteursRouter from "./ext/secteurs.js";
 import portalTrackingRouter from "./portal/tracking.js";
 
 const router: IRouter = Router();
@@ -54,6 +55,7 @@ router.use("/ext/mon-compte", extMonCompteRouter);
 router.use("/ext/pricing-rules", extPricingRulesRouter);
 router.use("/ext/promo", extPromoRouter);
 router.use("/ext/rapport-journalier", extRapportJournalierRouter);
+router.use("/ext/secteurs", extSecteursRouter);
 router.use("/ext/revoke-sessions", extRevokeSessionsRouter);
 router.use("/ext/bonus-matrix", extBonusMatrixRouter);
 router.use("/ext/catalogue", extCatalogueRouter);

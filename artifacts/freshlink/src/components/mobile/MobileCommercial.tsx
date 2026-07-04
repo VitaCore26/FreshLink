@@ -6,6 +6,7 @@ import { sendEmail, buildCommandeEmail } from "@/lib/email"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 import SwipeToDelete from "@/components/ui/SwipeToDelete"
 import { resolveArticlePhoto } from "@/lib/articlePhotoHelper"
+import { loadZonesConfig, zoneOfSecteur, type ZonesConfig } from "@/lib/commercial/zones"
 
 interface Props { user: User }
 
@@ -60,6 +61,11 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number) {
 export default function MobileCommercial({ user }: Props) {
   const [articles, setArticles] = useState<Article[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  // Config Zones & Secteurs (même pool que le BO — plus de liste de secteurs
+  // déconnectée) — chargée une fois, affiche la zone commerciale du secteur.
+  const [zonesCfg, setZonesCfg] = useState<ZonesConfig | null>(null)
+  useEffect(() => { loadZonesConfig().then(setZonesCfg) }, [])
+  const zoneLabelOf = (secteur: string) => zonesCfg ? zoneOfSecteur(zonesCfg, secteur)?.label ?? null : null
   const [selectedClientId, setSelectedClientId] = useState("")
   const [heurelivraison, setHeureLivraison] = useState("")
   const [lignes, setLignes] = useState<LigneForm[]>([{ articleId: "", quantite: "", prixVente: "", uniteMode: "base" }])
@@ -1073,9 +1079,16 @@ export default function MobileCommercial({ user }: Props) {
               }}
                 className="px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="">— Choisir —</option>
-                {/* Secteurs/zones unifiés : prédéfinis + perso + déjà utilisés */}
-                {getAllSecteurs([newClient.secteur, ...store.getClients().map(c => c.secteur || "")]).map(s => <option key={s} value={s}>{s}</option>)}
+                {/* Secteurs unifiés : prédéfinis + perso + déjà utilisés + pool Zones & Secteurs (BO) */}
+                {getAllSecteurs([newClient.secteur, ...store.getClients().map(c => c.secteur || ""), ...(zonesCfg?.allSecteurs ?? [])]).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              {/* Zone commerciale rattachée à ce secteur (gérée dans le BO —
+                  Commercial & Ventes > Zones & Secteurs) */}
+              {newClient.secteur && (
+                zoneLabelOf(newClient.secteur)
+                  ? <span className="mt-1 inline-block w-fit text-[10px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">🗺️ {zoneLabelOf(newClient.secteur)}</span>
+                  : <span className="mt-1 inline-block text-[10px] text-amber-600">⚠️ Secteur sans zone assignée</span>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-foreground">Ville</label>
