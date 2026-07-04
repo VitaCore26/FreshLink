@@ -3469,6 +3469,86 @@ export const store = {
     return txs.reduce((s, t) => t.type === "gain" ? s + t.points : s - t.points, 0)
   },
 
+  // --- Prime Nouveau Client (3 commandes OU 1 tonne — une fois par client) ---
+  getPrimesNouveauxClients: (): PrimeNouveauClient[] => getLS("fl_primes_nouveaux_clients", []),
+  savePrimesNouveauxClients: (p: PrimeNouveauClient[]) => setLS("fl_primes_nouveaux_clients", p),
+  /**
+   * Scanne tous les clients n'ayant pas encore de prime, calcule leur nombre
+   * de commandes (hors refusées) et leur tonnage cumulé, et crée une prime
+   * dès que le seuil configuré (commandes OU kg) est atteint. Idempotent :
+   * ne recrée jamais une prime pour un client qui en a déjà une. Ajoute
+   * aussi les points bonus client via une LoyaltyTransaction "gain".
+   * Retourne les NOUVELLES primes créées par cet appel.
+   */
+  checkPrimesNouveauxClients: (): PrimeNouveauClient[] => {
+    const cfg = store.getLoyaltyConfig()
+    if (!cfg.primeNouveauClientActif) return []
+    const seuilCmd = cfg.primeNouveauClientSeuilCommandes ?? 3
+    const seuilKg  = cfg.primeNouveauClientSeuilKg ?? 1000
+    const montantPrevendeur = cfg.primeNouveauClientMontantPrevendeur ?? 0
+    const pointsClient = cfg.primeNouveauClientPointsClient ?? 0
+
+    const existants = store.getPrimesNouveauxClients()
+    const dejaPrimes = new Set(existants.map(p => p.clientId))
+    const clients = store.getClients()
+    const commandes = store.getCommandes()
+    const users = store.getUsers()
+    const nouvelles: PrimeNouveauClient[] = []
+
+    for (const client of clients) {
+      if (dejaPrimes.has(client.id)) continue
+      const cmds = commandes.filter(c => c.clientId === client.id && c.statut !== "refuse")
+      if (cmds.length === 0) continue
+      const nbCommandes = cmds.length
+      const totalKg = cmds.reduce((s, c) => s + c.lignes.reduce((ls, l) => ls + (l.quantite || 0), 0), 0)
+      const eligible = nbCommandes >= seuilCmd || totalKg >= seuilKg
+      if (!eligible) continue
+
+      const prevendeurId = client.prevendeurId || client.createdBy
+      const prevendeur = users.find(u => u.id === prevendeurId)
+      const prime: PrimeNouveauClient = {
+        id: store.genId(),
+        clientId: client.id,
+        clientNom: client.nom,
+        prevendeurId: prevendeurId ?? "",
+        prevendeurNom: prevendeur?.name ?? "—",
+        critere: nbCommandes >= seuilCmd ? "commandes" : "tonnage",
+        nbCommandes,
+        totalKg: Math.round(totalKg * 10) / 10,
+        dateEligibilite: store.today(),
+        montantPrevendeur,
+        pointsClient,
+        statutPrevendeur: "en_attente",
+        createdAt: new Date().toISOString(),
+      }
+      nouvelles.push(prime)
+
+      if (pointsClient > 0) {
+        store.addLoyaltyTransaction({
+          id: store.genId(),
+          clientId: client.id,
+          clientNom: client.nom,
+          type: "gain",
+          points: pointsClient,
+          motif: `Prime nouveau client (${prime.critere === "commandes" ? `${nbCommandes} commandes` : `${totalKg.toFixed(0)} kg`})`,
+          statut: "valide",
+          createdBy: "system",
+          createdAt: new Date().toISOString(),
+        })
+      }
+    }
+
+    if (nouvelles.length > 0) store.savePrimesNouveauxClients([...existants, ...nouvelles])
+    return nouvelles
+  },
+  payerPrimePrevendeur: (id: string) => {
+    const arr = store.getPrimesNouveauxClients()
+    const idx = arr.findIndex(p => p.id === id)
+    if (idx < 0) return
+    arr[idx] = { ...arr[idx], statutPrevendeur: "payee", datePaiementPrevendeur: new Date().toISOString() }
+    store.savePrimesNouveauxClients(arr)
+  },
+
   // --- Discount Rules ---
   getDiscountRules: (): DiscountRule[] => getLS("fl_discount_rules", []),
   saveDiscountRules: (r: DiscountRule[]) => setLS("fl_discount_rules", r),
@@ -3803,6 +3883,15 @@ export interface LoyaltyConfig {
   articleCadeauQte?: number
   // Expiry
   expirationJours?: number         // points expire after N days (0 = never)
+  // ── Prime nouveau client ──────────────────────────────────────
+  // Déclenchée une seule fois par client, dès que le seuil (commandes OU
+  // tonnage) est atteint — récompense le prévendeur qui l'a acquis ET
+  // le client lui-même (points bonus).
+  primeNouveauClientActif?: boolean
+  primeNouveauClientSeuilCommandes?: number  // ex: 3
+  primeNouveauClientSeuilKg?: number         // ex: 1000 (= 1 tonne)
+  primeNouveauClientMontantPrevendeur?: number // DH ajoutés au bonus du prévendeur
+  primeNouveauClientPointsClient?: number      // points fidélité bonus pour le client
   // Metadata
   updatedBy: string
   updatedAt: string
@@ -3819,6 +3908,11 @@ export const DEFAULT_LOYALTY_CONFIG: LoyaltyConfig = {
   articleCadeauNom: "Caisse offerte",
   articleCadeauQte: 1,
   expirationJours: 365,
+  primeNouveauClientActif: true,
+  primeNouveauClientSeuilCommandes: 3,
+  primeNouveauClientSeuilKg: 1000,
+  primeNouveauClientMontantPrevendeur: 50,
+  primeNouveauClientPointsClient: 100,
   updatedBy: "system",
   updatedAt: new Date().toISOString(),
 }
@@ -3836,6 +3930,27 @@ export interface LoyaltyTransaction {
   redemptionArticleId?: string
   statut: "valide" | "en_attente" | "annule"
   createdBy: string
+  createdAt: string
+}
+
+// ── Prime Nouveau Client ────────────────────────────────────────────
+// Une seule fois par client : déclenchée dès que le seuil (commandes OU
+// tonnage cumulé) est atteint. Récompense le prévendeur (montant ajouté à
+// son bonus) ET le client (points fidélité bonus).
+export interface PrimeNouveauClient {
+  id: string
+  clientId: string
+  clientNom: string
+  prevendeurId: string
+  prevendeurNom: string
+  critere: "commandes" | "tonnage"
+  nbCommandes: number
+  totalKg: number
+  dateEligibilite: string
+  montantPrevendeur: number
+  pointsClient: number
+  statutPrevendeur: "en_attente" | "payee"
+  datePaiementPrevendeur?: string
   createdAt: string
 }
 

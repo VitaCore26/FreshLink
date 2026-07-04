@@ -18,6 +18,7 @@ const ALLOWED_TABLES = new Set([
   "fl_company", "fl_company_contacts", "fl_depots", "fl_documents",
   "fl_bons_achat", "fl_purchase_orders", "fl_receptions",
   "fl_caisses_vides", "fl_charges", "fl_caisse_entries",
+  "fl_loyalty_config", "fl_loyalty_transactions", "fl_primes_nouveaux_clients",
   "fl_salaries", "fl_actionnaires", "fl_livreurs",
   "fl_feedbacks", "fl_gift_materials", "fl_pa_historique",
   "fl_invoices", "fl_avoirs", "fl_wallet_transactions", "fl_paiements",

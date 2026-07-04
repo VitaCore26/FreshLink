@@ -10,6 +10,7 @@ import {
   type ClientSegment,
   type LoyaltyConfig,
   type LoyaltyTransaction,
+  type PrimeNouveauClient,
 } from "@/lib/store"
 import ArticleCombobox from "@/components/ui/ArticleCombobox"
 
@@ -51,7 +52,7 @@ const DTYPE_LABELS: Record<DiscountType, string> = {
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
-type LoyaltyTab = "regles_remise" | "points_config" | "transactions" | "rachat"
+type LoyaltyTab = "regles_remise" | "points_config" | "transactions" | "rachat" | "prime_nouveau_client"
 
 interface Props { user: User }
 
@@ -60,6 +61,13 @@ export default function BOLoyalty({ user }: Props) {
   const [config, setConfig] = useState<LoyaltyConfig>(() => store.getLoyaltyConfig())
   const [rules, setRules] = useState<DiscountRule[]>(() => store.getDiscountRules())
   const [transactions] = useState<LoyaltyTransaction[]>(() => store.getLoyaltyTransactions())
+  // Calcule les nouvelles primes éligibles à l'ouverture de l'écran (3
+  // commandes OU 1 tonne cumulée) — idempotent, ne recrée jamais une prime
+  // déjà existante pour un client.
+  const [primes, setPrimes] = useState<PrimeNouveauClient[]>(() => {
+    store.checkPrimesNouveauxClients()
+    return store.getPrimesNouveauxClients()
+  })
   const [showNewRule, setShowNewRule] = useState(false)
   const [editingRule, setEditingRule] = useState<DiscountRule | null>(null)
   const [saveMsg, setSaveMsg] = useState("")
@@ -169,6 +177,7 @@ export default function BOLoyalty({ user }: Props) {
     { id: "points_config", label: "Config fidelite",       icon: "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" },
     { id: "transactions",  label: "Historique points",     icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
     { id: "rachat",        label: "Rachat points",         icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 11v-1m0-2c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+    { id: "prime_nouveau_client", label: "Prime nouveau client", icon: "M12 4.5v15m7.5-7.5h-15" },
   ]
 
   return (
@@ -635,6 +644,110 @@ export default function BOLoyalty({ user }: Props) {
               Valider le rachat
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ══ PRIME NOUVEAU CLIENT ══════════════════════════════════════════════════ */}
+      {tab === "prime_nouveau_client" && (
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-foreground">Prime nouveau client</h2>
+            <label className="flex items-center gap-2 text-sm font-semibold text-foreground cursor-pointer">
+              <input type="checkbox" checked={config.primeNouveauClientActif ?? true}
+                onChange={e => setConfig({ ...config, primeNouveauClientActif: e.target.checked })}
+                className="w-4 h-4 rounded accent-primary" />
+              Actif
+            </label>
+          </div>
+          <p className="text-sm text-muted-foreground -mt-3">
+            Déclenchée automatiquement une seule fois par client, dès que le seuil (commandes OU tonnage cumulé) est atteint — récompense le prévendeur qui l&apos;a acquis ET le client.
+          </p>
+
+          <div className="bg-card rounded-2xl border border-border p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wide">Seuil — nombre de commandes</label>
+              <input type="number" min={1} value={config.primeNouveauClientSeuilCommandes ?? 3}
+                onChange={e => setConfig({ ...config, primeNouveauClientSeuilCommandes: +e.target.value })}
+                className="border border-border rounded-lg px-3 py-1.5 text-sm text-foreground bg-background" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wide">Seuil — tonnage cumulé (kg)</label>
+              <input type="number" min={1} value={config.primeNouveauClientSeuilKg ?? 1000}
+                onChange={e => setConfig({ ...config, primeNouveauClientSeuilKg: +e.target.value })}
+                className="border border-border rounded-lg px-3 py-1.5 text-sm text-foreground bg-background" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wide">Prime prévendeur (DH)</label>
+              <input type="number" min={0} value={config.primeNouveauClientMontantPrevendeur ?? 0}
+                onChange={e => setConfig({ ...config, primeNouveauClientMontantPrevendeur: +e.target.value })}
+                className="border border-border rounded-lg px-3 py-1.5 text-sm text-foreground bg-background" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wide">Points bonus client</label>
+              <input type="number" min={0} value={config.primeNouveauClientPointsClient ?? 0}
+                onChange={e => setConfig({ ...config, primeNouveauClientPointsClient: +e.target.value })}
+                className="border border-border rounded-lg px-3 py-1.5 text-sm text-foreground bg-background" />
+            </div>
+          </div>
+          <button onClick={saveConfig}
+            className="self-start px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity">
+            Sauvegarder la configuration
+          </button>
+
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-sm font-semibold text-foreground">{primes.length} prime(s) déclenchée(s)</p>
+            <button
+              onClick={() => { const nouv = store.checkPrimesNouveauxClients(); setPrimes(store.getPrimesNouveauxClients()); flash(nouv.length ? `${nouv.length} nouvelle(s) prime(s) détectée(s).` : "Aucune nouvelle prime.") }}
+              className="text-xs font-semibold text-primary hover:underline">
+              ↻ Recalculer maintenant
+            </button>
+          </div>
+
+          {primes.length === 0 ? (
+            <div className="bg-card rounded-2xl border border-border p-12 text-center">
+              <p className="font-semibold text-foreground">Aucune prime déclenchée pour l&apos;instant</p>
+              <p className="text-sm text-muted-foreground mt-1">Apparaît dès qu&apos;un client atteint 3 commandes ou 1 tonne.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted border-b border-border">
+                    {["Date", "Client", "Prévendeur", "Critère", "Prime prévendeur", "Points client", "Statut", ""].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-foreground uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {primes.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(p => (
+                    <tr key={p.id} className="border-b border-border hover:bg-muted/30">
+                      <td className="px-4 py-2.5 text-foreground">{new Date(p.dateEligibilite).toLocaleDateString("fr-FR")}</td>
+                      <td className="px-4 py-2.5 font-semibold text-foreground">{p.clientNom}</td>
+                      <td className="px-4 py-2.5 text-foreground">{p.prevendeurNom}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">
+                        {p.critere === "commandes" ? `${p.nbCommandes} commandes` : `${p.totalKg.toFixed(0)} kg`}
+                      </td>
+                      <td className="px-4 py-2.5 font-bold text-emerald-700">{p.montantPrevendeur.toFixed(0)} DH</td>
+                      <td className="px-4 py-2.5 font-bold text-blue-700">+{p.pointsClient} pts</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${p.statutPrevendeur === "payee" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
+                          {p.statutPrevendeur === "payee" ? "Payée" : "En attente"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {p.statutPrevendeur === "en_attente" && (
+                          <button onClick={() => { store.payerPrimePrevendeur(p.id); setPrimes(store.getPrimesNouveauxClients()) }}
+                            className="text-xs font-semibold text-emerald-600 hover:underline">
+                            Marquer payée
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -22,6 +22,7 @@ import type {
   Commande, Visite, BonAchat, PurchaseOrder, Reception,
   Trip, BonLivraison, Retour, BonPreparation,
   TransfertStock, Message, Notice, CaisseEntry,
+  LoyaltyTransaction, PrimeNouveauClient,
 } from "@/lib/store"
 
 // ── Helpers JSONB ─────────────────────────────────────────────────────────────
@@ -503,6 +504,10 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
     // fl_caisse_entries (Supabase) <-> fl_caisse (clé locale, store.ts) —
     // absent jusqu'ici : la caisse ne se synchronisait jamais cross-device.
     ["fl_caisse_entries",   (d) => store.saveCaisseEntries(d as CaisseEntry[]),   () => store.getCaisseEntries()],
+    // Jamais synchronisés avant (même bug) — la Prime Nouveau Client dépend
+    // directement de ces deux tables pour rester cohérente cross-device.
+    ["fl_loyalty_transactions", (d) => store.saveLoyaltyTransactions(d as LoyaltyTransaction[]), () => store.getLoyaltyTransactions()],
+    ["fl_primes_nouveaux_clients", (d) => store.savePrimesNouveauxClients(d as PrimeNouveauClient[]), () => store.getPrimesNouveauxClients()],
   ]
 
   // Requêtes parallèles — toutes les tables en même temps (x10 plus rapide)
@@ -573,7 +578,7 @@ export async function syncFromSupabase(): Promise<{ ok: boolean; tables: string[
 // ── CONFIGS (process / workflow / alertes / emails) ───────────────────────────
 // Objets uniques (ligne id="config"). Lecture via /api/sync-read (service_role) car
 // ces tables n'ont AUCUNE politique anon. Hydrate le cache local sans réécho Supabase.
-const CONFIG_TABLES = ["fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config", "fl_fiscal_config", "fl_company"]
+const CONFIG_TABLES = ["fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config", "fl_fiscal_config", "fl_company", "fl_loyalty_config"]
 
 export async function hydrateConfigs(): Promise<void> {
   if (typeof window === "undefined") return
