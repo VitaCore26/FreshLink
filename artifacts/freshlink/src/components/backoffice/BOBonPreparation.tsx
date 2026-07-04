@@ -511,6 +511,29 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
     if (viewing?.id === bonId) setViewing({ ...arr[idx] })
   }
 
+  // Rectification manuelle d'une quantité par client (onglet "Clients") —
+  // avant, cette répartition n'était affichée qu'en lecture seule, sans
+  // moyen de corriger une erreur de saisie sans repasser par la commande.
+  // Répercute l'écart sur le total commandé de l'article (et sur
+  // qtePrepared si la ligne est déjà validée), pour rester cohérent avec
+  // l'onglet "Articles".
+  const updateQteClient = (bonId: string, articleId: string, clientId: string, newQty: number) => {
+    const arr = store.getBonsPreparation()
+    const idx = arr.findIndex(b => b.id === bonId)
+    if (idx < 0) return
+    const li = arr[idx].lignes.findIndex(l => l.articleId === articleId)
+    if (li < 0) return
+    const ligne = arr[idx].lignes[li]
+    const oldQty = ligne.qtesParClient[clientId] ?? 0
+    const delta = Math.max(0, newQty) - oldQty
+    ligne.qtesParClient = { ...ligne.qtesParClient, [clientId]: Math.max(0, newQty) }
+    ligne.qteCommandee = Math.max(0, ligne.qteCommandee + delta)
+    if (ligne.valide) ligne.qtePrepared = Math.max(0, ligne.qtePrepared + delta)
+    store.saveBonsPreparation(arr)
+    refresh()
+    if (viewing?.id === bonId) setViewing({ ...arr[idx] })
+  }
+
   const validateAll = async (bonId: string) => {
     if (validatingId) return // anti double-clic — jamais deux validations/deux jeux de BL
     setValidatingId(bonId)
@@ -781,9 +804,16 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
                   {clientArticles.map(l => (
                     <div key={l.articleId} className="flex justify-between items-center px-3 py-2 bg-muted/40 rounded-xl">
                       <span className="text-sm text-foreground font-medium">{l.articleNom}</span>
-                      <span className="text-sm font-bold text-green-700">
-                        {(l.qtesParClient[ci.clientId] ?? 0).toFixed(1)} {l.unite}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" min={0} step={0.5}
+                          defaultValue={l.qtesParClient[ci.clientId] ?? 0}
+                          onBlur={e => {
+                            const v = parseFloat(e.target.value)
+                            if (!isNaN(v) && v !== (l.qtesParClient[ci.clientId] ?? 0)) updateQteClient(bon.id, l.articleId, ci.clientId, v)
+                          }}
+                          className="w-20 px-2 py-1 rounded-lg border border-border bg-background text-sm text-right font-bold text-green-700 focus:outline-none focus:ring-2 focus:ring-primary" />
+                        <span className="text-xs text-muted-foreground">{l.unite}</span>
+                      </div>
                     </div>
                   ))}
                 </div>

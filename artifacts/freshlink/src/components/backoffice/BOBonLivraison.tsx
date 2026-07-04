@@ -199,11 +199,14 @@ function BLEditor({
   currentUser: User
   qcObligatoire: boolean
 }) {
+  const todayStr = new Date().toISOString().split("T")[0]
   const [form, setForm] = useState<Partial<BonLivraison>>({
     numero: genNumero(),
     transporteur: "non_affecte",
     statut: "brouillon",
-    date: new Date().toISOString().split("T")[0],
+    date: todayStr,
+    // Livraison prévue = date du BL par défaut — l'utilisateur peut la changer.
+    dateLivraisonPrevue: todayStr,
     lignes: [],
     totalHT: 0, totalTTC: 0, tva: 20,
     qcObligatoire,
@@ -215,6 +218,14 @@ function BLEditor({
   const [articles] = useState(() => store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr")))
   const [users] = useState(() => store.getUsers())
   const livreurs = users.filter(u => u.role === "livreur")
+  // Champs secondaires (statut, TVA, QC, ICE, compte, tel, modalité, adresse,
+  // notes) masqués par défaut — auto-remplis depuis la fiche client, à
+  // afficher seulement si l'utilisateur veut les vérifier/adapter.
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  // Import préparation ouvert par défaut sur un BL neuf (sans lignes) — les
+  // articles doivent venir de la préparation/commande, pas d'une saisie
+  // manuelle depuis zéro.
+  const [showImport, setShowImport] = useState(() => !bl.lignes || bl.lignes.length === 0)
 
   // ── P5a: filter clients to prep/trip if BL is linked to a prep bon ──────────
   const prepBonId = (bl as Record<string, unknown>).prepId as string | undefined
@@ -225,6 +236,16 @@ function BLEditor({
         return prepClientIds.size > 0 ? clients.filter(c => prepClientIds.has(c.id)) : clients
       })()
     : clients
+
+  // ── Livreur pré-sélectionné depuis l'affectation de la tournée liée ─────────
+  useEffect(() => {
+    if (form.livreurId || !prepBonId) return
+    const bon = store.getBonsPreparation().find(b => b.id === prepBonId)
+    if (!bon?.tripId) return
+    const trip = store.getTrips().find(t => t.id === bon.tripId)
+    if (trip?.livreurId) setForm(f => (f.livreurId ? f : { ...f, livreurId: trip.livreurId, livreurNom: trip.livreurNom }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepBonId])
 
   // ── Auto-fill client fields when a client is selected ──────────────────────
   const autoFillClient = (clientId: string) => {
@@ -264,8 +285,20 @@ function BLEditor({
   }
 
   // ── Import depuis BonPreparation validé ────────────────────────────────────
-  const [showImport, setShowImport] = useState(false)
-  const bonsPrep = useMemo(() => store.getBonsPreparation().filter(b => b.statut === "valide"), [])
+  // Exclut les préparations déjà liées à un AUTRE BL existant — sinon un
+  // second import de la même préparation créerait un BL en double (fausse
+  // les chiffres). Le BL en cours d'édition garde le droit de réimporter
+  // sa propre préparation déjà liée (pas une nouvelle, juste un refresh).
+  const bonsPrep = useMemo(() => {
+    const usedPrepIds = new Set(
+      store.getBonsLivraison()
+        .filter(existingBl => existingBl.id !== bl.id)
+        .map(existingBl => (existingBl as unknown as { prepId?: string }).prepId)
+        .filter((id): id is string => !!id)
+    )
+    return store.getBonsPreparation().filter(b => b.statut === "valide" && !usedPrepIds.has(b.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const importFromPrep = (bonId: string) => {
     const bon = bonsPrep.find(b => b.id === bonId)
@@ -296,9 +329,13 @@ function BLEditor({
     setLignes(newLignes)
     // Auto-fill client info from first commande linked to the bon
     const firstCmd = store.getCommandes().find(c => bon.clientIds.includes(c.clientId))
-    if (firstCmd && !form.clientNom) {
-      setForm(f => ({ ...f, clientNom: firstCmd.clientNom, clientId: firstCmd.clientId }))
-    }
+    // Lie ce BL à sa préparation source — indispensable pour que le filtre
+    // anti-doublon (usedPrepIds ci-dessus) puisse la détecter la prochaine fois.
+    setForm(f => ({
+      ...f,
+      ...(firstCmd && !f.clientNom ? { clientNom: firstCmd.clientNom, clientId: firstCmd.clientId } : {}),
+      prepId: bon.id,
+    } as typeof f))
     setShowImport(false)
   }
 
@@ -360,6 +397,10 @@ function BLEditor({
       clientCreditAutorise: form.clientCreditAutorise,
       clientDelaiRecouvrement: form.clientDelaiRecouvrement,
     }
+    // prepId (lien préparation source) : pas dans l'interface BonLivraison
+    // locale mais utilisé partout ailleurs via cast — cf. bonsPrep/deleteBL.
+    const prepIdToSave = (form as unknown as { prepId?: string }).prepId ?? (bl as unknown as { prepId?: string }).prepId
+    if (prepIdToSave) (saved as unknown as { prepId: string }).prepId = prepIdToSave
     onSave(saved)
   }
 
@@ -472,7 +513,17 @@ function BLEditor({
                 {livreurs.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
+          </div>
 
+          {/* Champs avancés — masqués par défaut (auto-remplis depuis la fiche
+              client), à afficher seulement si besoin de vérifier/adapter. */}
+          <button type="button" onClick={() => setShowAdvanced(v => !v)}
+            className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            {showAdvanced ? "▾ Masquer les informations avancées" : "▸ Afficher les informations avancées (statut, TVA, ICE, tél, adresse…)"}
+          </button>
+
+          {showAdvanced && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
             {/* Statut */}
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-slate-600">Statut</label>
@@ -587,6 +638,7 @@ function BLEditor({
                 className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none" />
             </div>
           </div>
+          )}
         </div>
 
         {/* Section 2 — Import depuis preparation + Lignes articles */}
@@ -911,8 +963,24 @@ export default function BOBonLivraison({ user }: { user: User }) {
   const [selectedFacture, setSelectedFacture] = useState<Set<string>>(new Set())
 
   // ── Print customization ────────────────────────────────────────────────────
+  // Pré-rempli depuis la fiche société (BO > Paramètres) au lieu de partir
+  // vide — l'utilisateur n'a plus qu'à adapter ce qui diffère, pas tout
+  // retaper depuis zéro (nom, adresse, tél, ICE, RC, IF, patente, logo).
   const [printOpts, setPrintOpts] = useState<PrintBLOpts>(() => {
-    try { return JSON.parse(localStorage.getItem("fl_print_opts_bl") ?? "{}") } catch { return {} }
+    let saved: PrintBLOpts = {}
+    try { saved = JSON.parse(localStorage.getItem("fl_print_opts_bl") ?? "{}") } catch { /* noop */ }
+    const cfg = store.getCompanyConfig()
+    return {
+      ...saved,
+      nomSocieteOverride: saved.nomSocieteOverride || cfg.nom || "",
+      adresseOverride:    saved.adresseOverride    || cfg.adresse || "",
+      telOverride:        saved.telOverride        || cfg.telephone || "",
+      iceOverride:        saved.iceOverride        || cfg.ice || "",
+      rcOverride:         saved.rcOverride         || cfg.rc || "",
+      ifOverride:         saved.ifOverride         || cfg.if_fiscal || "",
+      patentOverride:     saved.patentOverride     || cfg.patente || "",
+      logoOverride:       saved.logoOverride       || cfg.logo || "",
+    }
   })
   const savePrintOpts = (opts: PrintBLOpts) => {
     setPrintOpts(opts)
@@ -971,13 +1039,15 @@ export default function BOBonLivraison({ user }: { user: User }) {
     user.role === "resp_logistique" || user.role === "dispatcheur" || user.role === "magasinier" || user.role === "cash_man"
   const canFacture = FACTURE_ROLES.includes(user.role)
 
-  // ── Bons de preparation valides aujourd'hui (pas encore livres) ──────────
+  // ── Bons de preparation valides, pas encore utilisés pour un BL ──────────
+  // Exclut TOUT bon déjà lié à un BL existant, quel que soit son statut
+  // (brouillon/valide/livré) — sinon un import groupé répété créerait un
+  // second BL en double pour la même préparation (fausse les chiffres).
   const today = new Date().toISOString().split("T")[0]
   const bonsPrep = useMemo(() => {
     return store.getBonsPreparation().filter(b =>
       b.statut === "valide" &&
-      // created today or any un-delivered
-      !bls.some(bl => (bl as unknown as { prepId?: string }).prepId === b.id && bl.statut === "livre")
+      !bls.some(bl => (bl as unknown as { prepId?: string }).prepId === b.id)
     )
   }, [bls])
 
@@ -1129,7 +1199,27 @@ export default function BOBonLivraison({ user }: { user: User }) {
     }
   }
 
+  // Suppression BL — deux garde-fous obligatoires (jamais fausser les chiffres) :
+  //  1. BL déjà livré (validé par le livreur) OU déjà facturé → suppression
+  //     BLOQUÉE, la commande/facture réelle ne doit jamais perdre sa trace.
+  //  2. Sinon, si un bon de préparation est lié, il doit être supprimé EN
+  //     MÊME TEMPS (sinon il reste orphelin, prêt à régénérer un doublon de
+  //     BL) — confirmation obligatoire avant cette suppression en cascade.
   const deleteBL = (id: string) => {
+    const bl = bls.find(b => b.id === id)
+    if (!bl) return
+    const isFacture = (bl as unknown as { factureCreee?: boolean }).factureCreee
+    if (bl.statut === "livre" || isFacture) {
+      alert(`Impossible de supprimer ce BL : ${isFacture ? "il est déjà facturé" : "il est déjà livré (validé par le livreur)"}. Une suppression fausserait les chiffres réels.`)
+      return
+    }
+    const prepId = (bl as unknown as { prepId?: string }).prepId
+    const prep = prepId ? store.getBonsPreparation().find(p => p.id === prepId) : null
+    const confirmMsg = prep
+      ? `Supprimer ce BL supprimera AUSSI le bon de préparation lié ("${prep.nom ?? prep.id}") — sinon il resterait orphelin et pourrait régénérer un doublon de BL. Confirmer la suppression des deux ?`
+      : "Confirmer la suppression de ce BL ?"
+    if (!confirm(confirmMsg)) return
+
     const updated = bls.filter(b => b.id !== id)
     saveBLs(updated)
     store.saveBonsLivraison(updated as unknown as import("@/lib/store").BonLivraison[])
@@ -1139,6 +1229,15 @@ export default function BOBonLivraison({ user }: { user: User }) {
       body: JSON.stringify({ table: "fl_bons_livraison", deletes: [id] }),
     }).catch(e => console.error("[BOBonLivraison] delete sync error:", e))
     setBLs(updated)
+
+    if (prep) {
+      store.saveBonsPreparation(store.getBonsPreparation().filter(p => p.id !== prep.id))
+      fetch("/api/sync-write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "fl_bons_preparation", deletes: [prep.id] }),
+      }).catch(e => console.error("[BOBonLivraison] delete prep sync error:", e))
+    }
   }
 
   const validateBL = (id: string) => {
