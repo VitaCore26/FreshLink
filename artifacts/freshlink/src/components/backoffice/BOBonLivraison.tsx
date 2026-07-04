@@ -213,9 +213,19 @@ function BLEditor({
     notesBL: "",
     ...bl,
   })
-  const [lignes, setLignes] = useState<BLLigne[]>(bl.lignes ?? [])
   const [clients] = useState(() => store.getClients())
   const [articles] = useState(() => store.getArticles().slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr")))
+  // Rattrapage URGENT : les BL générés automatiquement depuis une préparation
+  // (autoGenerateBLs, MobilePreparation.tsx) utilisent le type LigneBL de
+  // store.ts qui n'a JAMAIS eu de champ articleId (seulement articleNom) —
+  // le <select> ci-dessous, lié à articleId, affichait donc "— Article —"
+  // sur TOUTES les lignes malgré des quantités/prix corrects. On retrouve
+  // l'articleId manquant par correspondance exacte sur le nom.
+  const [lignes, setLignes] = useState<BLLigne[]>(() => (bl.lignes ?? []).map(l => {
+    if (l.articleId && articles.some(a => a.id === l.articleId)) return l
+    const match = articles.find(a => a.nom === l.articleNom)
+    return match ? { ...l, articleId: match.id, articleNomAr: l.articleNomAr ?? match.nomAr } : l
+  }))
   const [users] = useState(() => store.getUsers())
   const livreurs = users.filter(u => u.role === "livreur")
   // Champs secondaires (statut, TVA, QC, ICE, compte, tel, modalité, adresse,

@@ -34,8 +34,13 @@ const TABLE_NAME_OVERRIDE: Record<string, string> = { fl_caisse: "fl_caisse_entr
 
 // Configs (objets uniques, PAS des tableaux) : process, workflow, alertes, emails.
 // Stockés en base comme une ligne unique id="config" → propagation cross-device.
+// fl_company (nom/logo/RC/ICE/IF/adresse société) manquait ici — jamais
+// synchronisé, donc deux appareils/navigateurs pouvaient afficher deux
+// logos et deux RC différents sur les BL/factures selon où la config avait
+// été saisie (bug critique, source de la "confusion de logos").
 const CONFIG_KEYS = new Set<string>([
   "fl_process_config", "fl_workflow_config", "fl_alert_config", "fl_email_config", "fl_fiscal_config",
+  "fl_company",
 ])
 
 type Row = { id: string; [k: string]: unknown }
