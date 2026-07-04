@@ -965,7 +965,9 @@ export default function BOBonLivraison({ user }: { user: User }) {
   // ── Print customization ────────────────────────────────────────────────────
   // Pré-rempli depuis la fiche société (BO > Paramètres) au lieu de partir
   // vide — l'utilisateur n'a plus qu'à adapter ce qui diffère, pas tout
-  // retaper depuis zéro (nom, adresse, tél, ICE, RC, IF, patente, logo).
+  // retaper depuis zéro (nom, adresse, tél, ICE, RC, IF, patente). Le logo
+  // n'est PLUS personnalisable ici : source unique = fiche société, pour
+  // éviter que deux logos différents cohabitent selon l'écran.
   const [printOpts, setPrintOpts] = useState<PrintBLOpts>(() => {
     let saved: PrintBLOpts = {}
     try { saved = JSON.parse(localStorage.getItem("fl_print_opts_bl") ?? "{}") } catch { /* noop */ }
@@ -979,7 +981,6 @@ export default function BOBonLivraison({ user }: { user: User }) {
       rcOverride:         saved.rcOverride         || cfg.rc || "",
       ifOverride:         saved.ifOverride         || cfg.if_fiscal || "",
       patentOverride:     saved.patentOverride     || cfg.patente || "",
-      logoOverride:       saved.logoOverride       || cfg.logo || "",
     }
   })
   const savePrintOpts = (opts: PrintBLOpts) => {
@@ -1020,12 +1021,19 @@ export default function BOBonLivraison({ user }: { user: User }) {
   const handlePrint = (bl: BonLivraison) => {
     const allClients = store.getClients()
     const client = allClients.find(c => c.id === bl.clientId || c.nom === bl.clientNom)
+    const allArticles = store.getArticles()
     printBLFromBO({
       ...bl,
       clientIce:               bl.clientIce ?? client?.ice,
       clientModalitePaiement:  bl.clientModalitePaiement ?? (client?.modalitePaiement ?? ""),
       clientCreditSolde:       bl.clientCreditSolde ?? client?.creditSolde,
       clientCreditAutorise:    bl.clientCreditAutorise ?? client?.creditAutorise,
+      // Enrichit chaque ligne avec l'UM (caisse/carton...) de l'article pour
+      // le calcul "nombre d'UM" affiché à côté de la quantité livrée.
+      lignes: bl.lignes.map(l => {
+        const art = allArticles.find(a => a.id === l.articleId || a.nom === l.articleNom)
+        return { ...l, um: art?.um, colisageParUM: art?.colisageParUM }
+      }),
     }, printOpts, store.getCompanyConfig())
   }
 
@@ -1532,11 +1540,9 @@ export default function BOBonLivraison({ user }: { user: User }) {
                     placeholder={ph} className="px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30" />
                 </div>
               ))}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Logo (URL)</label>
-                <input value={printOpts.logoOverride ?? ""} onChange={e => savePrintOpts({ ...printOpts, logoOverride: e.target.value })}
-                  placeholder="https://..." className="px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30" />
-              </div>
+              <p className="col-span-2 sm:col-span-3 lg:col-span-4 text-[10px] text-amber-600">
+                Le logo n&apos;est plus personnalisable ici — il vient toujours de la fiche société (BO &gt; Paramètres), pour éviter deux logos différents.
+              </p>
               <div className="flex flex-col gap-1 col-span-2 sm:col-span-3 lg:col-span-4">
                 <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Pied de page</label>
                 <input value={printOpts.piedDePageOverride ?? ""} onChange={e => savePrintOpts({ ...printOpts, piedDePageOverride: e.target.value })}

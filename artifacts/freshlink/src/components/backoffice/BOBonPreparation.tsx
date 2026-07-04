@@ -10,9 +10,11 @@ import {
 
 interface Props { user: User; onValidated?: () => void }
 
+// Ordre d'affichage : Par Client en premier (le plus utilisé), puis Par Trip
+// (global), puis Par Article — Object.entries respecte l'ordre d'insertion.
 const MODE_LABELS: Record<ModePreparation, { label: string; desc: string }> = {
-  par_trip:    { label: "Par Trip",    desc: "Un bon global pour tout le chargement du trip" },
   par_client:  { label: "Par Client",  desc: "Un bon détaillé par client" },
+  par_trip:    { label: "Par Trip",    desc: "Un bon global pour tout le chargement du trip" },
   par_article: { label: "Par Article", desc: "Regroupement par article pour le picking au stock" },
 }
 
@@ -303,7 +305,11 @@ export default function BOBonPreparation({ user, onValidated }: Props) {
   // restaient introuvables côté logistique pour démarrer la préparation).
   const cmdsPrepable = commandes.filter(c =>
     ["valide", "en_transit", "en_attente", "en_attente_approbation"].includes(c.statut))
-  const tripsEnCours = trips.filter(t => t.statut === "planifié" || t.statut === "en_cours")
+  // Exclut les trips ayant déjà un bon de préparation (quel que soit son
+  // statut) — dès qu'un trip est passé en préparation, il ne doit plus
+  // apparaître dans la liste de lancement (éviter un 2e bon en double).
+  const tripsAvecPrep = new Set(bons.map(b => b.tripId).filter(Boolean))
+  const tripsEnCours = trips.filter(t => (t.statut === "planifié" || t.statut === "en_cours") && !tripsAvecPrep.has(t.id))
 
   // Build clientsInfo for the chosen selection
   const buildClientsInfo = (cmds: Commande[]): ClientSequenceInfo[] => {

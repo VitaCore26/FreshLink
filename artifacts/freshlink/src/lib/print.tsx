@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { BonLivraison, PurchaseOrder, Salarie } from "@/lib/store"
+import { store } from "@/lib/store"
 
 // ── Brand Config ──────────────────────────────────────────────────────────────
 export interface CompanyConfig {
@@ -619,7 +620,6 @@ export interface PrintBLOpts {
   rcOverride?:         string
   ifOverride?:         string
   patentOverride?:     string
-  logoOverride?:       string
   piedDePageOverride?: string
   docType?:            "bl" | "facture"   // titre du document
   showLegal?:          boolean            // afficher RC / ICE / IF (défaut: true)
@@ -635,6 +635,8 @@ interface BOBLLigne {
   qteLivree:    number
   prixUnit:     number
   totalLigne:   number
+  um?:          string   // libellé unité de conditionnement (ex: "Caisse")
+  colisageParUM?: number // quantité en unité de base par UM (ex: 15 kg/caisse)
 }
 interface BOBonLivraison {
   id:                    string
@@ -667,11 +669,22 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts, company?: CompanyCon
   const ice        = opts.iceOverride        || cfg.ice || ""
   const rc         = opts.rcOverride         || cfg.rc || ""
   const ifFiscal   = opts.ifOverride         || cfg.if_fiscal || ""
-  const logo       = opts.logoOverride       || cfg.logo || "/vita-fresh-logo.png"
+  // Logo : source UNIQUE = fiche société (BO > Paramètres). Avant, un
+  // "logoOverride" séparé par document créait deux logos différents selon
+  // l'écran où on regardait — source de confusion. Un seul logo, partout.
+  const logo       = cfg.logo || "/vita-fresh-logo.png"
   const piedDePage = opts.piedDePageOverride || cfg.mentionsBL || ""
   const dateStr    = fmtDate(bl.date)
   const tva        = bl.tva ?? 0
   const montantTVA = bl.totalHT * (tva / 100)
+  // Droit de timbre (0,25% CGI Maroc) — dès que le RC de la société est
+  // renseigné, le document devient une pièce comptable officielle et doit
+  // porter le droit de timbre (règlement espèces).
+  const fiscalCfg  = store.getFiscalConfig()
+  const droitTimbre = rc ? Math.round(bl.totalTTC * (fiscalCfg.tauxDroitTimbre / 100) * 100) / 100 : 0
+  const totalAvecTimbre = bl.totalTTC + droitTimbre
+  const nbArticlesDistincts = new Set(bl.lignes.map(l => l.articleNom)).size
+  const poidsTotalKg = bl.lignes.filter(l => (l.unite ?? "kg").toLowerCase() === "kg").reduce((s, l) => s + l.qteLivree, 0)
   const showLegal  = opts.showLegal !== false               // défaut: afficher RC/ICE/IF
   // Toggles granulaires (chacun activable/désactivable séparément, sous showLegal)
   const sICE = showLegal && opts.showICE !== false
@@ -732,19 +745,26 @@ function buildBLHtml(bl: BOBonLivraison, opts: PrintBLOpts, company?: CompanyCon
 </div>
 <table>
   <thead><tr>
-    <th style="width:38%">Désignation</th><th>Unité</th>
-    <th class="r">Qté livrée</th><th class="r">Prix U. HT</th><th class="r">Total HT</th>
+    <th style="width:34%">Désignation</th><th>Unité</th>
+    <th class="r">Qté livrée</th><th class="r">Nb UM</th><th class="r">Prix U. HT</th><th class="r">Total HT</th>
   </tr></thead>
   <tbody>
-  ${bl.lignes.map(l => `<tr><td class="bold">${l.articleNom}${l.articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:11px;font-weight:400;color:#555;direction:rtl;display:block">${l.articleNomAr}</span>` : ""}</td><td>${l.unite??"kg"}</td>
-    <td class="r">${l.qteLivree}</td><td class="r">${fmtDH(l.prixUnit)}</td>
-    <td class="r bold">${fmtDH(l.totalLigne)}</td></tr>`).join("")}
+  ${bl.lignes.map(l => {
+    const nbUM = l.colisageParUM && l.colisageParUM > 0 ? l.qteLivree / l.colisageParUM : null
+    return `<tr><td class="bold">${l.articleNom}${l.articleNomAr ? `<br><span style="font-family:'Noto Sans Arabic',Arial,sans-serif;font-size:11px;font-weight:400;color:#555;direction:rtl;display:block">${l.articleNomAr}</span>` : ""}</td><td>${l.unite??"kg"}</td>
+    <td class="r">${l.qteLivree}</td><td class="r">${nbUM !== null ? `${Math.round(nbUM * 10) / 10} ${l.um ?? ""}` : "—"}</td><td class="r">${fmtDH(l.prixUnit)}</td>
+    <td class="r bold">${fmtDH(l.totalLigne)}</td></tr>`
+  }).join("")}
   </tbody>
 </table>
 <div class="totals"><div class="totals-inner">
+  <div class="tot-row"><span class="lbl">Total articles</span><span class="val">${nbArticlesDistincts}</span></div>
+  ${poidsTotalKg > 0 ? `<div class="tot-row"><span class="lbl">Poids total</span><span class="val">${poidsTotalKg.toFixed(1)} kg</span></div>` : ""}
   <div class="tot-row"><span class="lbl">Total HT</span><span class="val">${fmtDH(bl.totalHT)}</span></div>
   <div class="tot-row"><span class="lbl">TVA (${tva}%)</span><span class="val">${fmtDH(montantTVA)}</span></div>
   <div class="tot-row tot-final"><span class="lbl">TOTAL TTC</span><span class="val">${fmtDH(bl.totalTTC)}</span></div>
+  ${droitTimbre > 0 ? `<div class="tot-row"><span class="lbl">Droit de timbre (${fiscalCfg.tauxDroitTimbre}%)</span><span class="val">${fmtDH(droitTimbre)}</span></div>
+  <div class="tot-row tot-final"><span class="lbl">TOTAL À PAYER</span><span class="val">${fmtDH(totalAvecTimbre)}</span></div>` : ""}
 </div></div>
 ${bl.notesBL?`<div class="notice"><strong>Notes:</strong> ${bl.notesBL}</div>`:""}
 ${isFacture?`<div class="notice" style="margin-top:8px"><strong>Document :</strong> Facture${showLegal?" — valant pièce comptable (mentions légales incluses)":""}.</div>`:""}
