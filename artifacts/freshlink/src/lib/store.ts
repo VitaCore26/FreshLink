@@ -3384,6 +3384,20 @@ export const store = {
   today: () => new Date().toISOString().split("T")[0],
   now: () => new Date().toISOString(),
   yesterday: () => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0] },
+  // Date par défaut "jour opérationnel", pour les écrans de reporting
+  // (Intelligence Concurrence, Prix/Marge, etc.) — pas la date calendaire brute :
+  //  - commandes : cycle du jour clos à 14h → avant 14h on regarde J, après on
+  //    bascule sur J-1 (dernier jour dont les commandes sont définitivement closes).
+  //  - achat : le marché de gros tourne la nuit jusqu'à 8h du matin → avant 8h
+  //    on est encore dans le cycle d'achat de J-1, après 8h on est sur J.
+  jourOperationnel: (type: "commande" | "achat"): string => {
+    const now = new Date()
+    const h = now.getHours()
+    const bascule = type === "commande" ? h >= 14 : h < 8
+    const d = new Date(now)
+    if (bascule) d.setDate(d.getDate() - 1)
+    return d.toISOString().split("T")[0]
+  },
   lastWeekDay: (d: string) => { const date = new Date(d); date.setDate(date.getDate() - 7); return date.toISOString().split("T")[0] },
 
   // Format MAD — Dirham marocain

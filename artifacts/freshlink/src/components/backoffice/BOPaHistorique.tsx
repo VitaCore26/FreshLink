@@ -95,28 +95,44 @@ export default function BOPaHistorique() {
     }
   }
 
-  // ── Auto-remplissage depuis les bons d'achat (PA réellement constatés) ──────
+  // ── Auto-remplissage depuis les achats réels (PA réellement constatés) ──────
+  // fl_bons_achat est l'ancien flux (vide en pratique) — les vrais achats
+  // passent aujourd'hui par fl_purchase_orders (confirmation PO sur mobile
+  // Acheteur). Sans ça, "Rien à importer" s'affichait alors que des dizaines
+  // d'achats réels existaient déjà.
   const autoFill = async () => {
     if (busy) return
     setBusy(true)
     try {
       const bons = store.getBonsAchat()
+      const pos = store.getPurchaseOrders().filter(p => p.statut === "receptionné" || p.statut === "envoyé")
       // Clé anti-doublon de l'existant : article|date|pa
       const seen = new Set(entries.map(e => `${e.article_id}|${String(e.date_marche).slice(0, 10)}|${Math.round(Number(e.pa) * 100)}`))
       const toPush: { articleId: string; fournisseurId: string; pa: number; volumeKg: number; dateMarche: string }[] = []
+      const addIfNew = (articleId: string, fournisseurId: string, pa: number, volumeKg: number, d: string) => {
+        if (!articleId || pa <= 0) return
+        const key = `${articleId}|${d}|${Math.round(pa * 100)}`
+        if (seen.has(key)) return
+        seen.add(key)
+        toPush.push({ articleId, fournisseurId, pa, volumeKg, dateMarche: d })
+      }
       for (const b of bons) {
         const d = String(b.date ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10)
         for (const l of (b.lignes ?? [])) {
-          const pa = Number((l as { prixAchat?: number }).prixAchat) || 0
-          const articleId = String((l as { articleId?: string }).articleId ?? "")
-          if (!articleId || pa <= 0) continue
-          const key = `${articleId}|${d}|${Math.round(pa * 100)}`
-          if (seen.has(key)) continue
-          seen.add(key)
-          toPush.push({ articleId, fournisseurId: b.fournisseurId ?? "", pa, volumeKg: Number((l as { quantite?: number }).quantite) || 0, dateMarche: d })
+          addIfNew(
+            String((l as { articleId?: string }).articleId ?? ""),
+            b.fournisseurId ?? "",
+            Number((l as { prixAchat?: number }).prixAchat) || 0,
+            Number((l as { quantite?: number }).quantite) || 0,
+            d
+          )
         }
       }
-      if (toPush.length === 0) { setError("Rien à importer : tous les PA des bons d'achat sont déjà dans l'historique."); setBusy(false); return }
+      for (const p of pos) {
+        const d = String(p.date ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10)
+        addIfNew(p.articleId, p.fournisseurId ?? "", Number(p.prixUnitaire) || 0, Number(p.quantite) || 0, d)
+      }
+      if (toPush.length === 0) { setError("Rien à importer : tous les PA des achats sont déjà dans l'historique."); setBusy(false); return }
       let ok = 0
       for (const r of toPush.slice(0, 500)) {
         try { const res = await fetch("/api/ext/pa-historique", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) }); if ((await res.json())?.ok) ok++ } catch { /* skip */ }

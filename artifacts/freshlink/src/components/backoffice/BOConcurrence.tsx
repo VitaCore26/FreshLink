@@ -111,6 +111,9 @@ type Tab = "dashboard" | "prix" | "pv" | "comportement" | "flux" | "import" | "c
 
 export default function BOConcurrence({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>("prix")
+  // Marge & Concurrence : tri alpha par défaut, filtre tous/commandés, famille.
+  const [margeFilter, setMargeFilter] = useState<"tous" | "commandes">("tous")
+  const [margeFamille, setMargeFamille] = useState<string>("toutes")
   // Paramètres pricing stratégique
   const [margeTheo, setMargeTheo] = useState(25)   // % marge théorique (sur coût de revient)
   const [margeConc, setMargeConc] = useState(20)   // % marge supposée du concurrent
@@ -221,6 +224,15 @@ export default function BOConcurrence({ user }: { user: User }) {
   }, [ventes, dateFrom, dateTo])
 
   // ── Prix & marge : croise le catalogue avec les relevés concurrents ───────
+  // Articles réellement commandés (toutes commandes confondues) — pour le
+  // filtre "seulement ceux qu'on a commandés".
+  const articlesCommandes = useMemo(() => {
+    const set = new Set<string>()
+    store.getCommandes().forEach(c => c.lignes.forEach(l => { if (l.articleNom) set.add(l.articleNom) }))
+    return set
+  }, [])
+  const famillesDisponibles = useMemo(() => [...new Set(store.getArticles().map(a => a.famille).filter(Boolean))].sort(), [])
+
   const margeRows = useMemo(() => {
     return store.getArticles().map(a => {
       const pa = Number(a.prixAchat) || 0
@@ -234,9 +246,12 @@ export default function BOConcurrence({ user }: { user: User }) {
       const compMarge = (cPV > 0 && cPA > 0) ? Math.round((cPV - cPA) * 100) / 100 : 0
       const compMargePct = (cPV > 0 && cPA > 0) ? ((cPV - cPA) / cPV) * 100 : 0
       const deltaConc = cPV > 0 ? ((pv - cPV) / cPV) * 100 : 0
-      return { nom: a.nom, unite: a.unite ?? "kg", pa, pv, margeDH, margePct, cPA, cPV, compMarge, compMargePct, vol, deltaConc, has: cPA > 0 || cPV > 0 }
-    }).filter(r => r.has).sort((x, y) => (y.vol - x.vol) || (Math.abs(y.deltaConc) - Math.abs(x.deltaConc)))
-  }, [compPA, compPV])
+      return { nom: a.nom, famille: a.famille ?? "", unite: a.unite ?? "kg", pa, pv, margeDH, margePct, cPA, cPV, compMarge, compMargePct, vol, deltaConc, has: cPA > 0 || cPV > 0, commande: articlesCommandes.has(a.nom) }
+    })
+      .filter(r => margeFilter === "tous" || r.commande)
+      .filter(r => margeFamille === "toutes" || r.famille === margeFamille)
+      .sort((x, y) => x.nom.localeCompare(y.nom, "fr"))
+  }, [compPA, compPV, margeFilter, margeFamille, articlesCommandes])
 
   // ── PV stratégique : PV théorique, PV concurrence (est.), PV proposé pour attaquer ──
   const pvRows = useMemo(() => {
@@ -512,6 +527,26 @@ export default function BOConcurrence({ user }: { user: User }) {
               onChange={e => { const f = e.target.files?.[0]; if (f) importPrix(f); e.target.value = "" }} />
           </div>
           <p className="text-xs text-slate-500">Colonnes import attendues : <code>Concurrent;SKU;PrixConcurrent;NotrePrixVente;Unite;Lieu;Source;Date</code> (le SKU doit correspondre au nom de l&apos;article).</p>
+
+          {/* Filtres : tous/commandés + famille — tri toujours alphabétique */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 p-1 rounded-xl bg-slate-100">
+              <button onClick={() => setMargeFilter("tous")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold ${margeFilter === "tous" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+                Tous les articles
+              </button>
+              <button onClick={() => setMargeFilter("commandes")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold ${margeFilter === "commandes" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>
+                Seulement commandés
+              </button>
+            </div>
+            <select value={margeFamille} onChange={e => setMargeFamille(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
+              <option value="toutes">Toutes les familles</option>
+              {famillesDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <span className="text-xs text-slate-400 ml-auto">{margeRows.length} article(s)</span>
+          </div>
 
           {margeRows.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 text-sm">

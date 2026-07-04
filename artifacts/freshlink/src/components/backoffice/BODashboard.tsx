@@ -198,7 +198,12 @@ export default function BODashboard({ user }: Props) {
 
   // --- Stock ---
   const stockFaible   = articles.filter(a => a.stockDisponible < 50).length
-  const cmdsEnAttente = commandes.filter(c => c.statut === "en_attente" || c.statut === "en_attente_approbation").length
+  // "En attente" = pas encore livrée (couvre tout le pipeline : en_attente,
+  // en_attente_approbation, valide, en_preparation, charge, en_transit).
+  // Compter uniquement le statut brut "en_attente" affichait 0 dès qu'une
+  // commande avait avancé dans le flux (valide/en_preparation), ce qui est
+  // le cas de la quasi-totalité des commandes réelles.
+  const cmdsEnAttente = commandes.filter(c => !["livre", "refuse", "retour"].includes(c.statut)).length
   const totalAchats   = bonsAchat.reduce((s, b) => s + b.lignes.reduce((ls, l) => ls + l.quantite * l.prixAchat, 0), 0)
 
   // --- Top clients (CA) ---

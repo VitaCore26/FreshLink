@@ -211,8 +211,11 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
 
   const [mappings, setMappings] = useState<MappingStore>(() => loadMapping())
   const [search, setSearch] = useState("")
-  const [dateFrom, setDateFrom] = useState("2026-04-01")
-  const [dateTo,   setDateTo]   = useState("")
+  // Jour opérationnel achat (marché de gros nocturne jusqu'à 8h — cf. store.jourOperationnel) :
+  // par défaut on regarde le jour d'achat en cours, pas une plage figée depuis avril.
+  const [dateFrom, setDateFrom] = useState(() => store.jourOperationnel("achat"))
+  const [dateTo,   setDateTo]   = useState(() => store.jourOperationnel("achat"))
+  const [familleFiltre, setFamilleFiltre] = useState("toutes")
 
   const setMapping = (key: string, entry: MappingEntry | null) => {
     setMappings(prev => {
@@ -287,10 +290,11 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
   // ── FreshLink articles ────────────────────────────────────────────────────
   const flArticles = store.getArticles()
   const flByNorm   = useMemo(() => {
-    const m: Record<string, { pa: number; nom: string; unite: string }> = {}
-    flArticles.forEach(a => { m[normName(a.nom)] = { pa: Number(a.prixAchat) || 0, nom: a.nom, unite: a.unite ?? "kg" } })
+    const m: Record<string, { pa: number; nom: string; unite: string; famille: string }> = {}
+    flArticles.forEach(a => { m[normName(a.nom)] = { pa: Number(a.prixAchat) || 0, nom: a.nom, unite: a.unite ?? "kg", famille: a.famille ?? "" } })
     return m
   }, [flArticles])
+  const famillesDisponibles = useMemo(() => [...new Set(flArticles.map(a => a.famille).filter(Boolean))].sort(), [flArticles])
 
   // ── GestFlux products by id ───────────────────────────────────────────────
   const gfProductById = useMemo(() => {
@@ -370,9 +374,11 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
       const mapped  = mapEntry?.status === "approved"
       const diffGf  = prixGf > 0 && paFl > 0 ? ((paFl - prixGf) / prixGf) * 100 : null
       const diffIz  = prixIz > 0 && paFl > 0 ? ((paFl - prixIz) / prixIz) * 100 : null
-      return { ...v, prixGf, prixIz, paFl, nomFl, diffGf, diffIz, normKey: k, mapped }
-    }).sort((a, b) => b.qteGf - a.qteGf)
-  }, [gfFiltered, gfProductById, izPrixByNorm, flByNorm, mappings])
+      return { ...v, prixGf, prixIz, paFl, nomFl, diffGf, diffIz, normKey: k, mapped, famille: fl?.famille ?? "" }
+    })
+      .filter(r => familleFiltre === "toutes" || r.famille === familleFiltre)
+      .sort((a, b) => (a.nomFl ?? a.article).localeCompare(b.nomFl ?? b.article, "fr"))
+  }, [gfFiltered, gfProductById, izPrixByNorm, flByNorm, mappings, familleFiltre])
 
   // ── Iziry Commandes ───────────────────────────────────────────────────────
   const cmdFiltered = useMemo(() => {
@@ -543,8 +549,13 @@ export default function BOComparatifExterne({ user: _user }: { user: User }) {
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50" />
         </div>
-        {(dateFrom !== "2026-04-01" || dateTo) && (
-          <button onClick={() => { setDateFrom("2026-04-01"); setDateTo("") }}
+        <select value={familleFiltre} onChange={e => setFamilleFiltre(e.target.value)}
+          className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50">
+          <option value="toutes">Toutes les familles</option>
+          {famillesDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
+        </select>
+        {(dateFrom !== store.jourOperationnel("achat") || dateTo !== store.jourOperationnel("achat") || familleFiltre !== "toutes") && (
+          <button onClick={() => { setDateFrom(store.jourOperationnel("achat")); setDateTo(store.jourOperationnel("achat")); setFamilleFiltre("toutes") }}
             className="text-xs text-slate-400 hover:text-red-500">↺ Réinit</button>
         )}
       </div>
